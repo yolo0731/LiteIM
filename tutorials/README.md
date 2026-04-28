@@ -24,6 +24,5 @@
 | 教程 | 状态 | 对应能力 |
 | --- | --- | --- |
 | Step 1 工程初始化 | 已完成 | CMake、目录组织、构建目标、CTest |
-| Step 2 协议基础 Packet | 待开始 | 二进制协议、Header 编码、字段校验 |
+| Step 2 协议基础 Packet | 已完成 | 二进制协议、Header 编码、字段校验 |
 | Step 3 FrameDecoder | 待开始 | TCP 粘包/半包处理 |
-
