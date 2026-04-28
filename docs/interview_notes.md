@@ -1,4 +1,21 @@
-# LiteIM Interview Notes
+# LiteIM 面试讲解笔记
 
-This document will collect talking points for epoll, LT/ET mode, TCP framing, heartbeat timeout, Session lifecycle and bot user integration.
+本文档用于沉淀 LiteIM 的面试表达。每完成一个核心模块后，都要把“为什么这样设计”和“能怎么讲”补充到这里。
 
+后续重点补充：
+
+- `epoll` 的基本使用方式。
+- LT / ET 模式区别，以及为什么第一版先用 LT。
+- TCP 是字节流，为什么会有粘包和半包。
+- 定长 Header + JSON Body 如何解决消息边界问题。
+- `Session` 生命周期：创建、读、写、关闭、清理。
+- 输出缓冲区如何处理短写。
+- `timerfd` 如何接入心跳超时检查。
+- `signalfd` 如何接入 Ctrl+C / SIGTERM 优雅关闭。
+- bot 虚拟用户为什么通过同一套 TLV 协议接入，而不是把 AI 逻辑写进 C++ 服务端。
+
+写作要求：
+
+- 用中文讲清楚思路。
+- 关键类名、函数名、协议字段保留英文。
+- 每个点都尽量配一个“面试时可以这样说”的简短表述。
