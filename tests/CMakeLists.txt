@@ -1,4 +1,6 @@
 add_executable(liteim_tests
+    test_frame_decoder.cpp
+    test_main.cpp
     test_protocol.cpp
 )
 
@@ -12,4 +14,4 @@ target_compile_options(liteim_tests PRIVATE
     -Wpedantic
 )
 
-add_test(NAME liteim_protocol_tests COMMAND liteim_tests)
+add_test(NAME liteim_tests COMMAND liteim_tests)

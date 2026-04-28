@@ -1,4 +1,5 @@
 add_library(liteim_protocol
+    protocol/FrameDecoder.cpp
     protocol/Packet.cpp
 )
 

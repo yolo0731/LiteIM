@@ -1,11 +1,11 @@
+#include "TestUtil.hpp"
+
 #include "protocol/MessageType.hpp"
 #include "protocol/Packet.hpp"
 
 #include <arpa/inet.h>
 
 #include <cstdint>
-#include <exception>
-#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -22,12 +22,8 @@ using liteim::protocol::kPacketMagic;
 using liteim::protocol::kPacketVersion;
 using liteim::protocol::parseHeader;
 using liteim::protocol::toUint16;
-
-void expect(bool condition, const std::string& message) {
-    if (!condition) {
-        throw std::runtime_error(message);
-    }
-}
+using liteim::tests::TestCase;
+using liteim::tests::expect;
 
 void writeUint16(std::string& data, std::size_t offset, std::uint16_t value) {
     const std::uint16_t network_value = htons(value);
@@ -114,28 +110,14 @@ void testEncodeOversizedBodyThrows() {
 
 }  // namespace
 
-int main() {
-    const std::vector<std::pair<std::string, void (*)()>> tests = {
-        {"encode packet normal", testEncodePacketNormal},
-        {"parse header fields", testParseHeaderFields},
-        {"wrong magic fails", testWrongMagicFails},
-        {"wrong version fails", testWrongVersionFails},
-        {"oversized body_len fails", testOversizedBodyLenFails},
-        {"short header fails", testShortHeaderFails},
-        {"encode oversized body throws", testEncodeOversizedBodyThrows},
+std::vector<TestCase> protocolTests() {
+    return {
+        {"protocol encode packet normal", testEncodePacketNormal},
+        {"protocol parse header fields", testParseHeaderFields},
+        {"protocol wrong magic fails", testWrongMagicFails},
+        {"protocol wrong version fails", testWrongVersionFails},
+        {"protocol oversized body_len fails", testOversizedBodyLenFails},
+        {"protocol short header fails", testShortHeaderFails},
+        {"protocol encode oversized body throws", testEncodeOversizedBodyThrows},
     };
-
-    int failed = 0;
-    for (const auto& [name, test] : tests) {
-        try {
-            test();
-            std::cout << "[PASS] " << name << '\n';
-        } catch (const std::exception& ex) {
-            ++failed;
-            std::cerr << "[FAIL] " << name << ": " << ex.what() << '\n';
-        }
-    }
-
-    return failed == 0 ? 0 : 1;
 }
-
