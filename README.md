@@ -2,6 +2,8 @@
 
 LiteIM is a C++17 instant messaging project for internship preparation. The server will use Linux socket, non-blocking I/O and epoll to implement a simplified Reactor model. The desktop client will use Qt Widgets and QTcpSocket. The protocol will use a fixed-size TLV-style header plus JSON body to handle TCP sticky packets and partial packets.
 
+Before continuing development, read `PROJECT_MEMORY.md` for the current project goals, Step rules and teaching workflow.
+
 The first milestone is the server MVP:
 
 1. CMake project skeleton
@@ -72,4 +74,3 @@ ctest --test-dir build --output-on-failure
 ```
 
 At this stage, the test target is only a build-chain placeholder. Real protocol tests will be added after `Packet` and `FrameDecoder` are implemented.
-
