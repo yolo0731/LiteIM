@@ -2,29 +2,28 @@
 
 ## Goal
 
-Continue LiteIM as a step-by-step teaching project. Current active task is Step 4: implement the network `Buffer` abstraction.
+Continue LiteIM as a step-by-step teaching project. Current active task is Step 5: implement Linux socket utility functions.
 
 ## Current Phase
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Check memory and repo state | complete | Read `/home/yolo/jianli/PROJECT_MEMORY.md`; repo is `main...origin/main [ahead 1]`; `.codex` is untracked and unrelated. |
-| Enable Planning with Files | complete | Created `task_plan.md`, `findings.md`, and `progress.md` in the LiteIM project root. |
-| Explain Buffer concepts | complete | Buffer is a generic network read/write buffer, not protocol-aware and not socket-owning. |
-| Implement Buffer and tests | complete | `server/net/Buffer.*` and `tests/test_buffer.cpp` compile and pass tests. |
-| Update docs and tutorial | complete | Updated Chinese architecture/interview docs and added `tutorials/step04_buffer.md`. |
-| Build, test, commit | complete | Build and tests passed; Step 4 commit prepared. |
+| Check memory and repo state | complete | Read `/home/yolo/jianli/PROJECT_MEMORY.md`; repo is clean except untracked `.codex`. |
+| Explain SocketUtil concepts | complete | SocketUtil wraps Linux socket/fcntl/setsockopt/getsockopt/close helpers. |
+| Implement SocketUtil and tests | complete | Added `server/net/SocketUtil.*` and `tests/test_socket_util.cpp`. |
+| Update docs and tutorial | complete | Added Chinese Step 5 tutorial and docs/interview notes. |
+| Build, test, commit | complete | Final CMake build, CTest, direct tests, and server run passed. |
 
-## Step 4 Scope
+## Step 5 Scope
 
-Implement `server/net/Buffer` with:
+Implement `server/net/SocketUtil` with:
 
-- `append(const char* data, size_t len)`
-- `appendString(const std::string& data)`
-- `readableBytes()`
-- `peek()`
-- `retrieve(size_t len)`
-- `retrieveAllAsString()`
+- `createNonBlockingSocket()`
+- `setNonBlocking(int fd)`
+- `setReuseAddr(int fd)`
+- `setReusePort(int fd)`
+- `closeFd(int fd)`
+- `getSocketError(int fd)`
 
 ## Persistent Requirements
 
@@ -37,7 +36,7 @@ Implement `server/net/Buffer` with:
 
 ## Out of Scope
 
-- Do not implement socket APIs.
+- Do not implement bind/listen/accept server flow.
 - Do not implement epoll.
 - Do not implement `Session`.
 - Do not modify protocol behavior except tests integration if needed.

@@ -47,3 +47,32 @@
 - `peek()`
 - `retrieve()`
 - `retrieveAllAsString()`
+
+## SocketUtil socket 工具函数
+
+面试时可以这样说：
+
+> 我把 Linux socket 常用操作封装成了 `SocketUtil`，包括创建非阻塞 socket、设置 `O_NONBLOCK`、设置端口复用、关闭 fd 和读取 socket error。这样后续 `Acceptor` 和 `Session` 不需要分散调用底层系统调用，错误处理也更统一。服务端使用 epoll 时，fd 必须配合非阻塞 I/O，否则某个连接上的 read/write 可能阻塞整个事件循环。
+
+为什么 socket 要非阻塞：
+
+- epoll 只负责告诉你 fd 当前可能可读或可写。
+- 如果 fd 是阻塞的，`read()` / `write()` 仍可能卡住当前线程。
+- 单线程 Reactor 一旦被某个 fd 卡住，其他连接都无法处理。
+
+为什么要 `SO_REUSEADDR`：
+
+- 服务端重启时，端口可能还处于 `TIME_WAIT` 相关状态。
+- 设置 `SO_REUSEADDR` 能提升本地开发和重启体验。
+
+为什么要 `SO_REUSEPORT`：
+
+- 它允许多个 socket 绑定同一个 ip:port。
+- 第一版不做多进程负载均衡，但提前封装接口，后续可扩展。
+
+常见追问：
+
+- `SO_REUSEADDR` 和 `SO_REUSEPORT` 的区别是什么？
+- 为什么 `accept()` 得到的新连接 fd 也要设置非阻塞？
+- `SO_ERROR` 有什么用？
+- 为什么不在业务代码里直接调用 `socket()` / `fcntl()`？

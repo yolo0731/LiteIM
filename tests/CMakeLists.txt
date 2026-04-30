@@ -3,6 +3,7 @@ add_executable(liteim_tests
     test_frame_decoder.cpp
     test_main.cpp
     test_protocol.cpp
+    test_socket_util.cpp
 )
 
 target_link_libraries(liteim_tests PRIVATE

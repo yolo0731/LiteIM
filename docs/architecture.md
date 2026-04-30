@@ -57,3 +57,38 @@ output Buffer
 
 - input Buffer 用于承接 socket 读入的数据。
 - output Buffer 用于处理非阻塞写中的短写问题。
+
+## Step 5：SocketUtil socket 工具函数
+
+Step 5 已经实现 `server/net/SocketUtil`。
+
+`SocketUtil` 属于网络层底部工具模块，负责封装 Linux socket 常用系统调用。
+
+它的职责：
+
+- 创建非阻塞 TCP socket。
+- 把已有 fd 设置为非阻塞。
+- 设置 `SO_REUSEADDR`。
+- 设置 `SO_REUSEPORT`。
+- 关闭 fd。
+- 读取 socket pending error。
+
+它不负责：
+
+- 不负责 `bind()`。
+- 不负责 `listen()`。
+- 不负责 `accept()`。
+- 不负责注册 epoll。
+- 不负责管理连接生命周期。
+
+后续关系：
+
+```text
+SocketUtil
+  ↓
+Acceptor 使用它创建 listen socket
+Session 使用它关闭连接 fd
+TcpServer 组合 Acceptor 和 Session
+```
+
+这一步先把底层系统调用封装起来，后续 `Acceptor` 和 `Session` 就不用到处直接写 `socket()`、`fcntl()`、`setsockopt()`、`close()`。

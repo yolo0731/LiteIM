@@ -25,6 +25,16 @@
 - `Buffer::append(nullptr, 0)` is allowed as a no-op; `append(nullptr, nonzero)` throws `std::invalid_argument`.
 - Step 4 introduces `liteim_net` as a separate static library for network-layer components.
 
+## Step 5 Design Notes
+
+- `SocketUtil` belongs to `server/net/` and should be part of `liteim_net`.
+- `SocketUtil` only wraps low-level Linux socket helpers; it must not implement `Acceptor`, `Session`, or epoll.
+- `createNonBlockingSocket()` should create an IPv4 TCP socket with nonblocking behavior.
+- `setNonBlocking()` should use `fcntl()` so it can also be applied to accepted connection fds later.
+- `setReuseAddr()` and `setReusePort()` should wrap `setsockopt()`.
+- `getSocketError()` should wrap `getsockopt(SO_ERROR)`.
+- System call failures should print `errno` and a readable error message.
+
 ## Testing Explanation Requirement
 
 - Future Step tutorials and final responses must include a short testing explanation.

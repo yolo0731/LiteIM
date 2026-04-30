@@ -15,6 +15,7 @@ target_compile_options(liteim_protocol PRIVATE
 
 add_library(liteim_net
     net/Buffer.cpp
+    net/SocketUtil.cpp
 )
 
 target_include_directories(liteim_net PUBLIC

@@ -64,3 +64,27 @@
 - User clarified that Step markdown files should not include interface overview tables.
 - New convention: explain each `.hpp` / `.cpp` function separately in prose.
 - Updating project memory, planning files, and Step 2-4 tutorials to remove the overview tables.
+
+## 2026-04-30 Step 5 Session
+
+- Started Step 5: `SocketUtil`.
+- Read root project memory and LiteIM planning files.
+- Checked repository status: clean except untracked `.codex`.
+- Updated `task_plan.md` for Step 5.
+- Recorded Step 5 design notes in `findings.md`.
+- Implemented `server/net/SocketUtil.hpp`.
+- Implemented `server/net/SocketUtil.cpp`.
+- Added `tests/test_socket_util.cpp`.
+- Updated `server/CMakeLists.txt`, `tests/CMakeLists.txt`, and `tests/test_main.cpp`.
+- Ran initial build and tests successfully.
+- Updated `docs/architecture.md` with SocketUtil architecture notes.
+- Updated `docs/interview_notes.md` with SocketUtil interview notes.
+- Added `tutorials/step05_socket_util.md`.
+- Updated `tutorials/README.md` to mark Step 5 complete.
+- Final verification passed:
+  - `cmake -S . -B build`
+  - `cmake --build build`
+  - `ctest --test-dir build --output-on-failure`
+  - `./build/tests/liteim_tests`
+  - `./build/server/liteim_server`
+- Direct test output includes expected invalid-fd errno logs from failure-path tests.
