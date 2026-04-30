@@ -58,3 +58,9 @@
 - Updated Step 2 with interface purpose table, protocol test strategy, and protocol interview follow-up questions.
 - Updated Step 3 with FrameDecoder interface purpose table, decoder test strategy, and TCP framing interview follow-up questions.
 - Updated Step 4 with Buffer interface purpose table, clearer `compactIfNeeded()` explanation, test strategy, and Buffer interview follow-up questions.
+
+## 2026-04-30 Tutorial Table Removal Requirement
+
+- User clarified that Step markdown files should not include interface overview tables.
+- New convention: explain each `.hpp` / `.cpp` function separately in prose.
+- Updating project memory, planning files, and Step 2-4 tutorials to remove the overview tables.

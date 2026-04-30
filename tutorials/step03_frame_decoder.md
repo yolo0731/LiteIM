@@ -136,17 +136,6 @@ invalid packet header
 
 第一版设计里，如果连接收到非法包，后续更常见的处理是直接关闭连接。`reset()` 主要用于测试和未来复用场景。
 
-### 3.1 本步骤接口作用总览
-
-| 接口 / 函数 | 作用 | 输入 | 输出 | 边界 / 失败场景 |
-| --- | --- | --- | --- | --- |
-| `feed()` | 追加新字节并尽可能解析完整包 | `data + len` | `vector<Packet>` | 半包返回空；粘包返回多个；非法 Header 进入 error |
-| `hasError()` | 查询是否已经进入错误状态 | 无 | `bool` | error 后后续 `feed()` 不再解析 |
-| `errorMessage()` | 查询错误说明 | 无 | `const string&` | 没有错误时为空 |
-| `bufferedBytes()` | 查询内部缓存字节数 | 无 | `size_t` | 主要用于测试和调试 |
-| `reset()` | 清空缓存和错误状态 | 无 | 无 | 可让 decoder 从 error 状态恢复 |
-| `setError()` | 内部函数，设置错误并清空缓存 | 错误信息 | 无 | 私有函数，外部不能直接调用 |
-
 注意：`FrameDecoder` 的输入是已经从 socket 读出来的字节。它自己不拥有 fd，也不决定连接是否关闭；后续 `Session` 会根据 `hasError()` 决定是否关闭连接。
 
 ## 4. 核心实现逻辑
@@ -190,6 +179,53 @@ buffer_ = Packet A + Packet B
 ```
 
 只解析一个包就停，会导致 Packet B 明明已经完整，却要等下一次网络事件才被处理。
+
+### 4.1 feed() 的实现思路
+
+`feed()` 是 `FrameDecoder` 最核心的函数。
+
+它做四件事：
+
+1. 如果 decoder 已经处于 error 状态，直接返回空结果，不继续解析。
+2. 把本次传入的新字节追加到内部 `buffer_`。
+3. 只要 `buffer_` 里至少有 16 字节，就尝试解析 Header。
+4. 如果 Header 和 Body 都完整，就构造 `Packet` 并从 `buffer_` 里删除已消费字节。
+
+它的输入是 `const char* data` 和 `std::size_t len`。
+
+它的输出是 `std::vector<Packet>`，因为一次输入可能解析出多个完整包。
+
+边界情况：
+
+- `data == nullptr && len > 0`：进入 error 状态。
+- `len == 0`：不追加新字节，但仍可以尝试解析已经缓存的数据。
+- Header 不完整：返回空 vector，不报错。
+- Body 不完整：返回空 vector，不报错。
+- Header 非法：进入 error 状态。
+
+### 4.2 setError() 的实现思路
+
+`setError()` 是私有辅助函数，只在内部调用。
+
+它做三件事：
+
+1. 清空 `buffer_`，避免继续使用已经失去同步的字节流。
+2. 设置 `has_error_ = true`。
+3. 保存错误说明到 `error_message_`。
+
+它是私有函数，因为外部不应该随意把 decoder 标成错误。外部只需要通过 `hasError()` 查询状态。
+
+### 4.3 reset() 的实现思路
+
+`reset()` 用来恢复 decoder。
+
+它会：
+
+- 清空 `buffer_`。
+- 把 `has_error_` 设回 false。
+- 清空 `error_message_`。
+
+在真实连接里，收到非法包后一般会直接关闭连接；但保留 `reset()` 对测试很有用，也方便未来复用 decoder。
 
 ## 5. 半包处理
 

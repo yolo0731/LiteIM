@@ -194,20 +194,6 @@ constexpr std::size_t kCompactThreshold = 1024;
 - 如果已消费数据小于总数据的一半，也先不整理。
 - 因为 `erase(0, read_index_)` 会移动后面的数据，有成本，小数据没必要频繁整理。
 
-### 4.1 本步骤接口作用总览
-
-| 接口 / 函数 | 作用 | 输入 | 输出 | 边界 / 失败场景 |
-| --- | --- | --- | --- | --- |
-| `append()` | 追加一段原始字节 | `const char* data, size_t len` | 无 | `len == 0` 是 no-op；`data == nullptr && len > 0` 抛异常 |
-| `appendString()` | 追加字符串内容 | `const std::string&` | 无 | 空字符串是 no-op |
-| `readableBytes()` | 返回当前可读字节数 | 无 | `size_t` | 不改变 buffer 状态 |
-| `peek()` | 返回可读数据起始地址 | 无 | `const char*` | 不消费数据；调用方不能写这个内存 |
-| `retrieve()` | 消费指定长度数据 | `size_t len` | 无 | `len >= readableBytes()` 时清空 |
-| `retrieveAllAsString()` | 取出所有可读数据并清空 | 无 | `std::string` | 空 buffer 返回空字符串 |
-| `compactIfNeeded()` | 内部压缩已消费空间 | 无 | 无 | 私有函数，只在 `retrieve()` 后按阈值触发 |
-
-这个表要重点记住：`Buffer` 的所有接口都只处理内存中的字节，不处理 socket，也不处理协议。
-
 ## 5. 内部设计
 
 当前实现使用：

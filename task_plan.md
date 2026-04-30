@@ -31,7 +31,8 @@ Implement `server/net/Buffer` with:
 - Every future Step tutorial and final summary must explain the testing section.
 - The testing explanation must briefly cover what the tests verify, why those cases matter, and how to run the tests.
 - Do not only list `ctest`; explain the purpose of the tests.
-- Every Step tutorial must explain each newly added public function/interface: purpose, input, output, side effects, and error/boundary behavior.
+- Every Step tutorial must explain each newly added public function/interface in the relevant `.hpp` / `.cpp` section: purpose, input, output, side effects, and error/boundary behavior.
+- Do not use interface overview tables in Step tutorials; explain functions one by one in prose.
 - The `面试时怎么讲` section must include the Step's design thinking and common interview follow-up questions.
 
 ## Out of Scope

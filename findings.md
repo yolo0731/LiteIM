@@ -35,5 +35,6 @@
 
 - Future `tutorials/stepXX_*.md` files must explain each new public function/interface in that Step.
 - Function explanations should include purpose, inputs, outputs, side effects, and edge/error behavior.
+- Do not use interface overview tables in Step tutorials. Explain functions one by one in the `.hpp` / `.cpp` sections instead.
 - The interview section should explain the Step's design idea, not only provide a short quote.
 - Each Step should include common interview follow-up questions with short answers.

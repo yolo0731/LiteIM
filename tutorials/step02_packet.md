@@ -233,18 +233,7 @@ std::optional<PacketHeader> parseHeader(const char* data, std::size_t len);
 - 尝试解析 Header。
 - 如果 Header 不合法，返回 `std::nullopt`。
 
-### 6.1 本步骤接口作用总览
-
-| 接口 / 类型 | 作用 | 输入 | 输出 | 边界 / 失败场景 |
-| --- | --- | --- | --- | --- |
-| `MsgType` | 定义协议层消息类型编号 | 无 | 枚举值，例如 `LOGIN_REQ`、`HEARTBEAT_REQ` | 必须和 Qt / Python 客户端保持一致 |
-| `toUint16(MsgType)` | 把强类型枚举转成 Header 里的 2 字节整数 | `MsgType` | `std::uint16_t` | 只做类型转换，不做合法性校验 |
-| `PacketHeader` | 保存一条消息的元信息 | 无 | `magic/version/msg_type/seq_id/body_len` 字段 | 只是内存结构，不能直接当网络字节发送 |
-| `Packet` | 表示一条完整应用层消息 | `PacketHeader + body` | 一个 C++ 对象 | `body` 可以为空，但不能超过 1MB |
-| `encodePacket()` | 把 `Packet` 编码成可写入 TCP 的字节串 | `Packet` | `std::string` 字节流 | body 超过 1MB 时抛 `std::invalid_argument` |
-| `parseHeader()` | 从字节流前 16 字节解析并校验 Header | `const char* + len` | `optional<PacketHeader>` | 长度不足、magic 错、version 错、body_len 超限都返回 `nullopt` |
-
-面试时要能讲清楚：`PacketHeader` 是逻辑结构，`encodePacket()` 才是网络传输格式的真正定义。
+这里要注意：`PacketHeader` 是逻辑结构，`encodePacket()` 才是真正定义网络传输格式的函数。不要把 `PacketHeader` 的内存布局直接当成网络协议。
 
 ## 7. Packet.cpp 讲解
 
@@ -270,6 +259,20 @@ void appendUint16(std::string& output, std::uint16_t value) {
 - 再把它追加到输出字符串。
 
 `appendUint32()` 同理，只是处理 32 位整数。
+
+### 7.1.1 toUint16()
+
+`toUint16(MsgType type)` 定义在 `MessageType.hpp`。
+
+它的作用是把强类型枚举 `MsgType` 转成 Header 里的 2 字节整数。
+
+为什么需要这个函数：
+
+- `enum class` 不会隐式转成整数，类型更安全。
+- Header 里的 `msg_type` 是 `std::uint16_t`。
+- 用 `toUint16()` 可以让转换位置更明确。
+
+它只做类型转换，不判断这个消息类型是否允许出现在当前业务场景里。比如 `LOGIN_REQ` 是否只能在未登录时发送，是后续业务层要做的事情。
 
 ### 7.2 读取整数
 
@@ -305,6 +308,15 @@ header.body_len = static_cast<std::uint32_t>(packet.body.size());
 - `magic` 和 `version` 由协议层强制设置。
 - `body_len` 由真实 body 长度计算，不信任调用方传入的旧值。
 - 如果 body 超过 1MB，直接抛出 `std::invalid_argument`。
+
+这个函数的输入是一个内存里的 `Packet` 对象，输出是可以直接写入 TCP 的字节串。
+
+它有两个重要副作用或者说“修正行为”：
+
+- 即使调用方传错了 `header.magic` 或 `header.version`，编码时也会强制写成当前协议值。
+- 即使调用方传错了 `header.body_len`，编码时也会按 `packet.body.size()` 重新计算。
+
+这样做是为了保证真正发出去的包符合协议，而不是信任外部传入的 Header 字段。
 
 ### 7.4 parseHeader()
 
@@ -345,6 +357,22 @@ if (header.magic != kPacketMagic) return std::nullopt;
 if (header.version != kPacketVersion) return std::nullopt;
 if (header.body_len > kMaxBodyLength) return std::nullopt;
 ```
+
+这个函数只解析 Header，不解析 Body。
+
+原因是：
+
+- Step 2 只负责 Header 编解码。
+- Body 是否完整要结合 TCP 缓冲区长度判断，这属于 Step 3 `FrameDecoder` 的职责。
+- `parseHeader()` 返回 `std::optional`，能表达“Header 不合法或者还不够解析”的结果。
+
+它的失败场景包括：
+
+- `data == nullptr`。
+- `len < 16`。
+- `magic` 不等于 `0x4C494D31`。
+- `version` 不等于 `1`。
+- `body_len` 超过 1MB。
 
 ## 8. 测试讲解
 
