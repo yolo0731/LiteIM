@@ -26,6 +26,14 @@ Implement `server/net/Buffer` with:
 - `retrieve(size_t len)`
 - `retrieveAllAsString()`
 
+## Persistent Requirements
+
+- Every future Step tutorial and final summary must explain the testing section.
+- The testing explanation must briefly cover what the tests verify, why those cases matter, and how to run the tests.
+- Do not only list `ctest`; explain the purpose of the tests.
+- Every Step tutorial must explain each newly added public function/interface: purpose, input, output, side effects, and error/boundary behavior.
+- The `面试时怎么讲` section must include the Step's design thinking and common interview follow-up questions.
+
 ## Out of Scope
 
 - Do not implement socket APIs.

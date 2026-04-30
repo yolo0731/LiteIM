@@ -178,6 +178,36 @@ void retrieve(std::size_t len);
 std::string retrieveAllAsString();
 ```
 
+
+### compactIfNeeded()
+
+作用是当已消费空间较大时，压缩缓冲区，把剩余可读数据前移。
+
+```cpp
+void compactIfNeeded();
+constexpr std::size_t kCompactThreshold = 1024;
+```
+
+压缩条件的意思是：
+
+- 如果已消费数据还不到 1024 字节，就先不整理。
+- 如果已消费数据小于总数据的一半，也先不整理。
+- 因为 `erase(0, read_index_)` 会移动后面的数据，有成本，小数据没必要频繁整理。
+
+### 4.1 本步骤接口作用总览
+
+| 接口 / 函数 | 作用 | 输入 | 输出 | 边界 / 失败场景 |
+| --- | --- | --- | --- | --- |
+| `append()` | 追加一段原始字节 | `const char* data, size_t len` | 无 | `len == 0` 是 no-op；`data == nullptr && len > 0` 抛异常 |
+| `appendString()` | 追加字符串内容 | `const std::string&` | 无 | 空字符串是 no-op |
+| `readableBytes()` | 返回当前可读字节数 | 无 | `size_t` | 不改变 buffer 状态 |
+| `peek()` | 返回可读数据起始地址 | 无 | `const char*` | 不消费数据；调用方不能写这个内存 |
+| `retrieve()` | 消费指定长度数据 | `size_t len` | 无 | `len >= readableBytes()` 时清空 |
+| `retrieveAllAsString()` | 取出所有可读数据并清空 | 无 | `std::string` | 空 buffer 返回空字符串 |
+| `compactIfNeeded()` | 内部压缩已消费空间 | 无 | 无 | 私有函数，只在 `retrieve()` 后按阈值触发 |
+
+这个表要重点记住：`Buffer` 的所有接口都只处理内存中的字节，不处理 socket，也不处理协议。
+
 ## 5. 内部设计
 
 当前实现使用：
@@ -189,7 +219,7 @@ std::size_t read_index_ = 0;
 
 `buffer_` 保存全部数据。
 
-`read_index_` 表示当前已经消费到哪里。
+`read_index_` 表示当前已经消费到哪里。该 index 之前的数据已经被消费了，index 及之后的数据是可读的。
 
 例如：
 
@@ -248,6 +278,14 @@ if (read_index_ >= kCompactThreshold && read_index_ * 2 >= buffer_.size()) {
 tests/test_buffer.cpp
 ```
 
+这些测试的目的不是“凑覆盖率”，而是确认 `Buffer` 作为未来 `Session` 输入/输出缓冲区时，最基础的数据追加、查看、消费和边界处理都是可靠的。
+
+测试分三类：
+
+1. 正常读写路径：验证追加数据后能正确读取，部分消费后剩余数据正确。
+2. 清空和复用路径：验证 `retrieveAllAsString()`、超长 `retrieve()` 和消费后继续追加都符合预期。
+3. 边界和异常路径：验证空追加是 no-op，非法空指针追加会抛异常。
+
 覆盖：
 
 1. `append()` 后 `readableBytes()` 正确。
@@ -259,6 +297,12 @@ tests/test_buffer.cpp
 7. 消费后继续 append，剩余数据顺序正确。
 8. `append(nullptr, 1)` 抛异常。
 9. `append(nullptr, 0)` 是 no-op。
+
+如果这些测试通过，说明：
+
+- `Buffer` 能正确维护“已消费数据”和“可读数据”的边界。
+- 后续 `Session` 可以安全地把它作为 input buffer 和 output buffer 的基础。
+- 当前实现对明显错误输入有防护，不会静默接受非法空指针。
 
 ## 8. 编译和测试
 
@@ -297,6 +341,46 @@ ctest --test-dir build --output-on-failure
 - TCP 读入数据可能分批到达，所以需要 input buffer。
 - Buffer 不依赖 Packet，因此网络层和协议层边界清楚。
 - 当前实现用 `read_index_` 避免每次消费都移动内存。
+
+### 9.1 讲解思路
+
+面试时建议按这个顺序讲：
+
+1. 先讲网络 I/O 的问题：非阻塞读写不保证一次处理完所有数据。
+2. 再讲输入缓冲：读到的数据可能暂时无法组成完整 Packet，需要缓存。
+3. 再讲输出缓冲：`write()` 可能短写，剩余字节必须保存，等下次 EPOLLOUT 继续写。
+4. 再讲职责边界：`Buffer` 不读 fd、不解析协议、不做业务，只管理字节。
+5. 再讲实现细节：用 `std::string + read_index_`，避免每次 `retrieve()` 都移动内存。
+
+### 9.2 面试中容易被问到的问题
+
+**Q1：为什么需要 output buffer？**
+
+非阻塞 socket 的 `write()` 可能只写出一部分数据。没有 output buffer，剩余数据就会丢，消息会被截断。
+
+**Q2：为什么需要 input buffer？**
+
+一次 `read()` 可能只读到半个包，也可能读到多个包。input buffer 用来保存读到但还没处理完的数据。
+
+**Q3：`Buffer` 和 `FrameDecoder` 的区别是什么？**
+
+`Buffer` 是网络层通用字节容器，不理解协议；`FrameDecoder` 是协议层组件，理解 Header、Body 和 `body_len`。
+
+**Q4：为什么 `peek()` 不消费数据？**
+
+因为很多场景需要先查看数据是否足够，比如先看 Header，再决定是否能消费完整 frame。
+
+**Q5：为什么 `retrieve()` 不每次都 `erase()`？**
+
+`erase(0, len)` 会移动剩余数据，频繁调用成本高。用 `read_index_` 延迟压缩，可以减少内存移动。
+
+**Q6：当前 `Buffer` 是最终高性能实现吗？**
+
+不是。当前是第一版清晰实现。更高性能的实现可以用 prependable/readable/writable 三段式 buffer，或者环形缓冲区。
+
+**Q7：为什么 `append(nullptr, 1)` 要抛异常？**
+
+因为传入非零长度却没有有效数据指针是调用方错误。这里显式失败比静默行为更安全。
 
 ## 10. 下一步预告
 

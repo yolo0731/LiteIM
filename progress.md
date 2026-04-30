@@ -26,3 +26,35 @@
   - `ctest --test-dir build --output-on-failure`
   - `./build/tests/liteim_tests`
   - `./build/server/liteim_server`
+
+## 2026-04-30 Hook Follow-up
+
+- Received `planning-with-files` stop hook asking to update progress and continue remaining phases.
+- Current recorded Step 4 work was already implemented and verified on 2026-04-29.
+- Next action: read `task_plan.md` and confirm whether any remaining phases are actually pending.
+- Read `task_plan.md`; all listed phases are already marked complete, including implementation, docs, build, tests, and commit preparation.
+- No remaining phases were found to continue.
+- Received a repeated `planning-with-files` stop hook after answering the Buffer `append` explanation.
+- Next action: re-read `task_plan.md` to confirm whether any new remaining phases were added.
+- Re-read `task_plan.md`; no new phases were added and all current phases remain complete.
+- Received another repeated `planning-with-files` stop hook after explaining Buffer readable/consumed data.
+- Next action: read `task_plan.md` again and continue only if it contains a pending phase.
+- Re-read `task_plan.md`; all phases still show `complete`, so there is no remaining implementation or documentation phase to continue.
+
+## 2026-04-30 Testing Explanation Requirement
+
+- User requested that every Step include an explanation of the test section.
+- Updated root project memory to require explaining what each Step's tests verify and how to run them.
+- Updated `findings.md` with the same requirement for LiteIM planning recovery.
+- Updated Step 4 tutorial's testing section to include test purpose and test commands as the template for future Steps.
+
+## 2026-04-30 Tutorial Depth Requirement
+
+- User requested clearer Step markdown files.
+- New requirement: every Step tutorial should explain newly added functions/interfaces, test purpose, rough test strategy, detailed interview explanation, and common interview questions.
+- Updating root memory, planning files, and existing Step 1-4 tutorials to match this standard.
+- Updated `tutorials/README.md` with the Step tutorial writing requirements.
+- Updated Step 1 with engineering-chain test purpose and common interview questions.
+- Updated Step 2 with interface purpose table, protocol test strategy, and protocol interview follow-up questions.
+- Updated Step 3 with FrameDecoder interface purpose table, decoder test strategy, and TCP framing interview follow-up questions.
+- Updated Step 4 with Buffer interface purpose table, clearer `compactIfNeeded()` explanation, test strategy, and Buffer interview follow-up questions.

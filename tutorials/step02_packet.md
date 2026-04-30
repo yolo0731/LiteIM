@@ -233,6 +233,19 @@ std::optional<PacketHeader> parseHeader(const char* data, std::size_t len);
 - 尝试解析 Header。
 - 如果 Header 不合法，返回 `std::nullopt`。
 
+### 6.1 本步骤接口作用总览
+
+| 接口 / 类型 | 作用 | 输入 | 输出 | 边界 / 失败场景 |
+| --- | --- | --- | --- | --- |
+| `MsgType` | 定义协议层消息类型编号 | 无 | 枚举值，例如 `LOGIN_REQ`、`HEARTBEAT_REQ` | 必须和 Qt / Python 客户端保持一致 |
+| `toUint16(MsgType)` | 把强类型枚举转成 Header 里的 2 字节整数 | `MsgType` | `std::uint16_t` | 只做类型转换，不做合法性校验 |
+| `PacketHeader` | 保存一条消息的元信息 | 无 | `magic/version/msg_type/seq_id/body_len` 字段 | 只是内存结构，不能直接当网络字节发送 |
+| `Packet` | 表示一条完整应用层消息 | `PacketHeader + body` | 一个 C++ 对象 | `body` 可以为空，但不能超过 1MB |
+| `encodePacket()` | 把 `Packet` 编码成可写入 TCP 的字节串 | `Packet` | `std::string` 字节流 | body 超过 1MB 时抛 `std::invalid_argument` |
+| `parseHeader()` | 从字节流前 16 字节解析并校验 Header | `const char* + len` | `optional<PacketHeader>` | 长度不足、magic 错、version 错、body_len 超限都返回 `nullopt` |
+
+面试时要能讲清楚：`PacketHeader` 是逻辑结构，`encodePacket()` 才是网络传输格式的真正定义。
+
 ## 7. Packet.cpp 讲解
 
 文件：
@@ -359,6 +372,21 @@ tests/test_protocol.cpp
 6. Header 不足 16 字节返回失败。
 7. 编码超过 1MB 的 Body 抛异常。
 
+这些测试的大概思路：
+
+- 正常路径：先构造一个 `Packet`，调用 `encodePacket()`，再用 `parseHeader()` 解回 Header，验证字段一致。
+- 协议识别：手动改坏 `magic`，验证服务端不会把未知协议当成 LiteIM 包。
+- 协议版本：手动改坏 `version`，验证版本不兼容时不会继续进入业务层。
+- 长度保护：手动把 `body_len` 改成超过 1MB，验证协议层能拒绝异常长度。
+- 输入不完整：只传不足 16 字节，验证 `parseHeader()` 不会越界读取。
+- 编码保护：构造超过 1MB 的 body，验证 `encodePacket()` 不允许生成超大包。
+
+测试通过说明：
+
+```text
+Packet 的基本网络字节序编码、Header 字段解析、非法 Header 拦截和 body 长度保护都能工作。
+```
+
 ## 9. 编译和测试
 
 在 `LiteIM/` 根目录执行：
@@ -418,6 +446,46 @@ ctest --test-dir build --output-on-failure
 - `encodePacket()` 负责对象到字节串。
 - `parseHeader()` 负责 Header 校验。
 - `FrameDecoder` 留到 Step 3 处理 TCP 字节流。
+
+### 11.1 讲解思路
+
+面试时建议按这个顺序讲：
+
+1. 先讲问题：TCP 是字节流，不保留消息边界。
+2. 再讲方案：每条消息前面加固定 16 字节 Header，Header 里包含 `body_len`。
+3. 再讲字段：`magic` 用于识别协议，`version` 用于升级，`msg_type` 用于路由，`seq_id` 用于请求响应匹配，`body_len` 用于拆包。
+4. 再讲跨语言兼容：不直接发送 C++ struct，而是逐字段转网络字节序。
+5. 最后讲防御：非法 `magic`、非法 `version`、超大 `body_len` 都在协议层拦截。
+
+### 11.2 面试中容易被问到的问题
+
+**Q1：为什么 Header 要固定长度？**
+
+固定长度 Header 容易解析。服务端只要先读 16 字节，就能拿到 `body_len`，再判断后面 Body 是否完整。
+
+**Q2：为什么不用分隔符，比如 `\n`？**
+
+聊天消息 Body 是 JSON，未来也可能包含各种字符。定长 Header + body_len 更通用，不依赖内容里是否出现分隔符。
+
+**Q3：为什么不能直接 `send(sizeof(PacketHeader))`？**
+
+C++ struct 可能有 padding，而且不同机器字节序可能不同。直接发送 struct 不利于 Python BotClient 和 Qt 客户端复用协议。
+
+**Q4：`magic` 有什么用？**
+
+快速判断这是不是 LiteIM 协议包。收到错误 magic 时可以直接拒绝，避免把垃圾数据交给业务层。
+
+**Q5：`version` 有什么用？**
+
+用于协议升级。比如未来 Header 加字段或 Body 格式变化时，可以通过 version 做兼容判断。
+
+**Q6：为什么要限制 `body_len` 最大 1MB？**
+
+防止异常包或恶意包让服务端分配过大内存。IM 文本消息第一版不需要非常大的 Body。
+
+**Q7：Step 2 为什么不直接实现拆包？**
+
+这是职责划分。Step 2 只定义单条消息的编码格式；Step 3 的 `FrameDecoder` 再负责从 TCP 字节流里切出完整消息。
 
 ## 12. 下一步预告
 

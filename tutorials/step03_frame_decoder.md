@@ -109,11 +109,45 @@ public:
 - version 错误。
 - body_len 超过上限。
 
+### errorMessage()
+
+返回当前错误原因。
+
+这个接口主要用于日志和调试。例如后续 `Session` 收到非法包时，可以记录：
+
+```text
+invalid packet header
+```
+
+第一版错误信息比较简单，后续可以细化成错误码。
+
+### bufferedBytes()
+
+返回当前内部缓冲区还缓存了多少字节。
+
+它主要用于：
+
+- 单元测试确认半包确实被保留。
+- 调试时观察连接上是否积压了未解析数据。
+
 ### reset()
 
 清空内部 buffer 和错误状态。
 
 第一版设计里，如果连接收到非法包，后续更常见的处理是直接关闭连接。`reset()` 主要用于测试和未来复用场景。
+
+### 3.1 本步骤接口作用总览
+
+| 接口 / 函数 | 作用 | 输入 | 输出 | 边界 / 失败场景 |
+| --- | --- | --- | --- | --- |
+| `feed()` | 追加新字节并尽可能解析完整包 | `data + len` | `vector<Packet>` | 半包返回空；粘包返回多个；非法 Header 进入 error |
+| `hasError()` | 查询是否已经进入错误状态 | 无 | `bool` | error 后后续 `feed()` 不再解析 |
+| `errorMessage()` | 查询错误说明 | 无 | `const string&` | 没有错误时为空 |
+| `bufferedBytes()` | 查询内部缓存字节数 | 无 | `size_t` | 主要用于测试和调试 |
+| `reset()` | 清空缓存和错误状态 | 无 | 无 | 可让 decoder 从 error 状态恢复 |
+| `setError()` | 内部函数，设置错误并清空缓存 | 错误信息 | 无 | 私有函数，外部不能直接调用 |
+
+注意：`FrameDecoder` 的输入是已经从 socket 读出来的字节。它自己不拥有 fd，也不决定连接是否关闭；后续 `Session` 会根据 `hasError()` 决定是否关闭连接。
 
 ## 4. 核心实现逻辑
 
@@ -316,6 +350,24 @@ tutorials/README.md
 9. `body_len` 超过 1MB。
 10. error 后 `reset()` 恢复。
 
+这些测试的大概思路：
+
+- 完整包测试：验证正常数据能被解析成一个 `Packet`，并且 Header 和 Body 字段一致。
+- 空 Body 测试：验证 `body_len = 0` 时也能解析，心跳包后续会用到这种情况。
+- Header 半包测试：只输入不足 16 字节，确认 decoder 不报错、不返回包，而是缓存起来。
+- Body 半包测试：输入完整 Header 和部分 Body，确认 decoder 等待剩余 Body。
+- 粘包测试：一次输入两个完整包，确认 `feed()` 能返回两个 `Packet`。
+- 分次 feed 测试：第一次输入半包，第二次补齐，确认内部 buffer 能跨调用保存状态。
+- 半包 + 粘包混合测试：模拟更真实的 TCP 读入边界，确认已完整的包能先返回，未完整的包继续缓存。
+- 错误包测试：手动破坏 magic 或 body_len，确认 decoder 进入 error 状态。
+- reset 测试：确认 error 后可以通过 `reset()` 清空状态，便于测试和未来复用。
+
+测试通过说明：
+
+```text
+FrameDecoder 已经能处理 TCP 字节流中最核心的边界问题：半包、粘包、混合场景和非法 Header。
+```
+
 ## 11. 编译和测试
 
 在 `LiteIM/` 根目录执行：
@@ -356,6 +408,46 @@ ctest --test-dir build --output-on-failure
 - 为什么不能假设一次 `read()` 就是一条完整消息。
 - 为什么错误 Header 后不继续猜测边界。
 - 为什么 FrameDecoder 不直接操作 socket。
+
+### 12.1 讲解思路
+
+面试时建议按这个顺序讲：
+
+1. 先说明 TCP 的问题：`read()` 读到的是字节，不是消息。
+2. 再说明协议基础：Step 2 已经定义了 16 字节 Header 和 `body_len`。
+3. 再说明 decoder 的核心：内部维护 `buffer_`，每次 `feed()` 都追加新字节并循环解析。
+4. 再说明三种场景：半包继续缓存，粘包循环解析，非法 Header 进入 error。
+5. 最后说明职责边界：`FrameDecoder` 不操作 socket，后续 `Session` 负责读写和连接关闭。
+
+### 12.2 面试中容易被问到的问题
+
+**Q1：为什么 `feed()` 返回 `vector<Packet>`，不是单个 Packet？**
+
+因为一次 `read()` 可能读到多个完整包。如果只返回一个，剩余完整包要等下一次事件才处理，会增加延迟。
+
+**Q2：半包为什么不算错误？**
+
+半包是 TCP 正常现象。只要 Header 或 Body 还没收齐，就继续缓存等待下一次 `feed()`。
+
+**Q3：Header 已经 16 字节但 magic 错了，为什么算错误？**
+
+因为这说明当前字节流不符合 LiteIM 协议。第一版没有做复杂的重同步，直接让上层关闭连接更简单可靠。
+
+**Q4：为什么错误后不继续扫描下一个 magic？**
+
+扫描 magic 会引入复杂的协议恢复逻辑，也可能误判 Body 中的数据。第一版项目重点是清晰可靠，非法连接直接断开。
+
+**Q5：`FrameDecoder` 和 `Buffer` 有什么区别？**
+
+`FrameDecoder` 是协议层缓冲，理解 Header 和 Body；`Buffer` 是网络层通用字节容器，不理解协议。
+
+**Q6：为什么 `FrameDecoder` 不直接 `read(fd)`？**
+
+这是职责解耦。socket 读写属于 `Session`，事件触发属于 `Channel/EventLoop`，协议解析属于 `FrameDecoder`。
+
+**Q7：`body_len` 如果特别大会怎么样？**
+
+`parseHeader()` 会限制最大 1MB，超过就失败，`FrameDecoder` 进入 error 状态，避免服务端缓存过大数据。
 
 ## 13. 下一步预告
 

@@ -4,6 +4,7 @@
 
 - Root project memory lives at `/home/yolo/jianli/PROJECT_MEMORY.md`.
 - Step workflow: concept first, code second, tests third, git commit last.
+- Each Step must explain the test section: what the new tests verify, why those cases matter, and how to run them.
 - `docs/` should primarily use Chinese explanations.
 - Current LiteIM Step 4 commit message should be `feat(net): add buffer abstraction`.
 
@@ -23,3 +24,16 @@
 - `Buffer::retrieve(len)` clears the whole buffer when `len >= readableBytes()`.
 - `Buffer::append(nullptr, 0)` is allowed as a no-op; `append(nullptr, nonzero)` throws `std::invalid_argument`.
 - Step 4 introduces `liteim_net` as a separate static library for network-layer components.
+
+## Testing Explanation Requirement
+
+- Future Step tutorials and final responses must include a short testing explanation.
+- The testing explanation should cover test files, test purpose, normal cases, edge/error cases, commands, and what passing tests prove.
+- Do not only list `ctest`; explain why the tests exist.
+
+## Tutorial Depth Requirement
+
+- Future `tutorials/stepXX_*.md` files must explain each new public function/interface in that Step.
+- Function explanations should include purpose, inputs, outputs, side effects, and edge/error behavior.
+- The interview section should explain the Step's design idea, not only provide a short quote.
+- Each Step should include common interview follow-up questions with short answers.
