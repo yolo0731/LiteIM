@@ -92,3 +92,45 @@ TcpServer 组合 Acceptor 和 Session
 ```
 
 这一步先把底层系统调用封装起来，后续 `Acceptor` 和 `Session` 就不用到处直接写 `socket()`、`fcntl()`、`setsockopt()`、`close()`。
+
+## Step 6：Reactor 核心接口
+
+Step 6 已经定义网络层 Reactor 的三个核心接口：
+
+- `Epoller`
+- `Channel`
+- `EventLoop`
+
+这一步只定义头文件，不实现具体逻辑。这样做是为了先把网络层职责边界拆清楚，避免一开始就把 `epoll_wait()`、fd 状态、回调分发和事件循环全部写在一个类里。
+
+三者的关系：
+
+```text
+EventLoop
+  ├── owns Epoller
+  ├── loop() 调用 Epoller::poll()
+  └── 遍历活跃事件，交给 Channel::handleEvent()
+
+Epoller
+  ├── owns epoll fd
+  ├── updateChannel() / removeChannel()
+  └── poll() 返回活跃事件列表
+
+Channel
+  ├── 绑定一个 fd
+  ├── 保存关注事件 events
+  ├── 保存实际发生事件 revents
+  └── 根据 revents 调用 read/write/close/error callback
+```
+
+职责边界：
+
+- `EventLoop` 是事件循环入口，负责“等事件”和“分发事件”的主流程。
+- `Epoller` 是 `epoll` 系统调用的封装层，负责和 Linux 内核交互。
+- `Channel` 是 fd 的事件代理，负责把内核事件转成 C++ 回调。
+
+当前还没有实现 `.cpp`，因此不会真正创建 `epoll` fd，也不会调用 `epoll_wait()`。具体实现会放到后续步骤：
+
+- Step 7：实现 `Epoller`。
+- Step 8：实现 `EventLoop`。
+- Step 9：实现 `Channel` 并打通事件分发。

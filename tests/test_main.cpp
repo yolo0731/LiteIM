@@ -6,6 +6,7 @@ std::vector<liteim::tests::TestCase> protocolTests();
 std::vector<liteim::tests::TestCase> frameDecoderTests();
 std::vector<liteim::tests::TestCase> bufferTests();
 std::vector<liteim::tests::TestCase> socketUtilTests();
+std::vector<liteim::tests::TestCase> reactorInterfaceTests();
 
 int main() {
     std::vector<liteim::tests::TestCase> tests;
@@ -21,6 +22,9 @@ int main() {
 
     const auto socket_util_tests = socketUtilTests();
     tests.insert(tests.end(), socket_util_tests.begin(), socket_util_tests.end());
+
+    const auto reactor_interface_tests = reactorInterfaceTests();
+    tests.insert(tests.end(), reactor_interface_tests.begin(), reactor_interface_tests.end());
 
     return liteim::tests::runTests(tests);
 }

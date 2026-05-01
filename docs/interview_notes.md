@@ -76,3 +76,44 @@
 - 为什么 `accept()` 得到的新连接 fd 也要设置非阻塞？
 - `SO_ERROR` 有什么用？
 - 为什么不在业务代码里直接调用 `socket()` / `fcntl()`？
+
+## Reactor 核心接口
+
+面试时可以这样说：
+
+> 我没有把 `epoll_wait()`、fd 状态和业务回调都堆在一个 server 类里，而是先拆成 `EventLoop`、`Epoller`、`Channel` 三层。`Epoller` 只负责封装 Linux `epoll`，`Channel` 负责描述一个 fd 关注什么事件以及事件发生后执行什么回调，`EventLoop` 负责循环等待事件并分发给对应的 `Channel`。这样网络层职责更清楚，后续实现 `Acceptor` 和 `Session` 时也能复用同一个事件分发机制。
+
+为什么 Step 6 只定义接口：
+
+- Reactor 这几个类之间天然有依赖关系。
+- `EventLoop` 持有 `Epoller`。
+- `Epoller` 需要操作 `Channel`。
+- `Channel` 又需要通过 `EventLoop` 更新 epoll 关注事件。
+- 先定义接口能把类之间的依赖方向固定下来，避免后续边写边改导致循环 include 或职责混乱。
+
+为什么要有 `Channel`：
+
+- epoll 返回的是 fd 上发生了什么事件。
+- C++ 服务端真正需要的是“这个 fd 可读时调用哪个函数、可写时调用哪个函数、关闭时怎么清理”。
+- `Channel` 就是 fd 到回调的桥梁。
+
+为什么 `Channel` 不拥有 fd：
+
+- fd 生命周期后续由 `Acceptor` 或 `Session` 管理。
+- `Channel` 只是事件代理，不负责关闭连接。
+- 这样能避免多个对象同时认为自己拥有同一个 fd，减少重复 close 的风险。
+
+为什么 `Epoller` 不直接处理业务：
+
+- `Epoller` 是系统调用封装层，只知道 fd、events、`epoll_ctl()`、`epoll_wait()`。
+- 登录、私聊、群聊这些业务应该在 `MessageRouter` / service 层处理。
+- 网络事件和业务语义分开，代码更容易测试和替换。
+
+常见追问：
+
+- `EventLoop`、`Epoller`、`Channel` 分别负责什么？
+- 为什么不用一个类直接写完所有 epoll 逻辑？
+- `Channel` 为什么只保存 fd 和回调，而不保存用户信息？
+- 为什么第一版用 LT 模式，不一开始用 ET？
+- `events` 和 `revents` 有什么区别？
+- `updateChannel()` 应该由谁调用，为什么不是业务层直接调用 `epoll_ctl()`？

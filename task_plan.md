@@ -2,28 +2,31 @@
 
 ## Goal
 
-Continue LiteIM as a step-by-step teaching project. Current active task is Step 5: implement Linux socket utility functions.
+Continue LiteIM as a step-by-step teaching project. Current active task is Step 6: define Reactor core header interfaces.
 
 ## Current Phase
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Check memory and repo state | complete | Read `/home/yolo/jianli/PROJECT_MEMORY.md`; repo is clean except untracked `.codex`. |
-| Explain SocketUtil concepts | complete | SocketUtil wraps Linux socket/fcntl/setsockopt/getsockopt/close helpers. |
-| Implement SocketUtil and tests | complete | Added `server/net/SocketUtil.*` and `tests/test_socket_util.cpp`. |
-| Update docs and tutorial | complete | Added Chinese Step 5 tutorial and docs/interview notes. |
-| Build, test, commit | complete | Final CMake build, CTest, direct tests, and server run passed. |
+| Check memory and repo state | complete | Read `/home/yolo/jianli/PROJECT_MEMORY.md`; repo has user-modified `tutorials/step05_socket_util.md` and untracked `.codex`. |
+| Explain Reactor interface concepts | complete | Step 6 defines interfaces only: `Epoller`, `Channel`, and `EventLoop`. |
+| Implement headers and compile tests | complete | Added three header declarations and an interface-only test that avoids constructing undefined classes. |
+| Update docs and tutorial | complete | Added Chinese Step 6 docs, tutorial, and README progress. |
+| Build, test, commit | complete | CMake build, CTest, direct test executable, server smoke run, diff check, and Step 6-only commit preparation completed. |
 
-## Step 5 Scope
+## Step 6 Scope
 
-Implement `server/net/SocketUtil` with:
+Define Reactor core interfaces:
 
-- `createNonBlockingSocket()`
-- `setNonBlocking(int fd)`
-- `setReuseAddr(int fd)`
-- `setReusePort(int fd)`
-- `closeFd(int fd)`
-- `getSocketError(int fd)`
+- `server/net/Epoller.hpp`
+- `server/net/Channel.hpp`
+- `server/net/EventLoop.hpp`
+
+This Step only declares responsibilities and dependencies. Implementations are left for later Steps:
+
+- Step 7 implements `Epoller`.
+- Step 8 implements `EventLoop`.
+- Step 9 implements `Channel` and connects callbacks to `EventLoop`.
 
 ## Persistent Requirements
 
@@ -40,7 +43,9 @@ Implement `server/net/SocketUtil` with:
 - Do not implement epoll.
 - Do not implement `Session`.
 - Do not modify protocol behavior except tests integration if needed.
+- Do not instantiate undefined Reactor classes in tests; use compile-time interface checks.
 - Do not commit unrelated `.codex` changes.
+- Do not stage the existing user modification in `tutorials/step05_socket_util.md`.
 
 ## Errors Encountered
 

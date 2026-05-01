@@ -88,3 +88,31 @@
   - `./build/tests/liteim_tests`
   - `./build/server/liteim_server`
 - Direct test output includes expected invalid-fd errno logs from failure-path tests.
+
+## 2026-05-01 Step 6 Session
+
+- Started Step 6: define Reactor core interfaces.
+- Using `planning-with-files` because this is a multi-file implementation step.
+- Ran `session-catchup.py`; it reported previous explanatory-only messages, with no code changes to merge.
+- Read `/home/yolo/jianli/PROJECT_MEMORY.md`, `task_plan.md`, `findings.md`, and recent `progress.md`.
+- Checked repository status: existing user modification in `tutorials/step05_socket_util.md` and untracked `.codex`.
+- Planned to avoid staging the Step 5 tutorial user edit and `.codex`.
+- Confirmed current build/test layout:
+  - `liteim_net` contains `Buffer.cpp` and `SocketUtil.cpp`.
+  - `liteim_tests` uses the project-local lightweight test framework.
+- Step 6 design decision: define only `Epoller.hpp`, `Channel.hpp`, and `EventLoop.hpp`; tests will use compile-time/interface checks without constructing classes whose methods are not implemented yet.
+- Added `server/net/Epoller.hpp`, `server/net/Channel.hpp`, and `server/net/EventLoop.hpp`.
+- Added `tests/test_reactor_interfaces.cpp`.
+- Updated `tests/CMakeLists.txt` and `tests/test_main.cpp` to include the new interface tests.
+- Ran `cmake -S . -B build`.
+- Ran `cmake --build build`; build passed.
+- Updated `docs/architecture.md` with Reactor interface architecture notes.
+- Updated `docs/interview_notes.md` with Reactor interface interview notes.
+- Added `tutorials/step06_reactor_interfaces.md`.
+- Updated `tutorials/README.md` to mark Step 6 complete.
+- Ran `ctest --test-dir build --output-on-failure`; tests passed.
+- Ran `./build/tests/liteim_tests`; all tests passed, including three Reactor interface tests.
+- Ran `./build/server/liteim_server`; smoke run printed startup message.
+- Ran `git diff --check`; no whitespace errors.
+- Reviewed Step 6 diff.
+- Preparing to commit only Step 6 files; leaving `tutorials/step05_socket_util.md` and `.codex` unstaged.

@@ -35,6 +35,16 @@
 - `getSocketError()` should wrap `getsockopt(SO_ERROR)`.
 - System call failures should print `errno` and a readable error message.
 
+## Step 6 Design Notes
+
+- Step 6 only defines the Reactor core header interfaces. Do not implement epoll operations or callback dispatch yet.
+- `Epoller` should own the future `epoll` fd and expose `updateChannel()`, `removeChannel()`, and `poll()`.
+- `Channel` should bind one fd to its interested events, returned events, and callbacks. It should not own the fd.
+- `EventLoop` should own an `Epoller` and expose `loop()`, `quit()`, `updateChannel()`, and `removeChannel()`.
+- Use forward declarations between `EventLoop`, `Epoller`, and `Channel` to avoid header include cycles.
+- Because methods are declared but not implemented in Step 6, tests must not construct these classes or call methods requiring definitions.
+- Interface tests should include all three headers together, use type traits/static assertions, and verify event constants. Passing this test proves the headers are self-consistent and ready for later implementation.
+
 ## Testing Explanation Requirement
 
 - Future Step tutorials and final responses must include a short testing explanation.
