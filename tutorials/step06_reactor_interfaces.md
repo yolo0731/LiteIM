@@ -877,3 +877,36 @@ Reactor 是一种事件驱动网络模型。程序用一个事件循环等待多
 ```text
 feat(net): define reactor core interfaces
 ```
+
+## 12. 下一步预告
+
+下一步是 Step 7：实现 `Epoller`。
+
+Step 6 只定义了 `Epoller` 的接口：
+
+```cpp
+std::vector<ActiveEvent> poll(int timeout_ms);
+void updateChannel(Channel* channel);
+void removeChannel(Channel* channel);
+```
+
+Step 7 会把这些接口真正实现出来，重点学习 Linux `epoll` 的三类核心操作：
+
+- `epoll_create1()`：创建 epoll 实例。
+- `epoll_ctl()`：添加、修改、删除 fd 关注事件。
+- `epoll_wait()`：等待活跃事件。
+
+Step 7 的验收目标：
+
+- `Epoller` 构造时创建 `epoll_fd_`。
+- `Epoller` 析构时关闭 `epoll_fd_`。
+- `updateChannel()` 能根据 fd 是否已注册选择 add 或 mod。
+- `removeChannel()` 能从 epoll 中删除 fd。
+- `poll()` 能返回活跃事件列表。
+- 测试覆盖 add、mod、del、poll timeout 和真实 fd 可读事件。
+
+你在学习 Step 7 前，需要先记住 Step 6 的一句话：
+
+> `Epoller` 只负责和 Linux 内核的 epoll 机制交互，不处理业务、不解析协议、不管理用户状态。
+
+这样 Step 7 写代码时就不会把 epoll 封装层写成业务层。

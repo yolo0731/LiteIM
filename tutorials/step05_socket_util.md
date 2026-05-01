@@ -139,7 +139,7 @@ bool setReuseAddr(int fd);
 
 作用：
 
-- 对 socket 设置 `SO_REUSEADDR`。
+- 对 socket 设置 `SO_REUSEADDR`。 // 地址复用
 
 它主要用于服务端监听 socket。开发时服务端反复重启，如果端口还处于某些状态，`SO_REUSEADDR` 能减少 bind 失败的概率。
 
@@ -153,7 +153,7 @@ bool setReusePort(int fd);
 
 作用：
 
-- 对 socket 设置 `SO_REUSEPORT`。
+- 对 socket 设置 `SO_REUSEPORT`。 // 端口复用
 
 第一版 LiteIM 不做多进程监听同一端口，但这个选项在 Linux 服务端里很常见，后续可以用于多进程或多实例负载分摊。
 
