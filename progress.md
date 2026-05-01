@@ -145,3 +145,34 @@
 - Ran `./build/tests/liteim_tests`; all tests passed.
 - Ran `./build/server/liteim_server`; smoke run printed startup message.
 - Ran `git diff --check`; no whitespace errors.
+
+## 2026-05-01 Step 7 Session
+
+- Started Step 7: implement `Epoller`.
+- Using `planning-with-files` because this is a multi-file implementation step.
+- Ran `session-catchup.py`; it only reported previous explanatory-only messages and no code changes to merge.
+- Checked Git status: tracked worktree was clean before Step 7 edits.
+- Read `task_plan.md`, `findings.md`, `progress.md`, `tutorials/00_roadmap.md`, `/home/yolo/jianli/PROJECT_MEMORY.md`, Reactor headers, CMake files, and existing tests.
+- Confirmed the active Step 7 definition is `Epoller` from the current project memory and plan; `tutorials/00_roadmap.md` has stale Step 6-9 wording that should be corrected during documentation updates.
+- Step 7 implementation boundary: implement `Epoller` RAII, add/mod/del, and `poll()` using LT mode only.
+- Step 7 may add minimal `Channel` state methods needed for `Epoller` tests, but callback dispatch and EventLoop integration remain later steps.
+- Added `src/net/Epoller.cpp` with RAII epoll fd ownership, `poll()`, `updateChannel()`, and `removeChannel()`.
+- Added `src/net/Channel.cpp` with fd/event/revent state methods, event mask mutators, and callback setters; `handleEvent()` and automatic `EventLoop` updates remain unimplemented for later steps.
+- Updated `src/CMakeLists.txt` to compile `Channel.cpp` and `Epoller.cpp` into `liteim_net`.
+- Added `tests/test_epoller.cpp`.
+- Updated `tests/CMakeLists.txt` and `tests/test_main.cpp` to register Epoller tests.
+- Ran `cmake -S . -B build`; configure passed.
+- Ran `cmake --build build`; build passed.
+- Ran `ctest --test-dir build --output-on-failure`; tests passed.
+- Ran `./build/tests/liteim_tests`; all tests passed, including six Epoller tests.
+- Added `tutorials/step07_epoller.md`.
+- Updated `docs/architecture.md`, `docs/interview_notes.md`, `docs/project_layout.md`, `tutorials/README.md`, `tutorials/00_roadmap.md`, and `README.md` for Step 7.
+- Final verification passed:
+  - `cmake -S . -B build`
+  - `cmake --build build`
+  - `ctest --test-dir build --output-on-failure`
+  - `./build/tests/liteim_tests`
+  - `./build/server/liteim_server`
+  - `git diff --check`
+- No `.clang-format`, `.clang-tidy`, or `.cmake-format` config exists in the repo yet, so no separate formatter/linter command was available.
+- Reviewed the Step 7 code and documentation diff before commit.

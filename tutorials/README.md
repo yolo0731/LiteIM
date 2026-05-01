@@ -41,3 +41,4 @@
 | Step 4 Buffer | 已完成 | 网络输入/输出缓冲区 |
 | Step 5 SocketUtil | 已完成 | Linux socket 工具函数 |
 | Step 6 Reactor 接口 | 已完成 | EventLoop、Epoller、Channel 职责拆分 |
+| Step 7 Epoller | 已完成 | epoll_create1、epoll_ctl、epoll_wait、LT 模式 |

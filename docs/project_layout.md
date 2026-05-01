@@ -22,6 +22,8 @@ LiteIM/
 │   ├── CMakeLists.txt
 │   ├── net/
 │   │   ├── Buffer.cpp
+│   │   ├── Channel.cpp
+│   │   ├── Epoller.cpp
 │   │   └── SocketUtil.cpp
 │   └── protocol/
 │       ├── FrameDecoder.cpp
@@ -61,6 +63,8 @@ LiteIM/
 #include "liteim/net/Buffer.hpp"
 #include "liteim/net/SocketUtil.hpp"
 #include "liteim/net/Epoller.hpp"
+#include "liteim/net/Channel.hpp"
+#include "liteim/net/EventLoop.hpp"
 ```
 
 不要再使用旧写法：
@@ -148,9 +152,9 @@ src/timer/
 
 ## 和后续 Step 的关系
 
-这次目录重构不改变功能，不实现新的网络行为。
+这次目录重构本身不改变功能。后续 Step 会继续在这个布局下补网络行为。
 
-后续 Step 7 实现 `Epoller` 时，应放置为：
+Step 7 已经实现 `Epoller`，放置为：
 
 ```text
 include/liteim/net/Epoller.hpp
@@ -170,5 +174,7 @@ Step 9 实现 `Channel`：
 include/liteim/net/Channel.hpp
 src/net/Channel.cpp
 ```
+
+注意：Step 7 已经在 `src/net/Channel.cpp` 中补了少量 `Channel` 状态方法，用于支撑 `Epoller` 测试；完整的事件分发仍然留给后续 Channel Step。
 
 每一步仍然要遵守：只实现当前 Step，编译通过，测试通过，文档同步更新。

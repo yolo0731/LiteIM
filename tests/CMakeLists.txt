@@ -1,5 +1,6 @@
 add_executable(liteim_tests
     test_buffer.cpp
+    test_epoller.cpp
     test_frame_decoder.cpp
     test_main.cpp
     test_protocol.cpp

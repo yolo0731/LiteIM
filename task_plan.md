@@ -2,41 +2,43 @@
 
 ## Goal
 
-Continue LiteIM as a step-by-step teaching project. Current active task is project layout refactor before Step 7.
+Continue LiteIM as a step-by-step teaching project. Current active task is Step 7: implement the `Epoller` wrapper.
 
 ## Current Phase
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Check memory and repo state | complete | Read project memory, AGENTS, current CMake, include usage, and Git status. |
-| Decide mature layout | complete | Use `include/liteim/...` for headers and `src/...` for library implementation; keep `server/main.cpp` as app entry. |
-| Move files and update build/includes | complete | Moved protocol/net headers to `include/liteim`, sources to `src`, and updated CMake/include directives. |
-| Update docs and project guidance | complete | Updated README, docs, tutorials path references, AGENTS.md, and `/home/yolo/jianli/PROJECT_MEMORY.md`. |
-| Build, test, review | complete | CMake configure/build, CTest, direct tests, server smoke run, and whitespace check passed. |
+| Check memory and repo state | complete | Read project memory, current planning files, roadmap, Reactor headers, CMake, tests, and Git status. |
+| Record Step 7 design | complete | Implement `Epoller` RAII, add/mod/del, and `poll()` with LT mode only. |
+| Implement code | complete | Added `src/net/Epoller.cpp`; added minimal `Channel` state methods needed to test `Epoller`. |
+| Add tests | complete | Added behavior tests using `pipe()` to verify add, mod, del, timeout, invalid input, and LT behavior. |
+| Update docs and tutorials | complete | Added Step 7 tutorial and updated architecture, interview notes, project layout, tutorial index, README, and stale roadmap wording. |
+| Build, test, review, commit | complete | Configure, build, CTest, direct tests, server smoke run, whitespace check, and diff review passed. |
 
-## Layout Refactor Scope
+## Step 7 Scope
 
-Move current C++ library code to a more mature layout:
+Implement the first real Reactor component:
 
-- Public/internal headers: `include/liteim/<module>/*.hpp`
-- Library implementation: `src/<module>/*.cpp`
-- Server executable entry: `server/main.cpp`
-- Tests: `tests/*.cpp`
-- Documentation: `docs/*.md`, `tutorials/*.md`
+- `Epoller()` calls `epoll_create1(EPOLL_CLOEXEC)`.
+- `~Epoller()` closes the owned epoll fd.
+- `updateChannel(Channel*)` calls `EPOLL_CTL_ADD` for new fds and `EPOLL_CTL_MOD` for existing fds.
+- `removeChannel(Channel*)` calls `EPOLL_CTL_DEL` and forgets the fd.
+- `poll(timeout_ms)` calls `epoll_wait()` and returns active `Channel*` plus event flags.
+- First version uses default LT behavior and must not set `EPOLLET`.
 
-This refactor must not change runtime behavior or implement Step 7 logic.
+`Epoller` does not own `Channel` objects. It only stores pointers in `epoll_event.data.ptr` and assumes higher layers keep the `Channel` alive while registered.
 
-## New Include Convention
+## Minimal Channel Support
 
-Use fully qualified project includes:
+Step 7 may add only simple `Channel` definitions required to exercise `Epoller`:
 
-- `#include "liteim/protocol/Packet.hpp"`
-- `#include "liteim/protocol/FrameDecoder.hpp"`
-- `#include "liteim/net/Buffer.hpp"`
-- `#include "liteim/net/SocketUtil.hpp"`
-- `#include "liteim/net/Epoller.hpp"`
-- `#include "liteim/net/Channel.hpp"`
-- `#include "liteim/net/EventLoop.hpp"`
+- constructor/destructor
+- `fd()`, `events()`, `revents()`, `setRevents()`
+- `isNoneEvent()`, `isWriting()`
+- event mask mutators such as `enableReading()`, `enableWriting()`, `disableWriting()`, and `disableAll()`
+- callback setters
+
+`handleEvent()` callback dispatch and automatic `EventLoop` updates remain later-step work.
 
 ## Persistent Requirements
 
@@ -49,11 +51,11 @@ Use fully qualified project includes:
 
 ## Out of Scope
 
-- Do not implement Step 7 `Epoller` logic yet.
+- Do not implement `EventLoop::loop()` yet.
+- Do not implement `Channel::handleEvent()` callback dispatch yet.
 - Do not implement bind/listen/accept server flow.
 - Do not implement `Session`.
 - Do not modify protocol behavior except tests integration if needed.
-- Do not instantiate undefined Reactor classes in tests; use compile-time interface checks.
 - Do not commit unrelated `.codex` changes.
 
 ## Errors Encountered

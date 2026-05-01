@@ -56,6 +56,19 @@
 - Keep behavior unchanged: no Step 7 epoll implementation, no new networking runtime behavior.
 - Documentation must be updated with the new structure because stale path docs hurt teaching and interview review.
 
+## Step 7 Design Notes
+
+- The current authoritative Step 7 is `Epoller`, based on `/home/yolo/jianli/PROJECT_MEMORY.md` and the active `task_plan.md`.
+- `tutorials/00_roadmap.md` still has older wording that maps Step 6 to `Epoller` and Step 7 to `Channel`; update it during Step 7 documentation so it matches the actual completed Step 6 interface split.
+- `Epoller` owns only the `epoll` fd. It does not own `Channel` objects or socket fds.
+- Store `Channel*` in `epoll_event.data.ptr`, because `EventLoop` will later dispatch events through `Channel` instead of raw fd-only state.
+- Use `epoll_create1(EPOLL_CLOEXEC)` so child processes do not inherit the epoll fd after future `exec`.
+- Use LT mode only. Do not add `EPOLLET` in `Epoller`; callers provide plain interested events such as `EPOLLIN` and `EPOLLOUT`.
+- `updateChannel()` should use `EPOLL_CTL_ADD` the first time a fd appears and `EPOLL_CTL_MOD` after that.
+- `removeChannel()` should erase registered fd state after `EPOLL_CTL_DEL`; repeated remove on an unknown fd should be a no-op.
+- `poll()` should handle `EINTR` by returning an empty active-event list, so future signal interruptions do not crash the event loop.
+- Step 7 needs minimal `Channel` state definitions to construct test channels and expose fd/event masks to `Epoller`; callback setters are simple state setters, while `handleEvent()` dispatch and automatic `EventLoop` updates remain later-step work.
+
 ## Testing Explanation Requirement
 
 - Future Step tutorials and final responses must include a short testing explanation.

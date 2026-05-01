@@ -8,12 +8,12 @@
 
 ## 总共分几个 Step
 
-完整规划建议分为 **35 个 Step**：
+完整规划建议分为 **39 个 Step**：
 
-- LiteIM：24 个 Step
+- LiteIM：28 个 Step
 - PersonaAgent：11 个 Step
 
-但你现在不要同时做两个项目。当前只需要专注 **LiteIM 的前 15 个 Step**，先跑通：
+但你现在不要同时做两个项目。当前只需要专注 **LiteIM 的前 17 个 Step**，先跑通：
 
 ```text
 epoll 服务端 + TLV 协议 + 登录 + 私聊
@@ -21,7 +21,7 @@ epoll 服务端 + TLV 协议 + 登录 + 私聊
 
 这个最小闭环跑通后，再继续群聊、历史消息、心跳、Qt 和 PersonaAgent。
 
-## 项目一 LiteIM：24 个 Step
+## 项目一 LiteIM：28 个 Step
 
 ### 第一阶段：C++ 服务端基础骨架
 
@@ -112,12 +112,28 @@ ctest --test-dir build --output-on-failure
 - 什么是非阻塞 I/O。
 - 为什么 epoll 服务端通常配合非阻塞 fd。
 
-#### Step 6：实现 Epoller
+#### Step 6：定义 Epoller / Channel / EventLoop 头文件接口
+
+目标：
+
+- 先定义 `Epoller`
+- 先定义 `Channel`
+- 先定义 `EventLoop`
+- 不实现复杂逻辑
+- 固定 Reactor 三个核心类的职责边界
+
+你要学会：
+
+- Reactor 模型为什么要拆成多个类。
+- 如何用前向声明避免循环 include。
+- 为什么先定接口再填实现。
+
+#### Step 7：实现 Epoller
 
 目标：
 
 - 封装 `epoll_create1`
-- 封装 `epoll_ctl`
+- 封装 `epoll_ctl add/mod/del`
 - 封装 `epoll_wait`
 - 第一版只使用 LT 模式。
 
@@ -127,32 +143,38 @@ ctest --test-dir build --output-on-failure
 - LT 和 ET 的区别。
 - 为什么第一版先使用 LT。
 
-#### Step 7：实现 Channel
-
-目标：
-
-- 用 `Channel` 封装 fd 和事件回调。
-- 支持读、写、关闭、错误回调。
-
-你要学会：
-
-- Reactor 模型里 Channel 的职责。
-- 为什么 Channel 不直接拥有业务逻辑。
-
-#### Step 8：实现 EventLoop
+#### Step 8：实现 EventLoop 基础骨架
 
 目标：
 
 - 持有 `Epoller`
-- 循环调用 `epoll_wait`
-- 分发活跃事件到 `Channel`
+- `loop()` 中调用 `epoll_wait`
+- 遍历活跃 `Channel`
+- 支持 `quit()`
+- 支持 `updateChannel()` 和 `removeChannel()`
 
 你要学会：
 
 - 什么是事件循环。
 - 一个线程如何管理多个连接。
+- 为什么退出事件循环需要明确的状态位。
 
-#### Step 9：实现 Acceptor
+#### Step 9：实现 Channel 并联通 EventLoop
+
+目标：
+
+- 用 `Channel` 封装 fd 和事件回调。
+- 支持读、写、关闭、错误回调。
+- `handleEvent()` 根据 `revents` 分发回调。
+- `enableReading()` 等接口通过 `EventLoop` 更新 epoll 关注事件。
+
+你要学会：
+
+- Reactor 模型里 Channel 的职责。
+- 为什么 Channel 不直接拥有业务逻辑。
+- `events` 和 `revents` 的区别。
+
+#### Step 10：实现 Acceptor
 
 目标：
 
@@ -167,7 +189,7 @@ ctest --test-dir build --output-on-failure
 - 服务端启动监听端口的完整流程。
 - 为什么 accept 也要循环到 EAGAIN。
 
-#### Step 10：实现 Session
+#### Step 11：实现 Session
 
 目标：
 
@@ -182,20 +204,22 @@ ctest --test-dir build --output-on-failure
 - 连接生命周期如何管理。
 - 输出缓冲区如何处理短写。
 
-#### Step 11：实现 TcpServer
+#### Step 12：实现 TcpServer
 
 目标：
 
 - 组合 `EventLoop`、`Acceptor`、`Session`。
 - 管理所有在线连接。
 - 支持新连接创建和关闭清理。
+- 支持 Ctrl+C / SIGTERM 优雅退出。
 
 你要学会：
 
 - 为什么需要一个总控对象管理连接集合。
 - `unordered_map<int, shared_ptr<Session>>` 的意义。
+- 为什么 socket、timerfd、signalfd 都可以统一交给 epoll。
 
-#### Step 12：实现 MessageRouter 和心跳响应
+#### Step 13：实现 MessageRouter 和心跳响应
 
 目标：
 
@@ -210,27 +234,41 @@ ctest --test-dir build --output-on-failure
 
 ### 第二阶段：账号、消息和存储
 
-#### Step 13：接入 SQLite
+#### Step 14：定义 IStorage / ICache 抽象
+
+目标：
+
+- 定义业务层依赖的存储接口。
+- 定义缓存接口。
+- 实现 `NullCache`。
+
+你要学会：
+
+- 为什么业务层不应该直接依赖 SQLite。
+- 为什么先定义接口再落地数据库实现。
+
+#### Step 15：实现 SQLiteStorage + NullCache
 
 目标：
 
 - 打开 `liteim.db`
 - 启动时执行 `sql/init.sql`
 - 创建用户、群组、消息表。
+- 实现用户、好友、群组、消息相关存储接口。
 
 你要学会：
 
 - 为什么 IM 系统需要持久化。
 - 数据库访问层为什么要单独封装。
 
-#### Step 14：实现用户注册和登录
+#### Step 16：实现用户注册和登录
 
 目标：
 
-- 实现 `UserRepository`
 - 实现 `AuthService`
 - 支持 `REGISTER_REQ`
 - 支持 `LOGIN_REQ`
+- 使用 salt + SHA256 保存密码摘要。
 - 登录成功后绑定 Session 用户身份。
 
 你要学会：
@@ -238,7 +276,7 @@ ctest --test-dir build --output-on-failure
 - 连接 Session 和用户身份的关系。
 - 为什么密码哈希需要说明“非生产级”。
 
-#### Step 15：实现私聊
+#### Step 17：实现私聊
 
 目标：
 
@@ -252,7 +290,7 @@ ctest --test-dir build --output-on-failure
 - IM 私聊的核心数据流。
 - 在线状态和消息存储如何配合。
 
-#### Step 16：实现群聊
+#### Step 18：实现群聊
 
 目标：
 
@@ -266,7 +304,7 @@ ctest --test-dir build --output-on-failure
 - 群聊和私聊路由的区别。
 - 为什么群成员查询要走 Repository。
 
-#### Step 17：实现历史消息查询
+#### Step 19：实现历史消息查询
 
 目标：
 
@@ -280,7 +318,7 @@ ctest --test-dir build --output-on-failure
 
 ### 第三阶段：连接稳定性和验证工具
 
-#### Step 18：实现 TimerHeap 和心跳清理
+#### Step 20：实现 TimerHeap 和心跳清理
 
 目标：
 
@@ -294,7 +332,7 @@ ctest --test-dir build --output-on-failure
 - 为什么不用每个连接一个线程或一个 timer。
 - 什么是 lazy deletion。
 
-#### Step 19：实现命令行测试客户端
+#### Step 21：实现命令行测试客户端
 
 目标：
 
@@ -311,7 +349,7 @@ ctest --test-dir build --output-on-failure
 
 ### 第四阶段：Qt 客户端
 
-#### Step 20：实现 Qt 登录窗口
+#### Step 22：实现 Qt 登录窗口
 
 目标：
 
@@ -321,7 +359,7 @@ ctest --test-dir build --output-on-failure
 - 注册按钮
 - 使用 `QTcpSocket` 发送 TLV 包。
 
-#### Step 21：实现 Qt 主窗口和聊天窗口
+#### Step 23：实现 Qt 主窗口和聊天窗口
 
 目标：
 
@@ -330,7 +368,7 @@ ctest --test-dir build --output-on-failure
 - 发送私聊和群聊。
 - 接收 push 并刷新 UI。
 
-#### Step 22：实现 Qt 心跳
+#### Step 24：实现 Qt 心跳
 
 目标：
 
@@ -338,15 +376,36 @@ ctest --test-dir build --output-on-failure
 - 每 30 秒发送心跳。
 - 断线后 UI 提示。
 
-### 第五阶段：测试和文档
+### 第五阶段：测试、压测和文档
 
-#### Step 23：补齐协议测试
+#### Step 25：补齐协议、定时器和存储抽象测试
 
 目标：
 
-- 覆盖正常包、空 body、错误 magic、错误 version、超大 body、半包、粘包、混合场景。
+- 覆盖 Packet 编解码。
+- 覆盖 FrameDecoder 半包、粘包和错误包。
+- 覆盖 TimerHeap 超时。
+- 覆盖 MessageRouter 心跳分发。
+- 用 `InMemoryStorage` / `StorageMock` 验证业务层只依赖 `IStorage` 抽象。
 
-#### Step 24：补齐 README 和 docs
+#### Step 26：编写压测脚本
+
+目标：
+
+- 实现 `tools/benchmark.py`。
+- 使用 asyncio 创建多个 TCP 客户端。
+- 统计 QPS、平均延迟和错误率。
+- README 里只写真实测出来的数据。
+
+#### Step 27：部署文档和可选云服务器部署
+
+目标：
+
+- 编写 `docs/deploy.md`。
+- 写清楚 Linux 编译方式、运行方式、systemd service 示例、端口开放和日志路径。
+- 云服务器部署可选，本地可复现优先。
+
+#### Step 28：补齐 README 和 docs
 
 目标：
 
@@ -407,9 +466,8 @@ BotClient 收到消息后调用 AgentService，并把回复发回聊天室。
 建议顺序：
 
 1. 先完成 LiteIM Step 1 到 Step 3：工程、协议、拆包。
-2. 再完成 LiteIM Step 4 到 Step 12：epoll Reactor 和心跳响应。
-3. 再完成 LiteIM Step 13 到 Step 15：SQLite、登录、私聊。
+2. 再完成 LiteIM Step 4 到 Step 13：epoll Reactor 和心跳响应。
+3. 再完成 LiteIM Step 14 到 Step 17：存储接口、SQLite、登录、私聊。
 4. 到这里已经有一个可以讲的 C++ 服务端 MVP。
-5. 然后再继续群聊、历史消息、心跳、Qt。
+5. 然后再继续群聊、历史消息、心跳、Qt、测试、压测和部署文档。
 6. 最后再做 PersonaAgent。
-

@@ -135,3 +135,44 @@
 - 为什么第一版用 LT 模式，不一开始用 ET？
 - `events` 和 `revents` 有什么区别？
 - `updateChannel()` 应该由谁调用，为什么不是业务层直接调用 `epoll_ctl()`？
+
+## Epoller epoll 封装
+
+面试时可以这样说：
+
+> 我把 Linux `epoll` 封装成了 `Epoller`。它只负责 `epoll_create1()`、`epoll_ctl()` 和 `epoll_wait()`，不处理业务消息，也不拥有普通 socket fd。每个 fd 的事件状态由 `Channel` 表示，注册 epoll 时把 `Channel*` 放进 `epoll_event.data.ptr`，这样事件返回后可以直接交给对应 `Channel`。第一版使用 LT 模式，先保证读写循环和连接生命周期正确，再考虑 ET 优化。
+
+为什么 `Epoller` 用 RAII：
+
+- `epoll_create1()` 返回的是操作系统 fd。
+- fd 必须关闭，否则会造成资源泄漏。
+- 把 `epoll_fd_` 绑定到 `Epoller` 对象生命周期后，构造成功就拥有资源，析构时自动释放。
+
+为什么 `Epoller` 不关闭普通 socket fd：
+
+- `Epoller` 只拥有 epoll fd。
+- 客户端连接 fd 以后由 `Session` 管理。
+- listen fd 以后由 `Acceptor` 管理。
+- 明确所有权可以避免重复 close 或提前关闭。
+
+为什么 `event.data.ptr` 保存 `Channel*`：
+
+- epoll 本身只关心 fd 和事件位。
+- C++ 事件分发需要找到 fd 对应的回调。
+- `Channel` 正好保存 fd、关注事件、实际事件和回调。
+- 保存 `Channel*` 后，`EventLoop` 不需要额外维护 fd 到 Channel 的查找表。
+
+为什么第一版用 LT 模式：
+
+- LT 是状态触发，只要 fd 仍然可读或可写，就会继续报告。
+- 教学项目先保证行为容易理解、测试稳定。
+- ET 要求每次读写都循环到 `EAGAIN`，否则可能漏事件。
+- 等 `Session` 的非阻塞读写和输出缓冲区稳定后，再讨论 ET 更合适。
+
+常见追问：
+
+- `epoll_create1(EPOLL_CLOEXEC)` 的作用是什么？
+- `EPOLL_CTL_ADD` 和 `EPOLL_CTL_MOD` 怎么区分？
+- 为什么要有 `registered_fds_`？
+- `EINTR` 发生时 `poll()` 应该怎么办？
+- `Epoller` 返回 `Channel*` 会不会有悬空指针风险？怎么避免？

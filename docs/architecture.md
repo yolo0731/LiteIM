@@ -172,8 +172,47 @@ Channel
 - `Epoller` 是 `epoll` 系统调用的封装层，负责和 Linux 内核交互。
 - `Channel` 是 fd 的事件代理，负责把内核事件转成 C++ 回调。
 
-当前还没有实现 `.cpp`，因此不会真正创建 `epoll` fd，也不会调用 `epoll_wait()`。具体实现会放到后续步骤：
+Step 6 刚完成时还没有实现 `.cpp`，因此当时不会真正创建 `epoll` fd，也不会调用 `epoll_wait()`。具体实现按下面步骤继续推进：
 
 - Step 7：实现 `Epoller`。
 - Step 8：实现 `EventLoop`。
 - Step 9：实现 `Channel` 并打通事件分发。
+
+## Step 7：Epoller epoll 封装
+
+Step 7 已经实现 `Epoller`：
+
+- 头文件：`include/liteim/net/Epoller.hpp`
+- 实现文件：`src/net/Epoller.cpp`
+
+`Epoller` 是 Linux `epoll` 的薄封装层。
+
+它的职责：
+
+- 在构造函数中调用 `epoll_create1(EPOLL_CLOEXEC)` 创建 epoll fd。
+- 在析构函数中关闭自己拥有的 epoll fd。
+- 用 `updateChannel()` 封装 `EPOLL_CTL_ADD` 和 `EPOLL_CTL_MOD`。
+- 用 `removeChannel()` 封装 `EPOLL_CTL_DEL`。
+- 用 `poll()` 封装 `epoll_wait()`，返回活跃 `Channel` 和事件位。
+
+它不负责：
+
+- 不拥有普通 socket fd。
+- 不关闭客户端连接 fd。
+- 不调用业务回调。
+- 不解析协议包。
+- 不管理 `Session` 生命周期。
+
+`Epoller` 把 `Channel*` 保存到 `epoll_event.data.ptr`。这样内核返回事件后，网络层可以直接拿到对应的 `Channel`，而不是只拿到 fd 数字再额外查表。
+
+当前实现使用 LT 模式，不设置 `EPOLLET`。原因是第一版更重视正确性和可解释性：LT 模式下，只要 fd 仍然可读，下一轮 `epoll_wait()` 还会继续报告，后续接入 `Session` 的读写循环时更容易避免漏读。
+
+Step 7 也补充了 `Channel` 的基础状态方法：
+
+- 保存 fd。
+- 保存关注事件 `events_`。
+- 保存实际返回事件 `revents_`。
+- 支持打开/关闭读写关注事件。
+- 支持保存事件回调。
+
+但 `Channel::handleEvent()` 的回调分发，以及 `Channel` 通过 `EventLoop` 自动更新 epoll 的逻辑还没有实现，会放到后续 Step。
