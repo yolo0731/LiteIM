@@ -6,8 +6,8 @@
 - Read `SKILL.md` and ran `session-catchup.py` for the LiteIM project.
 - Checked repository status: current branch is ahead of origin by 1 commit; `.codex` is untracked and unrelated.
 - Started Step 4 implementation.
-- Drafted `server/net/Buffer.hpp`.
-- Drafted `server/net/Buffer.cpp`.
+- Drafted `include/liteim/net/Buffer.hpp`.
+- Drafted `src/net/Buffer.cpp`.
 - Drafted `tests/test_buffer.cpp`.
 - Updated CMake files to add `liteim_net` and link it into tests/server.
 - Updated `tests/test_main.cpp` to include `bufferTests()`.
@@ -72,8 +72,8 @@
 - Checked repository status: clean except untracked `.codex`.
 - Updated `task_plan.md` for Step 5.
 - Recorded Step 5 design notes in `findings.md`.
-- Implemented `server/net/SocketUtil.hpp`.
-- Implemented `server/net/SocketUtil.cpp`.
+- Implemented `include/liteim/net/SocketUtil.hpp`.
+- Implemented `src/net/SocketUtil.cpp`.
 - Added `tests/test_socket_util.cpp`.
 - Updated `server/CMakeLists.txt`, `tests/CMakeLists.txt`, and `tests/test_main.cpp`.
 - Ran initial build and tests successfully.
@@ -101,7 +101,7 @@
   - `liteim_net` contains `Buffer.cpp` and `SocketUtil.cpp`.
   - `liteim_tests` uses the project-local lightweight test framework.
 - Step 6 design decision: define only `Epoller.hpp`, `Channel.hpp`, and `EventLoop.hpp`; tests will use compile-time/interface checks without constructing classes whose methods are not implemented yet.
-- Added `server/net/Epoller.hpp`, `server/net/Channel.hpp`, and `server/net/EventLoop.hpp`.
+- Added `include/liteim/net/Epoller.hpp`, `include/liteim/net/Channel.hpp`, and `include/liteim/net/EventLoop.hpp`.
 - Added `tests/test_reactor_interfaces.cpp`.
 - Updated `tests/CMakeLists.txt` and `tests/test_main.cpp` to include the new interface tests.
 - Ran `cmake -S . -B build`.
@@ -116,3 +116,32 @@
 - Ran `git diff --check`; no whitespace errors.
 - Reviewed Step 6 diff.
 - Preparing to commit only Step 6 files; leaving `tutorials/step05_socket_util.md` and `.codex` unstaged.
+
+## 2026-05-01 Layout Refactor Session
+
+- Started project layout refactor before Step 7.
+- User requested a more mature folder structure and asked to keep docs, `AGENTS.md`, and `PROJECT_MEMORY.md` updated.
+- Read planning-with-files instructions and ran `session-catchup.py`.
+- Checked Git status: tracked tree clean; only untracked `.codex` exists.
+- Inspected current CMake files, include directives, README, docs, AGENTS, and project memory.
+- Chosen layout:
+  - `include/liteim/...` for headers.
+  - `src/...` for library implementation.
+  - `server/main.cpp` for executable entry.
+  - `tests/` for tests.
+- This is a layout-only refactor; Step 7 `Epoller` behavior will not be implemented here.
+- Moved protocol headers to `include/liteim/protocol/`.
+- Moved net headers to `include/liteim/net/`.
+- Moved protocol implementation files to `src/protocol/`.
+- Moved net implementation files to `src/net/`.
+- Added `src/CMakeLists.txt` for `liteim_protocol` and `liteim_net`.
+- Updated source/test include directives to use `liteim/...`.
+- Updated README, docs, AGENTS.md, PROJECT_MEMORY.md, and path references in tutorials.
+- Added `docs/project_layout.md`.
+- Added `.codex` to `.gitignore` so the local empty tool file does not keep appearing in Git status.
+- Ran `cmake -S . -B build`; configure passed.
+- Ran `cmake --build build`; build passed after include/src refactor.
+- Ran `ctest --test-dir build --output-on-failure`; tests passed.
+- Ran `./build/tests/liteim_tests`; all tests passed.
+- Ran `./build/server/liteim_server`; smoke run printed startup message.
+- Ran `git diff --check`; no whitespace errors.

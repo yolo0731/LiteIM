@@ -16,9 +16,49 @@
 - 说明模块之间如何依赖。
 - 说明为什么网络层、协议层、业务层和存储层要解耦。
 
+## 当前工程目录分层
+
+LiteIM 当前采用 `include/` 和 `src/` 分离的 C++ 项目结构：
+
+```text
+include/liteim/
+  ├── net/
+  └── protocol/
+
+src/
+  ├── net/
+  └── protocol/
+
+server/
+  └── main.cpp
+```
+
+目录职责：
+
+- `include/liteim/...`：头文件和模块接口。
+- `src/...`：库实现文件。
+- `server/`：服务端可执行程序入口。
+- `tests/`：单元测试和接口测试。
+- `docs/`：架构、协议、数据库、面试讲解等中文文档。
+- `tutorials/`：每个 Step 的教学文档。
+
+项目内 include 统一使用：
+
+```cpp
+#include "liteim/net/Buffer.hpp"
+#include "liteim/protocol/Packet.hpp"
+```
+
+不要再使用旧的 `net/Buffer.hpp` 或 `protocol/Packet.hpp` 写法。
+
+详细目录约定见 `docs/project_layout.md`。
+
 ## Step 4：Buffer 网络缓冲区
 
-Step 4 已经实现 `server/net/Buffer`。
+Step 4 已经实现 `Buffer`：
+
+- 头文件：`include/liteim/net/Buffer.hpp`
+- 实现文件：`src/net/Buffer.cpp`
 
 `Buffer` 属于网络层基础组件，后续会给 `Session` 的输入缓冲区和输出缓冲区使用。
 
@@ -60,7 +100,10 @@ output Buffer
 
 ## Step 5：SocketUtil socket 工具函数
 
-Step 5 已经实现 `server/net/SocketUtil`。
+Step 5 已经实现 `SocketUtil`：
+
+- 头文件：`include/liteim/net/SocketUtil.hpp`
+- 实现文件：`src/net/SocketUtil.cpp`
 
 `SocketUtil` 属于网络层底部工具模块，负责封装 Linux socket 常用系统调用。
 

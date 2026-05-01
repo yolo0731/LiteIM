@@ -31,9 +31,9 @@ Header 负责描述消息元信息，Body 保存具体业务数据。
 
 Step 2 已经实现协议基础结构：
 
-- `server/protocol/MessageType.hpp`
-- `server/protocol/Packet.hpp`
-- `server/protocol/Packet.cpp`
+- `include/liteim/protocol/MessageType.hpp`
+- `include/liteim/protocol/Packet.hpp`
+- `src/protocol/Packet.cpp`
 - `tests/test_protocol.cpp`
 
 当前协议常量：
@@ -127,8 +127,8 @@ enum class MsgType : std::uint16_t {
 
 Step 3 已经实现 `FrameDecoder`：
 
-- `server/protocol/FrameDecoder.hpp`
-- `server/protocol/FrameDecoder.cpp`
+- `include/liteim/protocol/FrameDecoder.hpp`
+- `src/protocol/FrameDecoder.cpp`
 - `tests/test_frame_decoder.cpp`
 
 `FrameDecoder` 的职责是从 TCP 字节流中切出完整的 `Packet`。

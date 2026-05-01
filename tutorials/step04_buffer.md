@@ -75,8 +75,8 @@ send(fd, data, 1000, 0)
 ## 3. 本步骤新增文件
 
 ```text
-server/net/Buffer.hpp
-server/net/Buffer.cpp
+include/liteim/net/Buffer.hpp
+src/net/Buffer.cpp
 tests/test_buffer.cpp
 tutorials/step04_buffer.md
 ```
@@ -102,7 +102,7 @@ progress.md
 文件：
 
 ```text
-server/net/Buffer.hpp
+include/liteim/net/Buffer.hpp
 ```
 
 接口：
@@ -373,7 +373,7 @@ ctest --test-dir build --output-on-failure
 Step 5 会实现：
 
 ```text
-server/net/SocketUtil.hpp
+include/liteim/net/SocketUtil.hpp
 ```
 
 它会封装 Linux socket 常用函数：

@@ -1,8 +1,8 @@
 #include "TestUtil.hpp"
 
-#include "protocol/FrameDecoder.hpp"
-#include "protocol/MessageType.hpp"
-#include "protocol/Packet.hpp"
+#include "liteim/protocol/FrameDecoder.hpp"
+#include "liteim/protocol/MessageType.hpp"
+#include "liteim/protocol/Packet.hpp"
 
 #include <arpa/inet.h>
 

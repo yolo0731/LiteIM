@@ -54,9 +54,9 @@ Channel 需要通知 EventLoop 更新关注事件
 新增文件：
 
 ```text
-server/net/Epoller.hpp
-server/net/Channel.hpp
-server/net/EventLoop.hpp
+include/liteim/net/Epoller.hpp
+include/liteim/net/Channel.hpp
+include/liteim/net/EventLoop.hpp
 tests/test_reactor_interfaces.cpp
 tutorials/step06_reactor_interfaces.md
 ```
@@ -79,7 +79,7 @@ progress.md
 文件：
 
 ```text
-server/net/Epoller.hpp
+include/liteim/net/Epoller.hpp
 ```
 
 `Epoller` 是 Linux `epoll` 的 C++ 封装层。
@@ -242,7 +242,7 @@ void removeChannel(Channel* channel);
 文件：
 
 ```text
-server/net/Channel.hpp
+include/liteim/net/Channel.hpp
 ```
 
 `Channel` 是一个 fd 的事件代理。
@@ -612,7 +612,7 @@ void update();
 文件：
 
 ```text
-server/net/EventLoop.hpp
+include/liteim/net/EventLoop.hpp
 ```
 
 `EventLoop` 是 Reactor 的事件循环入口。

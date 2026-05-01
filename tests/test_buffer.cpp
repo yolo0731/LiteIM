@@ -1,6 +1,6 @@
 #include "TestUtil.hpp"
 
-#include "net/Buffer.hpp"
+#include "liteim/net/Buffer.hpp"
 
 #include <cstring>
 #include <stdexcept>

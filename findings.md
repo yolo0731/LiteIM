@@ -16,7 +16,7 @@
 
 ## Step 4 Design Notes
 
-- `Buffer` belongs to `server/net/`, not `server/protocol/`.
+- `Buffer` belongs to the net module: header in `include/liteim/net/`, implementation in `src/net/`.
 - `Buffer` is a generic byte container for future `Session` input and output buffers.
 - `Buffer` must not call `read()`, `write()`, or know about `Packet`.
 - `FrameDecoder` may keep its own internal protocol buffer for now; Step 4 does not refactor it.
@@ -27,7 +27,7 @@
 
 ## Step 5 Design Notes
 
-- `SocketUtil` belongs to `server/net/` and should be part of `liteim_net`.
+- `SocketUtil` belongs to the net module and should be part of `liteim_net`.
 - `SocketUtil` only wraps low-level Linux socket helpers; it must not implement `Acceptor`, `Session`, or epoll.
 - `createNonBlockingSocket()` should create an IPv4 TCP socket with nonblocking behavior.
 - `setNonBlocking()` should use `fcntl()` so it can also be applied to accepted connection fds later.
@@ -44,6 +44,17 @@
 - Use forward declarations between `EventLoop`, `Epoller`, and `Channel` to avoid header include cycles.
 - Because methods are declared but not implemented in Step 6, tests must not construct these classes or call methods requiring definitions.
 - Interface tests should include all three headers together, use type traits/static assertions, and verify event constants. Passing this test proves the headers are self-consistent and ready for later implementation.
+
+## Layout Refactor Design Notes
+
+- Mature C++ projects commonly separate headers from implementation:
+  - `include/liteim/...` exposes include paths used by other targets.
+  - `src/...` contains `.cpp` implementation files for libraries.
+  - `server/main.cpp` remains the executable entry point.
+- Use project-qualified include paths such as `liteim/net/Buffer.hpp` instead of `net/Buffer.hpp`.
+- Build libraries from `src/CMakeLists.txt` and link them from `server` and `tests`.
+- Keep behavior unchanged: no Step 7 epoll implementation, no new networking runtime behavior.
+- Documentation must be updated with the new structure because stale path docs hurt teaching and interview review.
 
 ## Testing Explanation Requirement
 

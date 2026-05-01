@@ -14,6 +14,7 @@ option(LITEIM_BUILD_QT_CLIENT "Build the Qt Widgets client" OFF)
 
 enable_testing()
 
+add_subdirectory(src)
 add_subdirectory(server)
 add_subdirectory(tests)
 add_subdirectory(client_qt)

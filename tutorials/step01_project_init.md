@@ -799,9 +799,9 @@ git status --short
 Step 2 会开始写协议基础：
 
 ```text
-server/protocol/MessageType.hpp
-server/protocol/Packet.hpp
-server/protocol/Packet.cpp
+include/liteim/protocol/MessageType.hpp
+include/liteim/protocol/Packet.hpp
+src/protocol/Packet.cpp
 tests/test_protocol.cpp
 ```
 

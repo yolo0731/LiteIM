@@ -60,8 +60,8 @@ close()
 ## 3. 本步骤新增文件
 
 ```text
-server/net/SocketUtil.hpp
-server/net/SocketUtil.cpp
+include/liteim/net/SocketUtil.hpp
+src/net/SocketUtil.cpp
 tests/test_socket_util.cpp
 tutorials/step05_socket_util.md
 ```
@@ -85,7 +85,7 @@ progress.md
 文件：
 
 ```text
-server/net/SocketUtil.hpp
+include/liteim/net/SocketUtil.hpp
 ```
 
 这一层只暴露函数声明，不暴露系统调用细节。
@@ -197,7 +197,7 @@ int getSocketError(int fd);
 文件：
 
 ```text
-server/net/SocketUtil.cpp
+src/net/SocketUtil.cpp
 ```
 
 ### printSyscallError()
@@ -451,9 +451,9 @@ ctest --test-dir build --output-on-failure
 Step 6 会定义：
 
 ```text
-server/net/Epoller.hpp
-server/net/Channel.hpp
-server/net/EventLoop.hpp
+include/liteim/net/Epoller.hpp
+include/liteim/net/Channel.hpp
+include/liteim/net/EventLoop.hpp
 ```
 
 Step 6 只定义 Reactor 核心接口，先不实现复杂逻辑，目的是提前理清 `Epoller`、`Channel`、`EventLoop` 之间的依赖关系。

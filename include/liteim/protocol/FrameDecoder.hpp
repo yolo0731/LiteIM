@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Packet.hpp"
+#include "liteim/protocol/Packet.hpp"
 
 #include <cstddef>
 #include <string>

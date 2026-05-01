@@ -2,7 +2,7 @@
 
 LiteIM is a C++17 instant messaging project for internship preparation. The server will use Linux socket, non-blocking I/O and epoll to implement a simplified Reactor model. The desktop client will use Qt Widgets and QTcpSocket. The protocol will use a fixed-size TLV-style header plus JSON body to handle TCP sticky packets and partial packets.
 
-Before continuing development, read `PROJECT_MEMORY.md` for the current project goals, Step rules and teaching workflow.
+When developing in the `/home/yolo/jianli` workspace, also read `../PROJECT_MEMORY.md` for the current project goals, Step rules and teaching workflow.
 
 The first milestone is the server MVP:
 
@@ -36,6 +36,26 @@ Boost.Asio is intentionally not used. The server networking layer will be implem
 LiteIM/
 ├── CMakeLists.txt
 ├── README.md
+├── include/
+│   └── liteim/
+│       ├── net/
+│       │   ├── Buffer.hpp
+│       │   ├── Channel.hpp
+│       │   ├── Epoller.hpp
+│       │   ├── EventLoop.hpp
+│       │   └── SocketUtil.hpp
+│       └── protocol/
+│           ├── FrameDecoder.hpp
+│           ├── MessageType.hpp
+│           └── Packet.hpp
+├── src/
+│   ├── CMakeLists.txt
+│   ├── net/
+│   │   ├── Buffer.cpp
+│   │   └── SocketUtil.cpp
+│   └── protocol/
+│       ├── FrameDecoder.cpp
+│       └── Packet.cpp
 ├── docs/
 ├── server/
 │   ├── CMakeLists.txt
@@ -45,8 +65,20 @@ LiteIM/
 ├── sql/
 └── tests/
     ├── CMakeLists.txt
-    └── test_smoke.cpp
+    ├── TestUtil.hpp
+    ├── test_protocol.cpp
+    ├── test_frame_decoder.cpp
+    ├── test_buffer.cpp
+    ├── test_socket_util.cpp
+    └── test_reactor_interfaces.cpp
 ```
+
+Headers and implementation files are intentionally separated:
+
+- `include/liteim/...` contains headers used by other targets.
+- `src/...` contains library implementation files.
+- `server/main.cpp` is only the server executable entry point.
+- Tests include project headers through paths such as `liteim/net/Buffer.hpp`.
 
 ## Build
 
@@ -71,6 +103,7 @@ LiteIM server starting...
 
 ```bash
 ctest --test-dir build --output-on-failure
+./build/tests/liteim_tests
 ```
 
-At this stage, the test target is only a build-chain placeholder. Real protocol tests will be added after `Packet` and `FrameDecoder` are implemented.
+Current tests cover Packet encoding/validation, TCP frame decoding, Buffer behavior, SocketUtil helpers, and Reactor interface declarations.

@@ -66,7 +66,7 @@ Packet B
 文件：
 
 ```text
-server/protocol/FrameDecoder.hpp
+include/liteim/protocol/FrameDecoder.hpp
 ```
 
 核心接口：
@@ -143,7 +143,7 @@ invalid packet header
 文件：
 
 ```text
-server/protocol/FrameDecoder.cpp
+src/protocol/FrameDecoder.cpp
 ```
 
 核心流程：
@@ -347,8 +347,8 @@ body_len 超过 1MB
 ## 9. 本步骤新增文件
 
 ```text
-server/protocol/FrameDecoder.hpp
-server/protocol/FrameDecoder.cpp
+include/liteim/protocol/FrameDecoder.hpp
+src/protocol/FrameDecoder.cpp
 tests/TestUtil.hpp
 tests/test_main.cpp
 tests/test_frame_decoder.cpp
@@ -490,8 +490,8 @@ ctest --test-dir build --output-on-failure
 Step 4 会实现：
 
 ```text
-server/net/Buffer.hpp
-server/net/Buffer.cpp
+include/liteim/net/Buffer.hpp
+src/net/Buffer.cpp
 ```
 
 `Buffer` 是网络层输入缓冲区和输出缓冲区的基础组件。

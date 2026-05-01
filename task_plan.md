@@ -2,31 +2,41 @@
 
 ## Goal
 
-Continue LiteIM as a step-by-step teaching project. Current active task is Step 6: define Reactor core header interfaces.
+Continue LiteIM as a step-by-step teaching project. Current active task is project layout refactor before Step 7.
 
 ## Current Phase
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Check memory and repo state | complete | Read `/home/yolo/jianli/PROJECT_MEMORY.md`; repo has user-modified `tutorials/step05_socket_util.md` and untracked `.codex`. |
-| Explain Reactor interface concepts | complete | Step 6 defines interfaces only: `Epoller`, `Channel`, and `EventLoop`. |
-| Implement headers and compile tests | complete | Added three header declarations and an interface-only test that avoids constructing undefined classes. |
-| Update docs and tutorial | complete | Added Chinese Step 6 docs, tutorial, and README progress. |
-| Build, test, commit | complete | CMake build, CTest, direct test executable, server smoke run, diff check, and Step 6-only commit preparation completed. |
+| Check memory and repo state | complete | Read project memory, AGENTS, current CMake, include usage, and Git status. |
+| Decide mature layout | complete | Use `include/liteim/...` for headers and `src/...` for library implementation; keep `server/main.cpp` as app entry. |
+| Move files and update build/includes | complete | Moved protocol/net headers to `include/liteim`, sources to `src`, and updated CMake/include directives. |
+| Update docs and project guidance | complete | Updated README, docs, tutorials path references, AGENTS.md, and `/home/yolo/jianli/PROJECT_MEMORY.md`. |
+| Build, test, review | complete | CMake configure/build, CTest, direct tests, server smoke run, and whitespace check passed. |
 
-## Step 6 Scope
+## Layout Refactor Scope
 
-Define Reactor core interfaces:
+Move current C++ library code to a more mature layout:
 
-- `server/net/Epoller.hpp`
-- `server/net/Channel.hpp`
-- `server/net/EventLoop.hpp`
+- Public/internal headers: `include/liteim/<module>/*.hpp`
+- Library implementation: `src/<module>/*.cpp`
+- Server executable entry: `server/main.cpp`
+- Tests: `tests/*.cpp`
+- Documentation: `docs/*.md`, `tutorials/*.md`
 
-This Step only declares responsibilities and dependencies. Implementations are left for later Steps:
+This refactor must not change runtime behavior or implement Step 7 logic.
 
-- Step 7 implements `Epoller`.
-- Step 8 implements `EventLoop`.
-- Step 9 implements `Channel` and connects callbacks to `EventLoop`.
+## New Include Convention
+
+Use fully qualified project includes:
+
+- `#include "liteim/protocol/Packet.hpp"`
+- `#include "liteim/protocol/FrameDecoder.hpp"`
+- `#include "liteim/net/Buffer.hpp"`
+- `#include "liteim/net/SocketUtil.hpp"`
+- `#include "liteim/net/Epoller.hpp"`
+- `#include "liteim/net/Channel.hpp"`
+- `#include "liteim/net/EventLoop.hpp"`
 
 ## Persistent Requirements
 
@@ -39,13 +49,12 @@ This Step only declares responsibilities and dependencies. Implementations are l
 
 ## Out of Scope
 
+- Do not implement Step 7 `Epoller` logic yet.
 - Do not implement bind/listen/accept server flow.
-- Do not implement epoll.
 - Do not implement `Session`.
 - Do not modify protocol behavior except tests integration if needed.
 - Do not instantiate undefined Reactor classes in tests; use compile-time interface checks.
 - Do not commit unrelated `.codex` changes.
-- Do not stage the existing user modification in `tutorials/step05_socket_util.md`.
 
 ## Errors Encountered
 
