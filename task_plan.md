@@ -2,43 +2,61 @@
 
 ## Goal
 
-Continue LiteIM as a step-by-step teaching project. Current active task is Step 7: implement the `Epoller` wrapper.
+Continue LiteIM as a step-by-step teaching project. Current active task is Step 8: implement the `EventLoop` skeleton.
 
 ## Current Phase
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Check memory and repo state | complete | Read project memory, current planning files, roadmap, Reactor headers, CMake, tests, and Git status. |
-| Record Step 7 design | complete | Implement `Epoller` RAII, add/mod/del, and `poll()` with LT mode only. |
-| Implement code | complete | Added `src/net/Epoller.cpp`; added minimal `Channel` state methods needed to test `Epoller`. |
-| Add tests | complete | Added behavior tests using `pipe()` to verify add, mod, del, timeout, invalid input, and LT behavior. |
-| Update docs and tutorials | complete | Added Step 7 tutorial and updated architecture, interview notes, project layout, tutorial index, README, and stale roadmap wording. |
-| Build, test, review, commit | complete | Configure, build, CTest, direct tests, server smoke run, whitespace check, and diff review passed. |
+| Check memory and repo state | complete | Read project memory, memory index, planning files, Reactor headers/impl, CMake, tests, and Git status. |
+| Record Step 8 design | complete | Implement `EventLoop` as the Reactor scheduling layer while keeping automatic Channel-to-loop updates for Step 9. |
+| Implement code | complete | Added `src/net/EventLoop.cpp`; added the `Channel::handleEvent()` dispatch needed by `EventLoop::loop()`. |
+| Add tests | complete | Added EventLoop tests using `pipe()` to verify callback dispatch, quit, update, and remove behavior. |
+| Update docs and tutorials | complete | Added Step 8 tutorial and updated architecture, interview notes, tutorial index, README, and layout docs. |
+| Build, test, review, commit | complete | Configure, build, CTest, direct tests, server smoke run, and whitespace check passed; final diff review before commit. |
 
-## Step 7 Scope
+## Planning Hook Phase Status
 
-Implement the first real Reactor component:
+### Phase 1: Check memory and repo state
+**Status:** complete
 
-- `Epoller()` calls `epoll_create1(EPOLL_CLOEXEC)`.
-- `~Epoller()` closes the owned epoll fd.
-- `updateChannel(Channel*)` calls `EPOLL_CTL_ADD` for new fds and `EPOLL_CTL_MOD` for existing fds.
-- `removeChannel(Channel*)` calls `EPOLL_CTL_DEL` and forgets the fd.
-- `poll(timeout_ms)` calls `epoll_wait()` and returns active `Channel*` plus event flags.
-- First version uses default LT behavior and must not set `EPOLLET`.
+### Phase 2: Record Step 8 design
+**Status:** complete
 
-`Epoller` does not own `Channel` objects. It only stores pointers in `epoll_event.data.ptr` and assumes higher layers keep the `Channel` alive while registered.
+### Phase 3: Implement code
+**Status:** complete
 
-## Minimal Channel Support
+### Phase 4: Add tests
+**Status:** complete
 
-Step 7 may add only simple `Channel` definitions required to exercise `Epoller`:
+### Phase 5: Update docs and tutorials
+**Status:** complete
 
-- constructor/destructor
-- `fd()`, `events()`, `revents()`, `setRevents()`
-- `isNoneEvent()`, `isWriting()`
-- event mask mutators such as `enableReading()`, `enableWriting()`, `disableWriting()`, and `disableAll()`
-- callback setters
+### Phase 6: Build, test, review, commit
+**Status:** complete
 
-`handleEvent()` callback dispatch and automatic `EventLoop` updates remain later-step work.
+## Step 8 Scope
+
+Implement the Reactor scheduling layer:
+
+- `EventLoop()` owns an `Epoller`.
+- `loop()` repeatedly calls `Epoller::poll()`.
+- `loop()` iterates active `Channel` objects and calls `Channel::handleEvent()`.
+- `quit()` requests the loop to stop.
+- `updateChannel(Channel*)` forwards registration/modification to `Epoller`.
+- `removeChannel(Channel*)` forwards deletion to `Epoller`.
+
+`EventLoop` does not own `Channel` objects or socket fds. Future `Acceptor` and `Session` objects will own those lifetimes.
+
+## Minimal Channel Support For Step 8
+
+Step 8 may implement only the `Channel` behavior needed for `EventLoop::loop()` to be testable:
+
+- `Channel::handleEvent()` dispatches callbacks based on `revents_`.
+- Read/write/close/error callback storage was already added in Step 7.
+- `Channel::enableReading()`, `enableWriting()`, `disableWriting()`, and `disableAll()` still only mutate local event masks in Step 8.
+
+Automatic `Channel::update()` calls into `EventLoop` remain Step 9 work. Step 8 tests should manually call `loop.updateChannel(&channel)`.
 
 ## Persistent Requirements
 
@@ -51,8 +69,7 @@ Step 7 may add only simple `Channel` definitions required to exercise `Epoller`:
 
 ## Out of Scope
 
-- Do not implement `EventLoop::loop()` yet.
-- Do not implement `Channel::handleEvent()` callback dispatch yet.
+- Do not implement automatic `Channel::update()` integration yet.
 - Do not implement bind/listen/accept server flow.
 - Do not implement `Session`.
 - Do not modify protocol behavior except tests integration if needed.

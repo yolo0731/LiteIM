@@ -8,6 +8,7 @@ std::vector<liteim::tests::TestCase> bufferTests();
 std::vector<liteim::tests::TestCase> socketUtilTests();
 std::vector<liteim::tests::TestCase> reactorInterfaceTests();
 std::vector<liteim::tests::TestCase> epollerTests();
+std::vector<liteim::tests::TestCase> eventLoopTests();
 
 int main() {
     std::vector<liteim::tests::TestCase> tests;
@@ -29,6 +30,9 @@ int main() {
 
     const auto epoller_tests = epollerTests();
     tests.insert(tests.end(), epoller_tests.begin(), epoller_tests.end());
+
+    const auto event_loop_tests = eventLoopTests();
+    tests.insert(tests.end(), event_loop_tests.begin(), event_loop_tests.end());
 
     return liteim::tests::runTests(tests);
 }

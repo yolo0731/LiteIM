@@ -64,4 +64,30 @@ void Channel::setErrorCallback(EventCallback callback) {
     error_callback_ = std::move(callback);
 }
 
+void Channel::handleEvent() {
+    if ((revents_ & EPOLLHUP) != 0 && (revents_ & EPOLLIN) == 0) {
+        if (close_callback_) {
+            close_callback_();
+        }
+    }
+
+    if ((revents_ & EPOLLERR) != 0) {
+        if (error_callback_) {
+            error_callback_();
+        }
+    }
+
+    if ((revents_ & (EPOLLIN | EPOLLPRI | EPOLLRDHUP)) != 0) {
+        if (read_callback_) {
+            read_callback_();
+        }
+    }
+
+    if ((revents_ & EPOLLOUT) != 0) {
+        if (write_callback_) {
+            write_callback_();
+        }
+    }
+}
+
 }  // namespace liteim::net

@@ -176,3 +176,44 @@
 - 为什么要有 `registered_fds_`？
 - `EINTR` 发生时 `poll()` 应该怎么办？
 - `Epoller` 返回 `Channel*` 会不会有悬空指针风险？怎么避免？
+
+## EventLoop 事件循环
+
+面试时可以这样说：
+
+> 我把 Reactor 的调度层封装成了 `EventLoop`。它内部持有 `Epoller`，在 `loop()` 中不断调用 `epoll_wait()`，拿到活跃 `Channel` 后调用 `Channel::handleEvent()`。`EventLoop` 不直接读写 socket，也不解析业务协议，它只负责事件循环主流程。后续 `Acceptor`、`Session`、`timerfd`、`signalfd` 都可以作为 Channel 注册进同一个 EventLoop。
+
+为什么 `EventLoop` 不直接处理业务：
+
+- `EventLoop` 只关心 fd 事件调度。
+- 业务消息属于 `MessageRouter` / service 层。
+- TCP 连接读写属于 `Session`。
+- 这样网络调度、连接生命周期和业务逻辑不会混在一起。
+
+为什么 `quit()` 只设置标记：
+
+- 事件循环应该在当前回调执行完后有序退出。
+- 直接中断当前回调会让资源状态难以保证。
+- 退出标记由 `loop()` 在下一轮 while 条件检查时观察。
+
+为什么 `quit_` 用 `std::atomic_bool`：
+
+- 测试和未来关闭路径可能从回调或其他线程调用 `quit()`。
+- 普通 bool 跨线程读写会有数据竞争。
+- atomic stop flag 是一个低成本的安全边界。
+
+当前没有 wakeup fd 的限制：
+
+- `quit()` 不会主动唤醒阻塞中的 `epoll_wait()`。
+- 如果没有新事件，循环会等到 poll 超时后退出。
+- 后续可以加 `eventfd` 作为跨线程唤醒机制。
+- Step 12 会用 `signalfd` 把 Ctrl+C / SIGTERM 也纳入 epoll。
+
+常见追问：
+
+- `EventLoop` 为什么通常和线程绑定？
+- `quit()` 会不会打断正在执行的回调？
+- 为什么 EventLoop 不拥有 Channel？
+- 如果 Channel 被销毁前没有 remove，会发生什么？
+- 没有 wakeup fd 时，跨线程停止 EventLoop 有什么延迟？
+- Step 8 和 Step 9 的边界是什么？

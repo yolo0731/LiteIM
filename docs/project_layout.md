@@ -24,6 +24,7 @@ LiteIM/
 │   │   ├── Buffer.cpp
 │   │   ├── Channel.cpp
 │   │   ├── Epoller.cpp
+│   │   ├── EventLoop.cpp
 │   │   └── SocketUtil.cpp
 │   └── protocol/
 │       ├── FrameDecoder.cpp
@@ -161,7 +162,7 @@ include/liteim/net/Epoller.hpp
 src/net/Epoller.cpp
 ```
 
-Step 8 实现 `EventLoop`：
+Step 8 已经实现 `EventLoop`：
 
 ```text
 include/liteim/net/EventLoop.hpp
@@ -175,6 +176,6 @@ include/liteim/net/Channel.hpp
 src/net/Channel.cpp
 ```
 
-注意：Step 7 已经在 `src/net/Channel.cpp` 中补了少量 `Channel` 状态方法，用于支撑 `Epoller` 测试；完整的事件分发仍然留给后续 Channel Step。
+注意：Step 7 已经在 `src/net/Channel.cpp` 中补了少量 `Channel` 状态方法，用于支撑 `Epoller` 测试；Step 8 又补了 `Channel::handleEvent()` 的基础回调分发。`Channel::enableReading()` 自动通知 `EventLoop` 更新 epoll 的逻辑仍然留给 Step 9。
 
 每一步仍然要遵守：只实现当前 Step，编译通过，测试通过，文档同步更新。

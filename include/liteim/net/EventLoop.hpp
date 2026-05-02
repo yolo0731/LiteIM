@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 
 namespace liteim::net {
@@ -22,7 +23,7 @@ public:
     void removeChannel(Channel* channel);
 
 private:
-    bool quit_ = false;
+    std::atomic_bool quit_{false};
     std::unique_ptr<Epoller> epoller_;
 };
 

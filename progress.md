@@ -174,5 +174,35 @@
   - `./build/tests/liteim_tests`
   - `./build/server/liteim_server`
   - `git diff --check`
+- Added `### Phase` / `**Status:** complete` markers to `task_plan.md` so the planning-with-files completion hook can parse the completed Step 8 phases.
 - No `.clang-format`, `.clang-tidy`, or `.cmake-format` config exists in the repo yet, so no separate formatter/linter command was available.
 - Reviewed the Step 7 code and documentation diff before commit.
+
+## 2026-05-02 Step 8 Session
+
+- Started Step 8: implement `EventLoop` skeleton.
+- Using `planning-with-files` because this is a multi-file implementation step.
+- Ran `session-catchup.py`; it only reported old explanatory-only messages and no code changes to merge.
+- Checked Git status: tracked worktree was clean before Step 8 edits.
+- Read the planning skill, memory index, `/home/yolo/jianli/PROJECT_MEMORY.md`, current planning files, Reactor headers/implementations, CMake, and existing tests.
+- Confirmed Step 8 scope: `EventLoop` owns `Epoller`, `loop()` polls active channels, calls `Channel::handleEvent()`, and supports `quit()`, `updateChannel()`, and `removeChannel()`.
+- Step 8 boundary: implement basic `Channel::handleEvent()` dispatch so `EventLoop::loop()` is testable, but leave automatic `Channel::update()` integration for Step 9.
+- Added `src/net/EventLoop.cpp` with `EventLoop` ownership of `Epoller`, `loop()`, `quit()`, `updateChannel()`, and `removeChannel()`.
+- Updated `include/liteim/net/EventLoop.hpp` to use `std::atomic_bool` for the quit flag.
+- Updated `src/net/Channel.cpp` with basic `handleEvent()` callback dispatch for read/write/close/error events.
+- Updated `src/CMakeLists.txt` to compile `EventLoop.cpp` into `liteim_net`.
+- Added `tests/test_event_loop.cpp`.
+- Updated `tests/CMakeLists.txt` and `tests/test_main.cpp` to register EventLoop tests.
+- Ran `cmake -S . -B build`; configure passed.
+- Ran `cmake --build build`; build passed.
+- Ran `ctest --test-dir build --output-on-failure`; tests passed.
+- Ran `./build/tests/liteim_tests`; all tests passed, including five EventLoop tests.
+- Added `tutorials/step08_event_loop.md`.
+- Updated `README.md`, `docs/architecture.md`, `docs/interview_notes.md`, `docs/project_layout.md`, and `tutorials/README.md` for Step 8.
+- Final verification passed:
+  - `cmake -S . -B build`
+  - `cmake --build build`
+  - `ctest --test-dir build --output-on-failure`
+  - `./build/tests/liteim_tests`
+  - `./build/server/liteim_server`
+  - `git diff --check`

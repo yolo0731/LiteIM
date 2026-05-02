@@ -215,4 +215,43 @@ Step 7 也补充了 `Channel` 的基础状态方法：
 - 支持打开/关闭读写关注事件。
 - 支持保存事件回调。
 
-但 `Channel::handleEvent()` 的回调分发，以及 `Channel` 通过 `EventLoop` 自动更新 epoll 的逻辑还没有实现，会放到后续 Step。
+Step 8 已经补充 `Channel::handleEvent()` 的基础回调分发；`Channel` 通过 `EventLoop` 自动更新 epoll 的逻辑还没有实现，会放到 Step 9。
+
+## Step 8：EventLoop 事件循环骨架
+
+Step 8 已经实现 `EventLoop`：
+
+- 头文件：`include/liteim/net/EventLoop.hpp`
+- 实现文件：`src/net/EventLoop.cpp`
+
+`EventLoop` 是 Reactor 的调度层。
+
+它的职责：
+
+- 持有一个 `Epoller`。
+- 在 `loop()` 中反复调用 `Epoller::poll()`。
+- 遍历活跃事件。
+- 调用对应 `Channel::handleEvent()`。
+- 通过 `quit()` 请求退出循环。
+- 通过 `updateChannel()` / `removeChannel()` 转发 epoll 注册和删除操作。
+
+它不负责：
+
+- 不拥有普通 socket fd。
+- 不拥有 `Channel`。
+- 不直接执行 `read()` 或 `write()`。
+- 不解析协议。
+- 不处理登录、私聊、群聊等业务。
+
+当前 `quit_` 使用 `std::atomic_bool`。这样测试和未来跨线程关闭路径不会对普通 bool 产生数据竞争。
+
+当前还没有 wakeup fd，因此如果其他线程调用 `quit()` 时 `epoll_wait()` 正在阻塞，循环会在下一次 fd 事件到来或 poll 超时后退出。后续可以通过 `eventfd` 或 `signalfd` 让退出事件也变成 epoll 管理的 fd 事件。
+
+Step 8 也实现了 `Channel::handleEvent()` 的基础分发：
+
+- `EPOLLHUP` 且没有 `EPOLLIN` 时调用关闭回调。
+- `EPOLLERR` 时调用错误回调。
+- `EPOLLIN` / `EPOLLPRI` / `EPOLLRDHUP` 时调用读回调。
+- `EPOLLOUT` 时调用写回调。
+
+注意：当前 `Channel::enableReading()` 只修改本地事件掩码，不会自动调用 `EventLoop::updateChannel()`。Step 8 中需要手动调用 `loop.updateChannel(&channel)`；Step 9 会补上 Channel 到 EventLoop 的自动联通。

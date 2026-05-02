@@ -69,6 +69,17 @@
 - `poll()` should handle `EINTR` by returning an empty active-event list, so future signal interruptions do not crash the event loop.
 - Step 7 needs minimal `Channel` state definitions to construct test channels and expose fd/event masks to `Epoller`; callback setters are simple state setters, while `handleEvent()` dispatch and automatic `EventLoop` updates remain later-step work.
 
+## Step 8 Design Notes
+
+- The authoritative Step 8 is `EventLoop` skeleton from `/home/yolo/jianli/PROJECT_MEMORY.md`.
+- `EventLoop` is the Reactor scheduling layer: it owns `Epoller`, polls active events, and asks each active `Channel` to handle its event.
+- `EventLoop` does not own `Channel` objects or socket fds. Later `Acceptor` and `Session` objects will own their channels/fds and unregister before destruction.
+- `quit()` should be safe to call from a callback while `loop()` is running. Use an atomic stop flag so tests and future cross-thread shutdown paths do not introduce a data race.
+- `quit()` does not add a wakeup fd in Step 8. If another thread calls `quit()` while `epoll_wait()` is blocked, the loop exits after the next event or timeout. A future `eventfd`/`signalfd` wakeup can improve this.
+- `Channel::handleEvent()` needs a concrete callback dispatch implementation in Step 8 because `EventLoop::loop()` calls it and tests should verify read callbacks can stop the loop.
+- Keep Step 9 meaningful by not wiring `Channel::enableReading()` / `enableWriting()` to automatically call `EventLoop::updateChannel()` yet. Step 8 uses explicit `loop.updateChannel(&channel)`.
+- EventLoop tests should use `pipe()` as a real fd source, matching Step 7 Epoller tests, so they verify actual `epoll_wait()` integration rather than only in-memory state.
+
 ## Testing Explanation Requirement
 
 - Future Step tutorials and final responses must include a short testing explanation.

@@ -17,6 +17,7 @@ add_library(liteim_net
     net/Buffer.cpp
     net/Channel.cpp
     net/Epoller.cpp
+    net/EventLoop.cpp
     net/SocketUtil.cpp
 )
 
