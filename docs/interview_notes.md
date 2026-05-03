@@ -249,3 +249,41 @@
 - `Channel` 销毁前忘记 remove 会有什么风险？
 - `EPOLLHUP` 和 `EPOLLERR` 分别怎么处理？
 - 为什么低层 `Epoller` 测试里可以构造没有 `EventLoop` 的 `Channel`？
+
+## Acceptor 非阻塞监听器
+
+面试时可以这样说：
+
+> 我把服务端监听 socket 封装成 `Acceptor`。它负责创建非阻塞 listen fd，设置端口复用选项，完成 `bind()` / `listen()`，然后把 listen fd 注册成一个 `Channel`。当 listen fd 可读时，说明有新连接到来，`Acceptor` 会循环 `accept4()` 直到 `EAGAIN`，并通过 callback 把 accepted fd 交给上层。
+
+为什么 listen fd 也用 `Channel`：
+
+- listen socket 和普通连接 socket 都是 fd。
+- 新连接到来时，listen fd 会变成可读。
+- 把它纳入 `EventLoop` 后，监听、连接读写、timerfd、signalfd 后续都能统一调度。
+
+为什么 accept 要循环到 `EAGAIN`：
+
+- 一个可读事件可能对应多个排队连接。
+- 如果只 accept 一个，剩余连接还留在内核队列里。
+- 循环到 `EAGAIN` 表示本轮已经把可接受连接取干净。
+
+为什么用 `accept4(SOCK_NONBLOCK | SOCK_CLOEXEC)`：
+
+- accepted fd 必须是非阻塞，后续 `Session` 才能配合 epoll 工作。
+- `SOCK_CLOEXEC` 避免未来 `exec()` 子进程继承连接 fd。
+- 一次系统调用完成 accept 和 fd 属性设置，减少中间状态。
+
+为什么 `Acceptor` 不创建 `Session`：
+
+- `Acceptor` 只负责“接新连接”。
+- `Session` 负责“管理单个连接的读写和生命周期”。
+- `TcpServer` 后续负责组合两者，维护 session 容器。
+
+常见追问：
+
+- `bind()`、`listen()`、`accept()` 分别做什么？
+- 为什么 listen fd 可读表示有新连接？
+- 为什么 accepted fd 也必须非阻塞？
+- `SO_REUSEADDR` 和 `SO_REUSEPORT` 的作用是什么？
+- callback 收到 fd 后，所有权应该由谁负责？

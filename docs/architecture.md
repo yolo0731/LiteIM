@@ -177,6 +177,7 @@ Step 6 刚完成时还没有实现 `.cpp`，因此当时不会真正创建 `epol
 - Step 7：实现 `Epoller`。
 - Step 8：实现 `EventLoop`。
 - Step 9：实现 `Channel` 并打通事件分发。
+- Step 10：实现 `Acceptor` 监听器。
 
 ## Step 7：Epoller epoll 封装
 
@@ -215,7 +216,7 @@ Step 7 也补充了 `Channel` 的基础状态方法：
 - 支持打开/关闭读写关注事件。
 - 支持保存事件回调。
 
-Step 8 已经补充 `Channel::handleEvent()` 的基础回调分发；`Channel` 通过 `EventLoop` 自动更新 epoll 的逻辑还没有实现，会放到 Step 9。
+Step 8 已经补充 `Channel::handleEvent()` 的基础回调分发；Step 9 已经补齐 `Channel` 通过 `EventLoop` 自动更新 epoll 的逻辑。
 
 ## Step 8：EventLoop 事件循环骨架
 
@@ -280,3 +281,24 @@ channel.disableAll();
 这样上层的 `Acceptor` 和 `Session` 后续不需要直接操作 `Epoller`，也不需要在每次事件状态变化后手动调用 `loop.updateChannel(&channel)`。它们只表达业务含义：需要读就 `enableReading()`，有待发送数据就 `enableWriting()`，写完了就 `disableWriting()`，关闭前就 `disableAll()` 并移除。
 
 `Channel` 仍然不拥有 fd。fd 的关闭会放在后续 `Acceptor` 或 `Session` 中完成；销毁 `Channel` 或关闭 fd 之前，必须保证已经从 `EventLoop` / `Epoller` 中移除，避免 epoll 返回悬空指针。
+
+## Step 10：Acceptor 非阻塞监听器
+
+Step 10 已经实现 `Acceptor`：
+
+- 头文件：`include/liteim/net/Acceptor.hpp`
+- 实现文件：`src/net/Acceptor.cpp`
+
+`Acceptor` 是监听 socket 的 owner。它负责：
+
+- 创建非阻塞 IPv4 TCP listen socket。
+- 设置 `SO_REUSEADDR` 和 `SO_REUSEPORT`。
+- `bind()` 到指定 IP 和端口。
+- `listen()` 后把 listen fd 包装成 `Channel` 注册到 `EventLoop`。
+- listen fd 可读时，循环 `accept4()` 到 `EAGAIN` / `EWOULDBLOCK`。
+- 使用 `SOCK_NONBLOCK | SOCK_CLOEXEC` 保证 accepted fd 也是非阻塞且不会跨 `exec` 泄漏。
+- 通过 `NewConnectionCallback` 把 accepted fd 和 peer address 通知上层。
+
+`Acceptor` 不负责创建 `Session`，也不维护在线连接表。accepted fd 一旦成功交给 callback，所有权就转移给上层；后续 Step 12 的 `TcpServer` 会在 callback 里创建 `Session`，由 `Session` 管理单连接读写和关闭。
+
+如果没有安装新连接 callback，`Acceptor` 会立即关闭 accepted fd，避免连接 fd 泄漏。

@@ -10,6 +10,7 @@ std::vector<liteim::tests::TestCase> reactorInterfaceTests();
 std::vector<liteim::tests::TestCase> epollerTests();
 std::vector<liteim::tests::TestCase> eventLoopTests();
 std::vector<liteim::tests::TestCase> channelTests();
+std::vector<liteim::tests::TestCase> acceptorTests();
 
 int main() {
     std::vector<liteim::tests::TestCase> tests;
@@ -37,6 +38,9 @@ int main() {
 
     const auto channel_tests = channelTests();
     tests.insert(tests.end(), channel_tests.begin(), channel_tests.end());
+
+    const auto acceptor_tests = acceptorTests();
+    tests.insert(tests.end(), acceptor_tests.begin(), acceptor_tests.end());
 
     return liteim::tests::runTests(tests);
 }

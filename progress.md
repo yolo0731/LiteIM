@@ -232,3 +232,33 @@
 - Ran `git diff --check`; no whitespace errors.
 - First stale-doc wording `rg` command failed because the shell string contained an unescaped backtick; reran with a simpler expression and found no stale Step 9 wording in README, docs, tutorial index, or roadmap.
 - Reviewed the Step 9 code/test diff before commit.
+
+## 2026-05-03 Step 10 Session
+
+- Started Step 10: implement `Acceptor`.
+- Using `planning-with-files` because this is a multi-file implementation step.
+- Ran `session-catchup.py`; it reported only previous explanatory-only messages and no code changes to merge.
+- Checked Git status: tracked worktree was clean before Step 10 edits.
+- Read the planning skill, memory index, `/home/yolo/jianli/PROJECT_MEMORY.md`, current planning files, `SocketUtil`, and `Channel`.
+- Confirmed Step 10 scope: create/bind/listen a nonblocking socket, register it with `EventLoop`, accept pending connections until `EAGAIN`, set accepted fds nonblocking via `accept4`, and notify a callback.
+- Step 10 boundary: no `Session`, no `TcpServer`, no protocol parsing, no online-session map, no business routing, and no ET mode.
+- Added `include/liteim/net/Acceptor.hpp`.
+- Added `src/net/Acceptor.cpp`.
+- Updated `src/CMakeLists.txt` to compile `Acceptor.cpp` into `liteim_net`.
+- Added `tests/test_acceptor.cpp`.
+- Updated `tests/CMakeLists.txt` and `tests/test_main.cpp` to register Acceptor tests.
+- Ran initial `cmake -S . -B build`; configure passed.
+- Ran initial `cmake --build build`; build passed.
+- Ran initial `ctest --test-dir build --output-on-failure`; tests passed.
+- Ran initial `./build/tests/liteim_tests`; all tests passed, including four Acceptor tests. Existing invalid-fd socket utility tests printed expected syscall error logs.
+- Added `tutorials/step10_acceptor.md`.
+- Updated `README.md`, `docs/architecture.md`, `docs/interview_notes.md`, `docs/project_layout.md`, and `tutorials/README.md` for Step 10.
+- Adjusted `Acceptor::listen()` so `listening_` becomes true only after listen fd read-interest registration succeeds.
+- Ran final `cmake -S . -B build`; configure passed.
+- Ran final `cmake --build build`; build passed.
+- Ran final `ctest --test-dir build --output-on-failure`; tests passed.
+- Ran final `./build/tests/liteim_tests`; all tests passed, including four Acceptor tests. Existing invalid-fd socket utility tests printed expected syscall error logs.
+- Ran final `./build/server/liteim_server`; smoke run printed startup message.
+- Ran `git diff --check`; no whitespace errors.
+- Ran stale Step 10 wording search; it only matched the valid tutorial phrase saying a newly constructed `Acceptor` is not yet listening.
+- Reviewed the Step 10 source/test diff before commit.

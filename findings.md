@@ -91,6 +91,18 @@
 - Existing low-level Epoller tests construct `Channel(nullptr, fd)` to test `Epoller` directly. Step 9 should preserve that by letting null-loop channels update local event masks without touching an `EventLoop`; production objects should pass a real loop.
 - Step 9 tests should include real `pipe()` fd behavior to prove automatic registration/removal works through `EventLoop` and `Epoller`, not only direct `handleEvent()` calls.
 
+## Step 10 Design Notes
+
+- The authoritative Step 10 is `Acceptor` from `/home/yolo/jianli/PROJECT_MEMORY.md`.
+- `Acceptor` should own only the listen fd and the listen `Channel`.
+- Accepted client fds should be created with `accept4(..., SOCK_NONBLOCK | SOCK_CLOEXEC)`.
+- `handleRead()` should loop accept until `EAGAIN` / `EWOULDBLOCK`; this avoids leaving pending connections queued after one readiness notification.
+- `EINTR` during accept should retry, and `ECONNABORTED` can be skipped because the peer may close before accept completes.
+- If no new-connection callback is installed, accepted fds should be closed immediately to avoid leaks.
+- Once a callback is called successfully, ownership of the accepted fd moves to the callback. Future `TcpServer` will create `Session` objects from those fds.
+- Tests should bind to `127.0.0.1:0` so the OS chooses an available local port, then query the actual port from `Acceptor`.
+- Tests should use real localhost TCP connections, not mocks, so they verify `socket` / `bind` / `listen` / `accept4` / `EventLoop` integration.
+
 ## Testing Explanation Requirement
 
 - Future Step tutorials and final responses must include a short testing explanation.

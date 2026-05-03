@@ -9,6 +9,7 @@ LiteIM/
 ├── include/
 │   └── liteim/
 │       ├── net/
+│       │   ├── Acceptor.hpp
 │       │   ├── Buffer.hpp
 │       │   ├── Channel.hpp
 │       │   ├── Epoller.hpp
@@ -21,6 +22,7 @@ LiteIM/
 ├── src/
 │   ├── CMakeLists.txt
 │   ├── net/
+│   │   ├── Acceptor.cpp
 │   │   ├── Buffer.cpp
 │   │   ├── Channel.cpp
 │   │   ├── Epoller.cpp
@@ -63,6 +65,7 @@ LiteIM/
 #include "liteim/protocol/FrameDecoder.hpp"
 #include "liteim/net/Buffer.hpp"
 #include "liteim/net/SocketUtil.hpp"
+#include "liteim/net/Acceptor.hpp"
 #include "liteim/net/Epoller.hpp"
 #include "liteim/net/Channel.hpp"
 #include "liteim/net/EventLoop.hpp"
@@ -177,5 +180,14 @@ src/net/Channel.cpp
 ```
 
 注意：Step 7 已经在 `src/net/Channel.cpp` 中补了少量 `Channel` 状态方法，用于支撑 `Epoller` 测试；Step 8 又补了 `Channel::handleEvent()` 的基础回调分发。Step 9 已经补齐 `Channel::enableReading()`、`enableWriting()`、`disableWriting()`、`disableAll()` 到 `EventLoop` 的自动更新逻辑。
+
+Step 10 已经实现 `Acceptor`：
+
+```text
+include/liteim/net/Acceptor.hpp
+src/net/Acceptor.cpp
+```
+
+`Acceptor` 仍然属于 `net` 模块，因为它只负责监听 socket、accept 新连接和通知上层 callback，不包含登录、聊天、存储等业务逻辑。
 
 每一步仍然要遵守：只实现当前 Step，编译通过，测试通过，文档同步更新。

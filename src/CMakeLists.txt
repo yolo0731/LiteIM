@@ -14,6 +14,7 @@ target_compile_options(liteim_protocol PRIVATE
 )
 
 add_library(liteim_net
+    net/Acceptor.cpp
     net/Buffer.cpp
     net/Channel.cpp
     net/Epoller.cpp

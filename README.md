@@ -39,6 +39,7 @@ LiteIM/
 ├── include/
 │   └── liteim/
 │       ├── net/
+│       │   ├── Acceptor.hpp
 │       │   ├── Buffer.hpp
 │       │   ├── Channel.hpp
 │       │   ├── Epoller.hpp
@@ -51,6 +52,7 @@ LiteIM/
 ├── src/
 │   ├── CMakeLists.txt
 │   ├── net/
+│   │   ├── Acceptor.cpp
 │   │   ├── Buffer.cpp
 │   │   ├── Channel.cpp
 │   │   ├── Epoller.cpp
@@ -69,6 +71,7 @@ LiteIM/
 └── tests/
     ├── CMakeLists.txt
     ├── TestUtil.hpp
+    ├── test_acceptor.cpp
     ├── test_protocol.cpp
     ├── test_frame_decoder.cpp
     ├── test_buffer.cpp
@@ -112,4 +115,4 @@ ctest --test-dir build --output-on-failure
 ./build/tests/liteim_tests
 ```
 
-Current tests cover Packet encoding/validation, TCP frame decoding, Buffer behavior, SocketUtil helpers, Reactor interface declarations, Epoller add/mod/del plus LT poll behavior, EventLoop dispatch/quit behavior, and Channel automatic EventLoop update plus callback dispatch behavior.
+Current tests cover Packet encoding/validation, TCP frame decoding, Buffer behavior, SocketUtil helpers, Reactor interface declarations, Epoller add/mod/del plus LT poll behavior, EventLoop dispatch/quit behavior, Channel automatic EventLoop update plus callback dispatch behavior, and Acceptor bind/listen/accept callback behavior.

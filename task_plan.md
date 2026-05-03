@@ -2,25 +2,25 @@
 
 ## Goal
 
-Continue LiteIM as a step-by-step teaching project. Current active task is Step 9: implement `Channel` and connect it to `EventLoop`.
+Continue LiteIM as a step-by-step teaching project. Current active task is Step 10: implement the nonblocking `Acceptor`.
 
 ## Current Phase
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Check memory and repo state | complete | Read planning skill, session catchup, memory index, project memory, planning files, Reactor source/tests/docs, and Git status. |
-| Record Step 9 design | complete | Implement `Channel::update()` so event-mask changes notify `EventLoop`, while keeping Acceptor/Session out of scope. |
-| Implement code | complete | Wired `enableReading()`, `enableWriting()`, `disableWriting()`, and `disableAll()` to update or remove epoll interest through `EventLoop`. |
-| Add tests | complete | Added Channel-focused tests for automatic registration, disable/remove behavior, re-enable behavior, and callback dispatch. |
-| Update docs and tutorials | complete | Added Step 9 tutorial and updated architecture, interview notes, tutorial index, README, and layout docs. |
-| Build, test, review, commit | complete | Configure, build, CTest, direct tests, server smoke run, whitespace check, and stale-doc wording check passed; final diff reviewed before commit. |
+| Check memory and repo state | complete | Read planning skill, session catchup, memory index, project memory, planning files, SocketUtil, Channel, and Git status. |
+| Record Step 10 design | complete | Implement `Acceptor` as the listen-socket owner and new-connection notifier, while keeping Session/TcpServer out of scope. |
+| Implement code | complete | Added `Acceptor.hpp/.cpp`, create/bind/listen nonblocking socket, register listen fd with EventLoop, and loop accept until EAGAIN. |
+| Add tests | complete | Added Acceptor tests using localhost connections to verify callback delivery, multiple pending accepts, nonblocking accepted fd, and constructor validation. |
+| Update docs and tutorials | complete | Added Step 10 tutorial and updated architecture, interview notes, tutorial index, README, and layout docs. |
+| Build, test, review, commit | complete | Configure, build, CTest, direct tests, server smoke run, whitespace check, stale-doc wording check, and final diff review passed before commit. |
 
 ## Planning Hook Phase Status
 
 ### Phase 1: Check memory and repo state
 **Status:** complete
 
-### Phase 2: Record Step 9 design
+### Phase 2: Record Step 10 design
 **Status:** complete
 
 ### Phase 3: Implement code
@@ -35,27 +35,31 @@ Continue LiteIM as a step-by-step teaching project. Current active task is Step 
 ### Phase 6: Build, test, review, commit
 **Status:** complete
 
-## Step 9 Scope
+## Step 10 Scope
 
-Implement the `Channel` event-proxy layer and connect it to `EventLoop`:
+Implement `Acceptor`, the listening-socket component:
 
-- `Channel` continues to bind one fd to interested events, returned events, and callbacks.
-- `handleEvent()` dispatches read, write, close, and error callbacks based on `revents_`.
-- `enableReading()` and `enableWriting()` update `events_`, then notify `EventLoop`.
-- `disableWriting()` updates `events_`, then notifies `EventLoop`.
-- `disableAll()` clears all interest and removes the fd from the loop's epoll interest set.
-- `Channel::update()` is the private bridge to `EventLoop::updateChannel()` / `removeChannel()`.
+- Create a nonblocking IPv4 TCP listen socket.
+- Set `SO_REUSEADDR` and `SO_REUSEPORT`.
+- Bind to the configured IP and port.
+- Call `listen()`.
+- Register the listen fd in `EventLoop` through a `Channel`.
+- When the listen fd is readable, loop `accept4()` until `EAGAIN` / `EWOULDBLOCK`.
+- Ensure accepted client fds are nonblocking and close-on-exec.
+- Notify upper layers through a new-connection callback.
+- Close accepted fds immediately if no callback is installed.
 
-`Channel` does not own the fd and does not own `EventLoop`. Future `Acceptor` and `Session` objects will own their fd lifetimes and unregister their channels before destruction.
+`Acceptor` owns the listen fd and its listen `Channel`. It does not own accepted client fds after passing them to the callback. Future `TcpServer` will create `Session` objects from those fds.
 
-## Step 9 Design Boundaries
+## Step 10 Design Boundaries
 
-- Do not implement `Acceptor`.
 - Do not implement `Session`.
-- Do not implement bind/listen/accept server flow.
+- Do not implement `TcpServer`.
+- Do not parse protocol packets.
+- Do not manage online sessions.
 - Do not add `EPOLLET`; keep LT mode.
 - Do not add a wakeup fd to `EventLoop`.
-- Keep low-level `Epoller` tests possible with `Channel(nullptr, fd)` by making null-loop channels mutate local event state only.
+- Do not add business routing or login behavior.
 
 ## Persistent Requirements
 
@@ -68,8 +72,8 @@ Implement the `Channel` event-proxy layer and connect it to `EventLoop`:
 
 ## Out of Scope
 
-- Do not implement bind/listen/accept server flow.
 - Do not implement `Session`.
+- Do not implement `TcpServer`.
 - Do not modify protocol behavior except tests integration if needed.
 - Do not commit unrelated `.codex` changes.
 

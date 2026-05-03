@@ -1,4 +1,5 @@
 add_executable(liteim_tests
+    test_acceptor.cpp
     test_buffer.cpp
     test_channel.cpp
     test_epoller.cpp
