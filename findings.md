@@ -103,6 +103,20 @@
 - Tests should bind to `127.0.0.1:0` so the OS chooses an available local port, then query the actual port from `Acceptor`.
 - Tests should use real localhost TCP connections, not mocks, so they verify `socket` / `bind` / `listen` / `accept4` / `EventLoop` integration.
 
+## Step 11 Design Notes
+
+- The authoritative Step 11 is `Session` from `/home/yolo/jianli/PROJECT_MEMORY.md`.
+- `Session` should own one connected client fd and one `Channel`; it should unregister before closing.
+- Use an explicit `start()` method so future `TcpServer` can set message/close callbacks before read interest is registered.
+- `handleRead()` should loop `read()` until `EAGAIN` / `EWOULDBLOCK`; `EINTR` retries; read 0 means peer closed.
+- Read bytes should go into `FrameDecoder`; complete packets should call `MessageCallback`.
+- If `FrameDecoder` enters error state, close the session. Protocol behavior remains unchanged.
+- `sendPacket()` should call `encodePacket()`, append to `output_buffer_`, and enable write interest. It should not bypass the output buffer.
+- `handleWrite()` should write from `output_buffer_.peek()` and call `retrieve(n)` for successful writes; disable writing when the buffer is empty.
+- A close callback should be fd-based so future `TcpServer` can erase the session from its map without exposing ownership details in Step 11.
+- Tests can use `socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0)` as a connected stream fd pair; this verifies nonblocking read/write/event-loop behavior without requiring full `TcpServer`.
+- Preserve the uncommitted `tutorials/step10_acceptor.md` wording change as pre-existing user/worktree state and do not stage it into the Step 11 commit.
+
 ## Testing Explanation Requirement
 
 - Future Step tutorials and final responses must include a short testing explanation.

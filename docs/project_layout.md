@@ -14,6 +14,7 @@ LiteIM/
 │       │   ├── Channel.hpp
 │       │   ├── Epoller.hpp
 │       │   ├── EventLoop.hpp
+│       │   ├── Session.hpp
 │       │   └── SocketUtil.hpp
 │       └── protocol/
 │           ├── FrameDecoder.hpp
@@ -27,6 +28,7 @@ LiteIM/
 │   │   ├── Channel.cpp
 │   │   ├── Epoller.cpp
 │   │   ├── EventLoop.cpp
+│   │   ├── Session.cpp
 │   │   └── SocketUtil.cpp
 │   └── protocol/
 │       ├── FrameDecoder.cpp
@@ -69,6 +71,7 @@ LiteIM/
 #include "liteim/net/Epoller.hpp"
 #include "liteim/net/Channel.hpp"
 #include "liteim/net/EventLoop.hpp"
+#include "liteim/net/Session.hpp"
 ```
 
 不要再使用旧写法：
@@ -189,5 +192,14 @@ src/net/Acceptor.cpp
 ```
 
 `Acceptor` 仍然属于 `net` 模块，因为它只负责监听 socket、accept 新连接和通知上层 callback，不包含登录、聊天、存储等业务逻辑。
+
+Step 11 已经实现 `Session`：
+
+```text
+include/liteim/net/Session.hpp
+src/net/Session.cpp
+```
+
+`Session` 仍然属于 `net` 模块，因为它负责单个连接 fd 的非阻塞读写、`FrameDecoder` 解包、输出缓冲和关闭清理。它不处理登录、私聊、存储等业务语义，完整服务端组合会在后续 `TcpServer` / `MessageRouter` 中完成。
 
 每一步仍然要遵守：只实现当前 Step，编译通过，测试通过，文档同步更新。

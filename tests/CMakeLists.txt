@@ -8,6 +8,7 @@ add_executable(liteim_tests
     test_main.cpp
     test_protocol.cpp
     test_reactor_interfaces.cpp
+    test_session.cpp
     test_socket_util.cpp
 )
 

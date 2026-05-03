@@ -178,6 +178,7 @@ Step 6 刚完成时还没有实现 `.cpp`，因此当时不会真正创建 `epol
 - Step 8：实现 `EventLoop`。
 - Step 9：实现 `Channel` 并打通事件分发。
 - Step 10：实现 `Acceptor` 监听器。
+- Step 11：实现 `Session` 单连接生命周期。
 
 ## Step 7：Epoller epoll 封装
 
@@ -302,3 +303,28 @@ Step 10 已经实现 `Acceptor`：
 `Acceptor` 不负责创建 `Session`，也不维护在线连接表。accepted fd 一旦成功交给 callback，所有权就转移给上层；后续 Step 12 的 `TcpServer` 会在 callback 里创建 `Session`，由 `Session` 管理单连接读写和关闭。
 
 如果没有安装新连接 callback，`Acceptor` 会立即关闭 accepted fd，避免连接 fd 泄漏。
+
+## Step 11：Session 单连接生命周期
+
+Step 11 已经实现 `Session`：
+
+- 头文件：`include/liteim/net/Session.hpp`
+- 实现文件：`src/net/Session.cpp`
+
+`Session` 是一个已连接客户端 fd 的 owner。它负责：
+
+- 持有 connected fd。
+- 持有该 fd 对应的 `Channel`。
+- 持有 `FrameDecoder`，处理 TCP 字节流中的半包、粘包。
+- 持有输出 `Buffer`，保存暂时没有写完的数据。
+- `start()` 后注册读事件。
+- `handleRead()` 循环 `read()` 到 `EAGAIN` / `EWOULDBLOCK`。
+- 把读到的字节交给 `FrameDecoder`。
+- 每解析出一个完整 `Packet`，调用 `MessageCallback`。
+- `sendPacket()` 把 `Packet` 编码后追加到输出缓冲区，并开启写事件。
+- `handleWrite()` 从输出缓冲区写数据，写空后关闭写事件。
+- `close()` 从 `EventLoop` 移除 `Channel`，关闭 fd，并通知 `CloseCallback`。
+
+`Session` 不负责业务分发。它不会判断消息类型，不处理登录、私聊、群聊，也不访问数据库。后续 `MessageRouter` 和 service 层会根据 `Packet.header.msg_type` 做业务处理。
+
+`Session` 使用显式 `start()`，是为了让后续 `TcpServer` 可以先设置 message/close callback，再把读事件注册进 `EventLoop`。这样新连接一旦有数据到来，回调已经就绪。

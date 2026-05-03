@@ -262,3 +262,32 @@
 - Ran `git diff --check`; no whitespace errors.
 - Ran stale Step 10 wording search; it only matched the valid tutorial phrase saying a newly constructed `Acceptor` is not yet listening.
 - Reviewed the Step 10 source/test diff before commit.
+
+## 2026-05-03 Step 11 Session
+
+- Started Step 11: implement `Session`.
+- Using `planning-with-files` because this is a multi-file implementation step.
+- Ran `session-catchup.py`; it reported only previous explanatory-only messages and no code changes to merge.
+- Checked Git status before Step 11 and found one pre-existing uncommitted wording edit in `tutorials/step10_acceptor.md`.
+- Inspected the `tutorials/step10_acceptor.md` diff; it only clarifies the `Channel*` dangling-pointer explanation. It will be preserved and not staged into the Step 11 commit.
+- Read the planning skill, memory index, `/home/yolo/jianli/PROJECT_MEMORY.md`, current planning files, `Buffer`, `FrameDecoder`, `Packet`, and `Channel`.
+- Confirmed Step 11 scope: one connected-client `Session` with fd ownership, `Channel`, `FrameDecoder`, output `Buffer`, read loop, message callback, write loop, `sendPacket()`, and `close()`.
+- Step 11 boundary: no `TcpServer`, no `MessageRouter`, no login/chat/storage logic, no ET mode, and no EventLoop wakeup fd.
+- Added `include/liteim/net/Session.hpp`.
+- Added `src/net/Session.cpp`.
+- Updated `src/CMakeLists.txt` to compile `Session.cpp` into `liteim_net`.
+- Added `tests/test_session.cpp`.
+- Updated `tests/CMakeLists.txt` and `tests/test_main.cpp` to register Session tests.
+- Ran initial `cmake -S . -B build`; configure passed.
+- Ran initial `cmake --build build`; build passed.
+- Ran initial `ctest --test-dir build --output-on-failure`; tests passed.
+- Ran initial `./build/tests/liteim_tests`; all tests passed, including six Session tests. Existing invalid-fd socket utility tests printed expected syscall error logs.
+- Added `tutorials/step11_session.md`.
+- Updated `README.md`, `docs/architecture.md`, `docs/interview_notes.md`, `docs/project_layout.md`, and `tutorials/README.md` for Step 11.
+- Ran final `cmake -S . -B build`; configure passed.
+- Ran final `cmake --build build`; build passed.
+- Ran final `ctest --test-dir build --output-on-failure`; tests passed.
+- Ran final `./build/tests/liteim_tests`; all tests passed, including six Session tests. Existing invalid-fd socket utility tests printed expected syscall error logs.
+- Ran final `./build/server/liteim_server`; smoke run printed startup message.
+- Ran `git diff --check`; no whitespace errors.
+- Completed Step 11 planning phase status.

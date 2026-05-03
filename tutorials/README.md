@@ -45,3 +45,4 @@
 | Step 8 EventLoop | 已完成 | 事件循环、Channel 分发、quit 退出 |
 | Step 9 Channel | 已完成 | fd 事件代理、自动更新 EventLoop、回调分发 |
 | Step 10 Acceptor | 已完成 | 非阻塞监听、accept 循环、新连接 callback |
+| Step 11 Session | 已完成 | 单连接生命周期、读写缓冲、Packet 解码和发送 |

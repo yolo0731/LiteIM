@@ -287,3 +287,41 @@
 - 为什么 accepted fd 也必须非阻塞？
 - `SO_REUSEADDR` 和 `SO_REUSEPORT` 的作用是什么？
 - callback 收到 fd 后，所有权应该由谁负责？
+
+## Session 单连接生命周期
+
+面试时可以这样说：
+
+> 我把每个已连接客户端 fd 封装成 `Session`。它拥有这个 fd，并持有一个 `Channel` 接入 `EventLoop`。读方向上，`Session` 循环 `read()` 到 `EAGAIN`，把字节交给 `FrameDecoder`，解析出完整 `Packet` 后通过 message callback 通知上层。写方向上，`sendPacket()` 先把 Packet 编码进输出缓冲区，再开启写事件；`handleWrite()` 负责把缓冲区里的数据尽量写出，写空后关闭写关注。
+
+为什么 `Session` 要有输出缓冲区：
+
+- 非阻塞 fd 不能保证一次 `write()` 写完所有数据。
+- 未写完的数据必须保存下来。
+- 等下一次 fd 可写时继续写，写空后再关闭 `EPOLLOUT`。
+
+为什么读要循环到 `EAGAIN`：
+
+- 使用 LT 模式时，fd 可读表示当前内核缓冲区里有数据。
+- 一次回调里尽量读干净，可以减少重复事件唤醒。
+- 读到 `EAGAIN` 表示当前没有更多数据可读。
+
+为什么 `Session` 不直接处理业务：
+
+- `Session` 是连接生命周期和网络读写层。
+- 登录、私聊、心跳属于业务层或 `MessageRouter`。
+- 网络层只产出 `Packet`，上层根据 `msg_type` 分发。
+
+为什么 `start()` 单独存在：
+
+- 构造 `Session` 后，`TcpServer` 需要先设置 message/close callback。
+- callback 配好后再 `start()` 注册读事件。
+- 这样连接一旦有数据到来，处理路径已经完整。
+
+常见追问：
+
+- `Session`、`Acceptor`、`TcpServer` 怎么分工？
+- 为什么 `sendPacket()` 不直接阻塞写完？
+- `FrameDecoder` 出错时为什么关闭连接？
+- close callback 收到 fd 后应该做什么？
+- 为什么输出缓冲区写空后要 `disableWriting()`？

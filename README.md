@@ -44,6 +44,7 @@ LiteIM/
 │       │   ├── Channel.hpp
 │       │   ├── Epoller.hpp
 │       │   ├── EventLoop.hpp
+│       │   ├── Session.hpp
 │       │   └── SocketUtil.hpp
 │       └── protocol/
 │           ├── FrameDecoder.hpp
@@ -57,6 +58,7 @@ LiteIM/
 │   │   ├── Channel.cpp
 │   │   ├── Epoller.cpp
 │   │   ├── EventLoop.cpp
+│   │   ├── Session.cpp
 │   │   └── SocketUtil.cpp
 │   └── protocol/
 │       ├── FrameDecoder.cpp
@@ -78,6 +80,7 @@ LiteIM/
     ├── test_channel.cpp
     ├── test_epoller.cpp
     ├── test_event_loop.cpp
+    ├── test_session.cpp
     ├── test_socket_util.cpp
     └── test_reactor_interfaces.cpp
 ```
@@ -115,4 +118,4 @@ ctest --test-dir build --output-on-failure
 ./build/tests/liteim_tests
 ```
 
-Current tests cover Packet encoding/validation, TCP frame decoding, Buffer behavior, SocketUtil helpers, Reactor interface declarations, Epoller add/mod/del plus LT poll behavior, EventLoop dispatch/quit behavior, Channel automatic EventLoop update plus callback dispatch behavior, and Acceptor bind/listen/accept callback behavior.
+Current tests cover Packet encoding/validation, TCP frame decoding, Buffer behavior, SocketUtil helpers, Reactor interface declarations, Epoller add/mod/del plus LT poll behavior, EventLoop dispatch/quit behavior, Channel automatic EventLoop update plus callback dispatch behavior, Acceptor bind/listen/accept callback behavior, and Session read/decode/write/close lifecycle behavior.
