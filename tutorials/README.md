@@ -43,3 +43,4 @@
 | Step 6 Reactor 接口 | 已完成 | EventLoop、Epoller、Channel 职责拆分 |
 | Step 7 Epoller | 已完成 | epoll_create1、epoll_ctl、epoll_wait、LT 模式 |
 | Step 8 EventLoop | 已完成 | 事件循环、Channel 分发、quit 退出 |
+| Step 9 Channel | 已完成 | fd 事件代理、自动更新 EventLoop、回调分发 |

@@ -206,3 +206,29 @@
   - `./build/tests/liteim_tests`
   - `./build/server/liteim_server`
   - `git diff --check`
+
+## 2026-05-03 Step 9 Session
+
+- Started Step 9: implement `Channel` and connect it to `EventLoop`.
+- Using `planning-with-files` because this is a multi-file implementation step.
+- Ran `session-catchup.py`; it reported only previous explanatory-only messages and no code changes to merge.
+- Checked Git status: tracked worktree was clean before Step 9 edits.
+- Read the planning skill, memory index, `/home/yolo/jianli/PROJECT_MEMORY.md`, current planning files, Reactor source files, tests, README, and docs.
+- Confirmed Step 9 scope: wire `Channel::enableReading()`, `enableWriting()`, `disableWriting()`, and `disableAll()` through private `Channel::update()` into `EventLoop`.
+- Step 9 boundary: no `Acceptor`, no `Session`, no bind/listen/accept flow, no ET mode, and no `EventLoop` wakeup fd.
+- Implemented `Channel::update()` in `src/net/Channel.cpp`.
+- `enableReading()`, `enableWriting()`, `disableWriting()`, and `disableAll()` now call `update()` after changing `events_`.
+- `Channel::update()` calls `EventLoop::updateChannel(this)` when interested events remain and `EventLoop::removeChannel(this)` when the channel has no interested events.
+- Preserved low-level Epoller tests by making `Channel(nullptr, fd)` update local event masks without touching an `EventLoop`.
+- Added `tests/test_channel.cpp`.
+- Updated `tests/CMakeLists.txt` and `tests/test_main.cpp` to register Channel tests.
+- Added `tutorials/step09_channel.md`.
+- Updated `README.md`, `docs/architecture.md`, `docs/interview_notes.md`, `docs/project_layout.md`, and `tutorials/README.md` for Step 9.
+- Ran `cmake -S . -B build`; configure passed.
+- Ran `cmake --build build`; build passed.
+- Ran `ctest --test-dir build --output-on-failure`; tests passed.
+- Ran `./build/tests/liteim_tests`; all tests passed, including four Channel tests. The invalid-fd socket utility tests printed expected syscall error logs.
+- Ran `./build/server/liteim_server`; smoke run printed startup message.
+- Ran `git diff --check`; no whitespace errors.
+- First stale-doc wording `rg` command failed because the shell string contained an unescaped backtick; reran with a simpler expression and found no stale Step 9 wording in README, docs, tutorial index, or roadmap.
+- Reviewed the Step 9 code/test diff before commit.

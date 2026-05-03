@@ -254,4 +254,29 @@ Step 8 也实现了 `Channel::handleEvent()` 的基础分发：
 - `EPOLLIN` / `EPOLLPRI` / `EPOLLRDHUP` 时调用读回调。
 - `EPOLLOUT` 时调用写回调。
 
-注意：当前 `Channel::enableReading()` 只修改本地事件掩码，不会自动调用 `EventLoop::updateChannel()`。Step 8 中需要手动调用 `loop.updateChannel(&channel)`；Step 9 会补上 Channel 到 EventLoop 的自动联通。
+## Step 9：Channel 事件代理和 EventLoop 联通
+
+Step 9 已经补齐 `Channel` 和 `EventLoop` 的自动联通：
+
+- 头文件：`include/liteim/net/Channel.hpp`
+- 实现文件：`src/net/Channel.cpp`
+
+`Channel` 是一个 fd 的事件代理。它保存两类事件状态：
+
+- `events_`：当前希望 epoll 关注哪些事件。
+- `revents_`：本轮 `epoll_wait()` 实际返回了哪些事件。
+
+Step 9 后，调用者只需要使用语义化接口：
+
+```cpp
+channel.enableReading();
+channel.enableWriting();
+channel.disableWriting();
+channel.disableAll();
+```
+
+这些接口会先修改 `events_`，然后通过私有 `update()` 通知所属 `EventLoop`。如果 `Channel` 还有关注事件，`update()` 调用 `EventLoop::updateChannel(this)`；如果没有任何关注事件，`update()` 调用 `EventLoop::removeChannel(this)`。
+
+这样上层的 `Acceptor` 和 `Session` 后续不需要直接操作 `Epoller`，也不需要在每次事件状态变化后手动调用 `loop.updateChannel(&channel)`。它们只表达业务含义：需要读就 `enableReading()`，有待发送数据就 `enableWriting()`，写完了就 `disableWriting()`，关闭前就 `disableAll()` 并移除。
+
+`Channel` 仍然不拥有 fd。fd 的关闭会放在后续 `Acceptor` 或 `Session` 中完成；销毁 `Channel` 或关闭 fd 之前，必须保证已经从 `EventLoop` / `Epoller` 中移除，避免 epoll 返回悬空指针。

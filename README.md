@@ -72,6 +72,7 @@ LiteIM/
     ├── test_protocol.cpp
     ├── test_frame_decoder.cpp
     ├── test_buffer.cpp
+    ├── test_channel.cpp
     ├── test_epoller.cpp
     ├── test_event_loop.cpp
     ├── test_socket_util.cpp
@@ -111,4 +112,4 @@ ctest --test-dir build --output-on-failure
 ./build/tests/liteim_tests
 ```
 
-Current tests cover Packet encoding/validation, TCP frame decoding, Buffer behavior, SocketUtil helpers, Reactor interface declarations, Epoller add/mod/del plus LT poll behavior, and EventLoop dispatch/quit behavior.
+Current tests cover Packet encoding/validation, TCP frame decoding, Buffer behavior, SocketUtil helpers, Reactor interface declarations, Epoller add/mod/del plus LT poll behavior, EventLoop dispatch/quit behavior, and Channel automatic EventLoop update plus callback dispatch behavior.

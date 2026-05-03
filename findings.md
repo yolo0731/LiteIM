@@ -80,6 +80,17 @@
 - Keep Step 9 meaningful by not wiring `Channel::enableReading()` / `enableWriting()` to automatically call `EventLoop::updateChannel()` yet. Step 8 uses explicit `loop.updateChannel(&channel)`.
 - EventLoop tests should use `pipe()` as a real fd source, matching Step 7 Epoller tests, so they verify actual `epoll_wait()` integration rather than only in-memory state.
 
+## Step 9 Design Notes
+
+- The authoritative Step 9 is `Channel` plus automatic `EventLoop` integration from `/home/yolo/jianli/PROJECT_MEMORY.md`.
+- Most `Channel` state and callback dispatch already landed in Step 7 and Step 8; Step 9 should focus on the missing private `Channel::update()` bridge.
+- `enableReading()`, `enableWriting()`, `disableWriting()`, and `disableAll()` should remain the public semantic API. Callers should not need to manually call `loop.updateChannel(&channel)` after Step 9.
+- When a `Channel` still has interested events, `update()` should call `EventLoop::updateChannel(this)`.
+- When a `Channel` has no interested events, `update()` should call `EventLoop::removeChannel(this)` so epoll stops tracking that fd instead of registering a zero event mask.
+- `Channel` does not own the fd or the loop. Future `Acceptor` and `Session` must unregister their channel before closing the fd or destroying the channel.
+- Existing low-level Epoller tests construct `Channel(nullptr, fd)` to test `Epoller` directly. Step 9 should preserve that by letting null-loop channels update local event masks without touching an `EventLoop`; production objects should pass a real loop.
+- Step 9 tests should include real `pipe()` fd behavior to prove automatic registration/removal works through `EventLoop` and `Epoller`, not only direct `handleEvent()` calls.
+
 ## Testing Explanation Requirement
 
 - Future Step tutorials and final responses must include a short testing explanation.

@@ -1,5 +1,7 @@
 #include "liteim/net/Channel.hpp"
 
+#include "liteim/net/EventLoop.hpp"
+
 #include <utility>
 
 namespace liteim::net {
@@ -34,18 +36,22 @@ bool Channel::isWriting() const {
 
 void Channel::enableReading() {
     events_ |= kReadEvent;
+    update();
 }
 
 void Channel::enableWriting() {
     events_ |= kWriteEvent;
+    update();
 }
 
 void Channel::disableWriting() {
     events_ &= ~kWriteEvent;
+    update();
 }
 
 void Channel::disableAll() {
     events_ = kNoneEvent;
+    update();
 }
 
 void Channel::setReadCallback(EventCallback callback) {
@@ -88,6 +94,19 @@ void Channel::handleEvent() {
             write_callback_();
         }
     }
+}
+
+void Channel::update() {
+    if (loop_ == nullptr) {
+        return;
+    }
+
+    if (isNoneEvent()) {
+        loop_->removeChannel(this);
+        return;
+    }
+
+    loop_->updateChannel(this);
 }
 
 }  // namespace liteim::net

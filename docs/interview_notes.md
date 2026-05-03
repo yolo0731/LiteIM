@@ -217,3 +217,35 @@
 - 如果 Channel 被销毁前没有 remove，会发生什么？
 - 没有 wakeup fd 时，跨线程停止 EventLoop 有什么延迟？
 - Step 8 和 Step 9 的边界是什么？
+
+## Channel 事件代理
+
+面试时可以这样说：
+
+> 我把每个 fd 的事件状态和回调封装成 `Channel`。`events_` 表示当前希望 epoll 关注的事件，`revents_` 表示本轮 epoll 实际返回的事件。业务对象后续只需要给 Channel 设置 read/write/close/error 回调，并调用 `enableReading()`、`enableWriting()` 这类语义接口；Channel 内部会通过所属 `EventLoop` 更新 epoll 关注事件。
+
+为什么 `Channel` 要通过 `EventLoop` 更新 epoll：
+
+- `Channel` 不拥有 `Epoller`，也不应该直接知道底层系统调用对象。
+- `EventLoop` 是 Reactor 的调度入口，统一管理注册、修改和移除。
+- 上层模块只表达“我要关注读/写”，不用直接调用 `epoll_ctl()`。
+
+为什么 `events_` 和 `revents_` 要分开：
+
+- `events_` 是用户态期望，表示“我想监听什么”。
+- `revents_` 是内核返回结果，表示“这一次实际发生了什么”。
+- 两者分开后，注册兴趣和事件分发不会混在一起。
+
+为什么 `disableAll()` 走 remove：
+
+- 当一个 fd 没有任何关注事件时，继续留在 epoll 里没有意义。
+- 从 epoll 移除可以避免后续继续分发旧事件。
+- 后续如果再次 `enableReading()`，`Epoller` 会重新 `ADD` 这个 fd。
+
+常见追问：
+
+- `enableReading()` 里面为什么不直接调用 `epoll_ctl()`？
+- `Channel` 为什么不负责关闭 fd？
+- `Channel` 销毁前忘记 remove 会有什么风险？
+- `EPOLLHUP` 和 `EPOLLERR` 分别怎么处理？
+- 为什么低层 `Epoller` 测试里可以构造没有 `EventLoop` 的 `Channel`？
