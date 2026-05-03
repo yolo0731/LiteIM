@@ -1,7 +1,21 @@
+#include "liteim/net/EventLoop.hpp"
+#include "liteim/net/TcpServer.hpp"
+
+#include <exception>
 #include <iostream>
 
 int main() {
-    std::cout << "LiteIM server starting..." << std::endl;
-    return 0;
-}
+    try {
+        liteim::net::EventLoop loop;
+        liteim::net::TcpServer server(&loop, "0.0.0.0", 9000);
 
+        server.start();
+        std::cout << "LiteIM server listening on port " << server.port() << std::endl;
+        loop.loop();
+        std::cout << "LiteIM server stopped" << std::endl;
+        return 0;
+    } catch (const std::exception& ex) {
+        std::cerr << "LiteIM server failed: " << ex.what() << std::endl;
+        return 1;
+    }
+}

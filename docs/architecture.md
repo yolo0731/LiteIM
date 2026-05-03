@@ -4,7 +4,7 @@
 
 规划模块：
 
-- `net`：网络层，包含 `EventLoop`、`Epoller`、`Channel`、`Acceptor`、`Session`、`Buffer`。
+- `net`：网络层，包含 `EventLoop`、`Epoller`、`Channel`、`Acceptor`、`Session`、`TcpServer`、`Buffer`。
 - `protocol`：协议层，包含 `Packet`、`MessageType`、`FrameDecoder`。
 - `service`：业务层，包含 `MessageRouter`、`AuthService`、`ChatService`、`GroupService`、`BotService`。
 - `storage`：存储层，包含 `IStorage`、`SQLiteStorage`、`ICache`、`NullCache`。
@@ -328,3 +328,43 @@ Step 11 已经实现 `Session`：
 `Session` 不负责业务分发。它不会判断消息类型，不处理登录、私聊、群聊，也不访问数据库。后续 `MessageRouter` 和 service 层会根据 `Packet.header.msg_type` 做业务处理。
 
 `Session` 使用显式 `start()`，是为了让后续 `TcpServer` 可以先设置 message/close callback，再把读事件注册进 `EventLoop`。这样新连接一旦有数据到来，回调已经就绪。
+
+## Step 12：TcpServer 服务端主体
+
+Step 12 已经实现 `TcpServer`：
+
+- 头文件：`include/liteim/net/TcpServer.hpp`
+- 实现文件：`src/net/TcpServer.cpp`
+
+`TcpServer` 是网络层的总控对象。它组合已有的 `EventLoop`、`Acceptor` 和 `Session`，但不直接做业务分发：
+
+- `Acceptor` 负责 listen fd 和 accept 新连接。
+- `Session` 负责单个 connected fd 的读写、解包和关闭。
+- `TcpServer` 负责把 accepted fd 包装成 `Session`，保存在线连接表，并在连接关闭时从表中移除。
+
+当前 `TcpServer` 持有外部传入的 `EventLoop*`。服务端入口的使用方式是：
+
+```cpp
+liteim::net::EventLoop loop;
+liteim::net::TcpServer server(&loop, "0.0.0.0", 9000);
+server.start();
+loop.loop();
+```
+
+这样 `Acceptor`、所有 `Session` 和 `signalfd` 都注册进同一个 `EventLoop`，由同一个 epoll 循环统一派发事件。
+
+`TcpServer` 提供两类发送接口：
+
+- `sendToSession(int session_fd, const Packet&)`：按连接 fd 找到对应 `Session`，调用 `Session::sendPacket()`。
+- `sendToUser(UserId user_id, const Packet&)`：基于显式绑定的 `user_id -> session_fd` 表转发到底层 `Session`。
+
+Step 12 只提供 `bindUserToSession()` / `unbindUser()` 这样的基础绑定能力，不根据协议内容判断登录状态，也不读取数据库。真正的登录、用户身份绑定和业务分发留给后续 `MessageRouter` / service 层。
+
+优雅关闭通过 `signalfd` 实现。`TcpServer` 在构造时阻塞 `SIGINT` / `SIGTERM`，把这两个信号转换成一个非阻塞 fd，再用 `Channel` 注册到同一个 `EventLoop`。收到信号后，它会：
+
+- 关闭所有 active `Session`。
+- 停止 `Acceptor`，关闭 listen socket。
+- 关闭 signal fd 并恢复原来的 signal mask。
+- 调用 `EventLoop::quit()` 让事件循环退出。
+
+这样关闭逻辑仍然在普通 fd 事件回调里执行，避免在异步 signal handler 中做复杂操作。

@@ -111,16 +111,15 @@ Acceptor::Acceptor(EventLoop* loop, const std::string& listen_ip, std::uint16_t 
 }
 
 Acceptor::~Acceptor() {
-    try {
-        accept_channel_.disableAll();
-    } catch (...) {
-    }
-    closeFd(listen_fd_);
+    close();
 }
 
 void Acceptor::listen() {
     if (listening_) {
         return;
+    }
+    if (listen_fd_ < 0) {
+        throw std::runtime_error("acceptor is closed");
     }
 
     if (::listen(listen_fd_, SOMAXCONN) < 0) {
@@ -129,6 +128,20 @@ void Acceptor::listen() {
 
     accept_channel_.enableReading();
     listening_ = true;
+}
+
+void Acceptor::close() {
+    if (listen_fd_ < 0) {
+        return;
+    }
+
+    try {
+        accept_channel_.disableAll();
+    } catch (...) {
+    }
+    closeFd(listen_fd_);
+    listen_fd_ = -1;
+    listening_ = false;
 }
 
 bool Acceptor::listening() const {
@@ -140,6 +153,10 @@ int Acceptor::listenFd() const {
 }
 
 std::uint16_t Acceptor::port() const {
+    if (listen_fd_ < 0) {
+        return 0;
+    }
+
     const sockaddr_in address = getLocalAddress(listen_fd_);
     return ntohs(address.sin_port);
 }

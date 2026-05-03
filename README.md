@@ -11,11 +11,12 @@ The first milestone is the server MVP:
 3. TCP frame decoder
 4. epoll-based Reactor
 5. Session lifecycle
-6. Register and login
-7. Private chat
-8. Group chat
-9. SQLite persistence
-10. Heartbeat timeout
+6. TcpServer connection manager
+7. Register and login
+8. Private chat
+9. Group chat
+10. SQLite persistence
+11. Heartbeat timeout
 
 ## Tech Stack
 
@@ -45,7 +46,8 @@ LiteIM/
 │       │   ├── Epoller.hpp
 │       │   ├── EventLoop.hpp
 │       │   ├── Session.hpp
-│       │   └── SocketUtil.hpp
+│       │   ├── SocketUtil.hpp
+│       │   └── TcpServer.hpp
 │       └── protocol/
 │           ├── FrameDecoder.hpp
 │           ├── MessageType.hpp
@@ -59,7 +61,8 @@ LiteIM/
 │   │   ├── Epoller.cpp
 │   │   ├── EventLoop.cpp
 │   │   ├── Session.cpp
-│   │   └── SocketUtil.cpp
+│   │   ├── SocketUtil.cpp
+│   │   └── TcpServer.cpp
 │   └── protocol/
 │       ├── FrameDecoder.cpp
 │       └── Packet.cpp
@@ -82,6 +85,7 @@ LiteIM/
     ├── test_event_loop.cpp
     ├── test_session.cpp
     ├── test_socket_util.cpp
+    ├── test_tcp_server.cpp
     └── test_reactor_interfaces.cpp
 ```
 
@@ -108,8 +112,10 @@ cmake --build build
 Expected output:
 
 ```text
-LiteIM server starting...
+LiteIM server listening on port 9000
 ```
+
+Press `Ctrl+C` to stop the server through the `signalfd` shutdown path.
 
 ## Test
 
@@ -118,4 +124,4 @@ ctest --test-dir build --output-on-failure
 ./build/tests/liteim_tests
 ```
 
-Current tests cover Packet encoding/validation, TCP frame decoding, Buffer behavior, SocketUtil helpers, Reactor interface declarations, Epoller add/mod/del plus LT poll behavior, EventLoop dispatch/quit behavior, Channel automatic EventLoop update plus callback dispatch behavior, Acceptor bind/listen/accept callback behavior, and Session read/decode/write/close lifecycle behavior.
+Current tests cover Packet encoding/validation, TCP frame decoding, Buffer behavior, SocketUtil helpers, Reactor interface declarations, Epoller add/mod/del plus LT poll behavior, EventLoop dispatch/quit behavior, Channel automatic EventLoop update plus callback dispatch behavior, Acceptor bind/listen/accept callback behavior, Session read/decode/write/close lifecycle behavior, and TcpServer accept/session tracking/send/shutdown behavior.

@@ -46,3 +46,4 @@
 | Step 9 Channel | 已完成 | fd 事件代理、自动更新 EventLoop、回调分发 |
 | Step 10 Acceptor | 已完成 | 非阻塞监听、accept 循环、新连接 callback |
 | Step 11 Session | 已完成 | 单连接生命周期、读写缓冲、Packet 解码和发送 |
+| Step 12 TcpServer | 已完成 | 组合 Acceptor/Session、连接表、按 fd/user 发送、signalfd 优雅关闭 |

@@ -10,6 +10,7 @@ add_executable(liteim_tests
     test_reactor_interfaces.cpp
     test_session.cpp
     test_socket_util.cpp
+    test_tcp_server.cpp
 )
 
 target_link_libraries(liteim_tests PRIVATE

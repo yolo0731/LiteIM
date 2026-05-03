@@ -202,4 +202,13 @@ src/net/Session.cpp
 
 `Session` 仍然属于 `net` 模块，因为它负责单个连接 fd 的非阻塞读写、`FrameDecoder` 解包、输出缓冲和关闭清理。它不处理登录、私聊、存储等业务语义，完整服务端组合会在后续 `TcpServer` / `MessageRouter` 中完成。
 
+Step 12 已经实现 `TcpServer`：
+
+```text
+include/liteim/net/TcpServer.hpp
+src/net/TcpServer.cpp
+```
+
+`TcpServer` 仍然属于 `net` 模块，因为它组合 `EventLoop`、`Acceptor` 和 `Session`，负责连接集合、按 session/user 发送和网络层优雅关闭。它不实现登录、私聊、群聊或数据库逻辑，这些仍然属于后续 `MessageRouter`、service 和 storage 模块。
+
 每一步仍然要遵守：只实现当前 Step，编译通过，测试通过，文档同步更新。

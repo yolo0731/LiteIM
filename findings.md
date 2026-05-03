@@ -128,5 +128,17 @@
 - Future `tutorials/stepXX_*.md` files must explain each new public function/interface in that Step.
 - Function explanations should include purpose, inputs, outputs, side effects, and edge/error behavior.
 - Do not use interface overview tables in Step tutorials. Explain functions one by one in the `.hpp` / `.cpp` sections instead.
+
+## Step 12 Design Notes
+
+- The authoritative Step 12 is `TcpServer` from `/home/yolo/jianli/PROJECT_MEMORY.md`.
+- `TcpServer` should coordinate `EventLoop`, `Acceptor`, and `Session`; it should not implement `MessageRouter`, login, chat, or storage.
+- The existing roadmap expects `TcpServer server(&loop, "0.0.0.0", 9000); server.start(); loop.loop();`, so `TcpServer` should hold an `EventLoop*` rather than create a private blocking loop.
+- `Acceptor` owns the listen fd and should expose an orderly close path so `TcpServer::stop()` can stop accepting before the object is destroyed.
+- `TcpServer` should store sessions as `std::shared_ptr<Session>` keyed by fd, but close callbacks must not destroy the current `Session` while `Session::closeConnection()` is still on the stack. Retire closed sessions briefly before cleanup.
+- `sendToSession()` should look up an active session by fd and call `Session::sendPacket()`.
+- `sendToUser()` can be a foundation API backed by an explicit `user_id -> session_fd` binding map; Step 12 should not infer user identity from packets.
+- `signalfd` should be registered through `Channel` in the same `EventLoop`, with `SIGINT` and `SIGTERM` blocked via `sigprocmask` so the signals are delivered through the fd instead of default process termination.
+- On signal shutdown, `TcpServer` should close active sessions, stop accepting, disable the signal channel/fd, and call `EventLoop::quit()`.
 - The interview section should explain the Step's design idea, not only provide a short quote.
 - Each Step should include common interview follow-up questions with short answers.

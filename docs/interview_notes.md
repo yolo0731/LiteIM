@@ -9,6 +9,7 @@
 - TCP 是字节流，为什么会有粘包和半包。
 - 定长 Header + JSON Body 如何解决消息边界问题。
 - `Session` 生命周期：创建、读、写、关闭、清理。
+- `TcpServer` 如何组合 `Acceptor` 和 `Session` 管理连接表。
 - 输出缓冲区如何处理短写。
 - `timerfd` 如何接入心跳超时检查。
 - `signalfd` 如何接入 Ctrl+C / SIGTERM 优雅关闭。
@@ -325,3 +326,42 @@
 - `FrameDecoder` 出错时为什么关闭连接？
 - close callback 收到 fd 后应该做什么？
 - 为什么输出缓冲区写空后要 `disableWriting()`？
+
+## TcpServer 服务端主体
+
+面试时可以这样说：
+
+> 我把服务端主体封装成 `TcpServer`。它不直接读写 socket，也不解析业务消息，而是组合 `Acceptor` 和 `Session`：`Acceptor` 负责接收新连接，`TcpServer` 在新连接 callback 中创建 `Session` 并放入 session map，`Session` 负责单连接读写。连接关闭时，`TcpServer` 根据 fd 从 map 中移除对应 Session。这样监听、单连接 I/O 和连接集合管理分开，后续 `MessageRouter` 只需要处理业务消息。
+
+为什么需要 `TcpServer`：
+
+- `Acceptor` 只负责 listen fd，不应该维护在线连接表。
+- `Session` 只负责一个 connected fd，不知道其他连接。
+- `TcpServer` 负责把两者组合起来，管理所有 active sessions。
+
+为什么用 `std::shared_ptr<Session>`：
+
+- `EventLoop` / `Channel` 派发事件时，回调栈上可能正在执行 `Session` 成员函数。
+- 关闭 callback 里如果立刻销毁当前 `Session`，会出现对象还在执行成员函数但已经被释放的生命周期问题。
+- `TcpServer` 会先把关闭的 `Session` 从 active map 移到 retired 列表，等安全时再清理。
+
+为什么 `sendToUser()` 只做基础绑定：
+
+- Step 12 还没有登录和用户态。
+- 当前只提供 `user_id -> session_fd` 的显式绑定能力。
+- 真正什么时候绑定用户、什么时候解绑用户，后续由 `MessageRouter` / `AuthService` 根据登录结果决定。
+
+为什么用 `signalfd` 做优雅关闭：
+
+- `SIGINT` / `SIGTERM` 默认是异步信号，不适合在 signal handler 里做复杂关闭逻辑。
+- `signalfd` 可以把信号变成一个普通 fd 事件。
+- 这个 fd 可以像 socket 一样注册进 `EventLoop`，由 epoll 统一调度。
+- 收到信号后，`TcpServer` 在正常回调上下文中关闭 sessions、关闭 listen socket，并调用 `EventLoop::quit()`。
+
+常见追问：
+
+- `TcpServer` 为什么不直接调用 `epoll_ctl()`？
+- `Acceptor`、`Session`、`TcpServer` 各自拥有哪个 fd？
+- 为什么 stop 时要先关闭 sessions，再关闭 listen socket？
+- 为什么 signal fd 也可以放进 epoll？
+- 当前 `sendToUser()` 和真正登录态绑定还差什么？

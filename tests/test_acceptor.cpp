@@ -146,6 +146,22 @@ void testAcceptorAcceptsAllPendingConnections() {
     expect(accepted_count == 3, "acceptor should drain all pending connections");
 }
 
+void testAcceptorCloseStopsListening() {
+    EventLoop loop;
+    Acceptor acceptor(&loop, "127.0.0.1", 0);
+
+    acceptor.listen();
+    expect(acceptor.listening(), "acceptor should listen before close()");
+    expect(acceptor.listenFd() >= 0, "acceptor should own listen fd before close()");
+
+    acceptor.close();
+    acceptor.close();
+
+    expect(!acceptor.listening(), "acceptor should not listen after close()");
+    expect(acceptor.listenFd() == -1, "acceptor fd should be invalid after close()");
+    expect(acceptor.port() == 0, "closed acceptor should report port 0");
+}
+
 void testAcceptorRejectsNullLoop() {
     bool thrown = false;
     try {
@@ -164,6 +180,7 @@ std::vector<TestCase> acceptorTests() {
         {"acceptor listen is idempotent", testAcceptorListenIsIdempotent},
         {"acceptor accepts connection and invokes callback", testAcceptorAcceptsConnectionAndInvokesCallback},
         {"acceptor accepts all pending connections", testAcceptorAcceptsAllPendingConnections},
+        {"acceptor close stops listening", testAcceptorCloseStopsListening},
         {"acceptor rejects null loop", testAcceptorRejectsNullLoop},
     };
 }

@@ -21,6 +21,7 @@ add_library(liteim_net
     net/EventLoop.cpp
     net/Session.cpp
     net/SocketUtil.cpp
+    net/TcpServer.cpp
 )
 
 target_include_directories(liteim_net PUBLIC

@@ -23,6 +23,7 @@ public:
     Acceptor& operator=(const Acceptor&) = delete;
 
     void listen();
+    void close();
     bool listening() const;
     int listenFd() const;
     std::uint16_t port() const;

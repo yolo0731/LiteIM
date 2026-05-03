@@ -288,6 +288,29 @@
 - Ran final `cmake --build build`; build passed.
 - Ran final `ctest --test-dir build --output-on-failure`; tests passed.
 - Ran final `./build/tests/liteim_tests`; all tests passed, including six Session tests. Existing invalid-fd socket utility tests printed expected syscall error logs.
+
+## 2026-05-04 Step 12 Session
+
+- Started Step 12: implement `TcpServer`.
+- Used `planning-with-files` and ran session catchup. Catchup only found previous pure Q&A context, so no code state needed to be synchronized.
+- Ordinary sandbox reads hit `bwrap: setting up uid map: Permission denied`; switched local inspection commands to approved escalation.
+- Confirmed authoritative Step 12 from `/home/yolo/jianli/PROJECT_MEMORY.md`: `TcpServer` coordinates `EventLoop`, `Acceptor`, `Session`, manages sessions, provides `sendToSession()` / `sendToUser()` foundation, and handles SIGINT/SIGTERM through `signalfd`.
+- Confirmed Step 12 boundary: no `MessageRouter`, no login/chat/storage logic, no SQLite flush, no ET mode, and no timer heartbeat timeout.
+- Chosen API direction: `TcpServer` holds an external `EventLoop*` so the existing server-entry pattern remains `TcpServer server(&loop, ip, port); server.start(); loop.loop();`.
+- Added `include/liteim/net/TcpServer.hpp` and `src/net/TcpServer.cpp`.
+- Added `Acceptor::close()` so `TcpServer::stop()` can actively stop accepting and close the listen socket before destruction.
+- Updated `server/main.cpp` to create `EventLoop`, start `TcpServer` on `0.0.0.0:9000`, run `loop.loop()`, and stop cleanly on Ctrl+C.
+- Added `tests/test_tcp_server.cpp` and registered it in `tests/CMakeLists.txt` / `tests/test_main.cpp`.
+- Added an Acceptor close/idempotency test for the new public close API.
+- Updated `README.md`, `docs/architecture.md`, `docs/project_layout.md`, `docs/interview_notes.md`, `tutorials/README.md`, `tutorials/step12_tcp_server.md`, and `/home/yolo/jianli/PROJECT_MEMORY.md`.
+- Ran `cmake --build build`; build passed.
+- Ran `./build/tests/liteim_tests`; all tests passed, including new Acceptor close and four TcpServer tests. Existing invalid-fd SocketUtil tests printed expected errno logs.
+- Ran `ctest --test-dir build --output-on-failure`; 1/1 test passed.
+- Ran `./build/server/liteim_server`, observed `LiteIM server listening on port 9000`, sent Ctrl+C, and observed `LiteIM server stopped`.
+- Ran `git diff --check`; no whitespace errors.
+- Created the Step 12 commit with message `feat(net): implement tcp server session management`.
+- Note: `/home/yolo/jianli/PROJECT_MEMORY.md` was updated as required by the workspace instructions, but it is outside the LiteIM git repository and is not part of the LiteIM commit.
+- Non-blocking issue: attempted `git diff -- /home/yolo/jianli/PROJECT_MEMORY.md` from `/home/yolo/jianli`, but that directory is not a git repository. Resolution: treat `PROJECT_MEMORY.md` as a workspace-level project note and verify LiteIM repo status separately.
 - Ran final `./build/server/liteim_server`; smoke run printed startup message.
 - Ran `git diff --check`; no whitespace errors.
 - Completed Step 11 planning phase status.

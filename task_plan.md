@@ -2,25 +2,25 @@
 
 ## Goal
 
-Continue LiteIM as a step-by-step teaching project. Current active task is Step 11: implement `Session` lifecycle.
+Continue LiteIM as a step-by-step teaching project. Current active task is Step 12: implement `TcpServer`.
 
 ## Current Phase
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Check memory and repo state | complete | Read planning skill, session catchup, memory index, project memory, planning files, protocol/Buffer/Reactor source, and Git status. |
-| Record Step 11 design | complete | Implement `Session` as one connected-client owner while keeping TcpServer and business routing out of scope. |
-| Implement code | complete | Added `Session.hpp/.cpp`, read loop, frame decoding, message callback, output buffer, write loop, sendPacket, and close cleanup. |
-| Add tests | complete | Added Session tests using connected stream sockets for read/decode, sticky/large frames, send/write, close, and invalid-frame behavior. |
-| Update docs and tutorials | complete | Added Step 11 tutorial and updated architecture, interview notes, tutorial index, README, and layout docs. |
-| Build, test, review, commit | complete | Configure, build, CTest, direct tests, server smoke run, whitespace check, and final diff review passed before commit. |
+| Check memory and repo state | complete | Read planning skill, session catchup, project memory, planning files, roadmap, Acceptor/Session/EventLoop source, tests, and Git status. |
+| Record Step 12 design | complete | Implement `TcpServer` as the server coordinator while keeping MessageRouter, login, chat, and storage out of scope. |
+| Implement code | complete | Added `TcpServer`, integrated `Acceptor` and `Session`, added session/user send helpers, and wired `signalfd` shutdown. |
+| Add tests | complete | Added TcpServer tests for accept/session tracking, message callback, sendToSession/sendToUser, and signal shutdown; added Acceptor close test. |
+| Update docs and tutorials | complete | Added Step 12 tutorial and updated architecture, interview notes, tutorial index, README, layout docs, and project memory. |
+| Build, test, review, commit | complete | Build, CTest, direct tests, server Ctrl+C smoke run, whitespace check, and final diff review passed. |
 
 ## Planning Hook Phase Status
 
 ### Phase 1: Check memory and repo state
 **Status:** complete
 
-### Phase 2: Record Step 11 design
+### Phase 2: Record Step 12 design
 **Status:** complete
 
 ### Phase 3: Implement code
@@ -35,33 +35,32 @@ Continue LiteIM as a step-by-step teaching project. Current active task is Step 
 ### Phase 6: Build, test, review, commit
 **Status:** complete
 
-## Step 11 Scope
+## Step 12 Scope
 
-Implement `Session`, the one-connection component:
+Implement `TcpServer`, the server coordinator:
 
-- Own one connected client fd.
-- Hold one `Channel` for that fd.
-- Hold one `FrameDecoder` for TCP stream framing.
-- Hold one output `Buffer`.
-- `start()` registers read interest after callbacks are configured.
-- `handleRead()` loops `read()` until `EAGAIN` / `EWOULDBLOCK`.
-- Read bytes are fed into `FrameDecoder`.
-- Complete decoded `Packet`s are passed to `MessageCallback`.
-- `sendPacket()` encodes a `Packet`, appends it to the output buffer, and enables write interest.
-- `handleWrite()` writes buffered bytes until the buffer is empty or the fd would block.
-- `close()` removes the channel from `EventLoop`, closes the fd, and notifies `CloseCallback`.
+- Hold an `EventLoop*` supplied by the server entry point.
+- Hold one `Acceptor` for the listen socket.
+- Maintain active `Session` objects by connected fd.
+- Create and start a `Session` when `Acceptor` reports a new connection.
+- Remove closed sessions from the active map without destroying a `Session` while its callback stack is still unwinding.
+- Provide `sendToSession()`.
+- Provide a foundation for `sendToUser()` with explicit user-to-session binding.
+- Register `SIGINT` / `SIGTERM` with `signalfd`.
+- Add the signal fd to the same `EventLoop` through `Channel`.
+- On signal or `stop()`, close sessions, close the listen socket, disable signal handling, and call `EventLoop::quit()`.
 
-`Session` owns the connected fd after construction. Future `TcpServer` will create and store `Session` objects when `Acceptor` reports new connections.
+`TcpServer` coordinates networking objects only. It does not parse business message types or implement login/chat/storage semantics.
 
-## Step 11 Design Boundaries
+## Step 12 Design Boundaries
 
-- Do not implement `TcpServer`.
-- Do not manage online sessions.
 - Do not implement `MessageRouter`.
 - Do not implement login, heartbeat response, private chat, or storage behavior.
 - Do not add `EPOLLET`; keep LT mode.
-- Do not add a wakeup fd to `EventLoop`.
-- Do not add business routing or login behavior.
+- Do not add SQLite/database flush logic.
+- Do not implement timer/heartbeat timeout logic.
+- Do not make `Session` responsible for user identity.
+- Keep signal handling limited to `SIGINT` / `SIGTERM` and orderly network shutdown.
 
 ## Persistent Requirements
 
