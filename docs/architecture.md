@@ -407,3 +407,46 @@ Session::sendPacket(response)
 - 不做心跳超时清理。
 
 这些边界的原因是：网络层负责连接和字节流，service 层负责业务分发，storage/timer 层后续再分别负责持久化和超时管理。Step 13 只先打通“收到业务包后能按类型回包”的最小链路。
+
+## Step 14：IStorage / ICache 抽象
+
+Step 14 已经新增 `storage` 模块：
+
+- `include/liteim/storage/StorageTypes.hpp`
+- `include/liteim/storage/IStorage.hpp`
+- `include/liteim/storage/ICache.hpp`
+- `include/liteim/storage/NullCache.hpp`
+- `src/storage/NullCache.cpp`
+
+这一层的目标不是立刻写 SQLite，而是先稳定业务层依赖的接口。
+
+后续 `AuthService`、`ChatService`、`GroupService` 不应该直接包含 SQLite 头文件，也不应该直接拼 SQL。它们应该依赖 `IStorage`：
+
+```text
+service layer
+    ↓ depends on
+IStorage interface
+    ↓ implemented by Step 15
+SQLiteStorage
+```
+
+`IStorage` 当前覆盖用户、好友、群组、私聊消息、群聊消息、历史记录和离线消息等接口。这样 Step 16 登录注册、Step 17 私聊、Step 18 群聊都可以先面向同一个抽象编程。
+
+`ICache` 用来表达在线状态缓存边界。第一版只定义在线 session 查询相关方法：
+
+- `setOnline()`
+- `setOffline()`
+- `findOnlineSession()`
+- `clear()`
+
+`NullCache` 是 no-op 实现。它不会保存任何在线状态，查询永远返回空。这样单机版可以不引入 Redis 或真实缓存，但业务层仍然可以通过 `ICache` 接口接入缓存能力。
+
+这一层的边界：
+
+- 不打开数据库。
+- 不执行 SQL。
+- 不实现注册、登录、私聊或群聊逻辑。
+- 不实现真实缓存。
+- 不让业务层直接依赖 SQLite。
+
+先定义接口的好处是：后续可以用 `SQLiteStorage` 跑真实服务端，也可以用测试替身跑业务单元测试。业务层只关心“存储能做什么”，不关心“底层怎么存”。

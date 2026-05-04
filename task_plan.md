@@ -2,25 +2,25 @@
 
 ## Goal
 
-Continue LiteIM as a step-by-step teaching project. Current active task is Step 13: implement `MessageRouter` heartbeat routing.
+Continue LiteIM as a step-by-step teaching project. Current active task is Step 14: define `IStorage` / `ICache` abstractions and `NullCache`.
 
 ## Current Phase
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Check memory and repo state | complete | Read planning skill, session catchup, project memory, planning files, roadmap, TcpServer/Packet/MessageType source, CMake, tests, and Git status. |
-| Record Step 13 design | complete | Implement `MessageRouter` as a service-layer dispatcher while keeping login, chat, storage, and heartbeat timeout cleanup out of scope. |
-| Implement code | complete | Added service module and route `HEARTBEAT_REQ` / unknown message responses through `Session::sendPacket()`. |
-| Add tests | complete | Added MessageRouter tests for heartbeat response, unknown type error response, seq_id preservation, and empty-body boundaries. |
-| Update docs and tutorials | complete | Added Step 13 tutorial and synced README, architecture, layout, interview notes, tutorial index, and project memory. |
-| Build, test, review, commit | complete | Build, direct tests, CTest, server Ctrl+C smoke run, whitespace check, final diff review, and Step 13 commit completed. |
+| Check memory and repo state | complete | Read planning skill, session catchup, memory index, project memory Step 14, planning files, roadmap, database docs, SQL placeholder, CMake, and Git status. |
+| Record Step 14 design | complete | Defined storage/cache interfaces while keeping SQLiteStorage, SQL schema, auth, chat, and real cache behavior out of scope. |
+| Implement code | complete | Added storage domain types, `IStorage`, `ICache`, and `NullCache`; exposed the module through CMake. |
+| Add tests | complete | Added interface/NullCache tests that prove business-layer test doubles can implement `IStorage`. |
+| Update docs and tutorials | complete | Added Step 14 tutorial and synced README, database, architecture, layout, interview notes, tutorial index, and project memory. |
+| Build, test, review, commit | complete | Build, direct tests, CTest, server smoke run, whitespace check, final diff review, and Step 14 commit completed. |
 
 ## Planning Hook Phase Status
 
 ### Phase 1: Check memory and repo state
 **Status:** complete
 
-### Phase 2: Record Step 13 design
+### Phase 2: Record Step 14 design
 **Status:** complete
 
 ### Phase 3: Implement code
@@ -35,31 +35,32 @@ Continue LiteIM as a step-by-step teaching project. Current active task is Step 
 ### Phase 6: Build, test, review, commit
 **Status:** complete
 
-## Step 13 Scope
+## Step 14 Scope
 
-Implement `MessageRouter`, the first service-layer dispatcher:
+Define storage and cache abstractions for future business services:
 
-- Add `include/liteim/service/MessageRouter.hpp`.
-- Add `src/service/MessageRouter.cpp`.
-- Route packets by `packet.header.msg_type`.
-- Support `HEARTBEAT_REQ` by replying with `HEARTBEAT_RESP`.
-- Reply to unknown message types with `ERROR_RESP`.
-- Preserve the request `seq_id` in router-generated responses.
-- Keep response body small and deterministic so tests can assert it.
-- Integrate `MessageRouter` with `TcpServer::setMessageCallback()` in `server/main.cpp`.
+- Add storage domain types shared by `IStorage` and `ICache`.
+- Add `include/liteim/storage/IStorage.hpp`.
+- Add `include/liteim/storage/ICache.hpp`.
+- Add `include/liteim/storage/NullCache.hpp`.
+- Add `src/storage/NullCache.cpp`.
+- Define `IStorage` methods for users, friendships, groups, private/group messages, history, members, and offline messages.
+- Define an `ICache` interface for online-session cache lookups.
+- Implement `NullCache` as a no-op cache implementation.
+- Add a `liteim_storage` CMake target.
 
-`MessageRouter` is service-layer orchestration. It should depend on `Session::sendPacket()` but must not operate on raw fds, own sessions, or manage epoll state.
+Step 14 creates contracts only. It should make future business services depend on interfaces instead of SQLite.
 
-## Step 13 Design Boundaries
+## Step 14 Design Boundaries
 
-- Do not implement registration/login/auth.
-- Do not implement private chat, group chat, history, friend list, or bot behavior.
-- Do not define `IStorage` / `ICache`; those belong to Step 14.
-- Do not add SQLite/database access.
-- Do not implement heartbeat timeout cleanup; timerfd/TimerHeap belongs to Step 20.
-- Do not add user identity binding to `MessageRouter`; login binding comes later.
-- Do not change protocol framing or `FrameDecoder`.
-- Do not make `MessageRouter` call `sendToSession()` or touch raw fd values.
+- Do not implement `SQLiteStorage`.
+- Do not add real SQL schema or database file access.
+- Do not implement registration/login/auth behavior.
+- Do not implement private chat, group chat, friend list, or history service behavior.
+- Do not introduce Redis or any real distributed cache.
+- Do not make `MessageRouter` depend on storage yet.
+- Do not change protocol encoding/decoding.
+- Keep `NullCache` no-op; do not store online state in it.
 
 ## Persistent Requirements
 

@@ -11,6 +11,7 @@ add_executable(liteim_tests
     test_reactor_interfaces.cpp
     test_session.cpp
     test_socket_util.cpp
+    test_storage_interfaces.cpp
     test_tcp_server.cpp
 )
 
@@ -18,6 +19,7 @@ target_link_libraries(liteim_tests PRIVATE
     liteim_net
     liteim_protocol
     liteim_service
+    liteim_storage
 )
 
 target_compile_options(liteim_tests PRIVATE

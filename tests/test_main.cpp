@@ -14,6 +14,7 @@ std::vector<liteim::tests::TestCase> acceptorTests();
 std::vector<liteim::tests::TestCase> sessionTests();
 std::vector<liteim::tests::TestCase> tcpServerTests();
 std::vector<liteim::tests::TestCase> messageRouterTests();
+std::vector<liteim::tests::TestCase> storageInterfaceTests();
 
 int main() {
     std::vector<liteim::tests::TestCase> tests;
@@ -53,6 +54,9 @@ int main() {
 
     const auto message_router_tests = messageRouterTests();
     tests.insert(tests.end(), message_router_tests.begin(), message_router_tests.end());
+
+    const auto storage_interface_tests = storageInterfaceTests();
+    tests.insert(tests.end(), storage_interface_tests.begin(), storage_interface_tests.end());
 
     return liteim::tests::runTests(tests);
 }

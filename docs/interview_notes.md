@@ -404,3 +404,36 @@
 - 什么时候应该把分发逻辑拆到具体 service？
 - 心跳响应和心跳超时清理有什么区别？
 - 未来登录成功后，用户和 Session 应该在哪里绑定？
+
+## IStorage / ICache 存储抽象
+
+面试时可以这样说：
+
+> 我没有让业务层直接依赖 SQLite，而是先定义了 `IStorage` 和 `ICache`。`IStorage` 表达用户、好友、群组、消息、历史记录和离线消息这些持久化能力；`ICache` 表达在线 session 查询这类缓存能力。后续 `AuthService`、`ChatService` 只依赖接口，真实实现可以是 `SQLiteStorage`，测试时也可以换成内存替身。
+
+为什么先定义接口：
+
+- 注册、登录、私聊、群聊都会用到存储。
+- 如果业务层直接写 SQLite，业务逻辑会和数据库细节耦合。
+- 先定义 `IStorage` 后，业务层只关心“能创建用户、查用户、保存消息”，不关心 SQL 怎么写。
+- 单元测试可以用 fake/in-memory storage，不需要真的打开数据库文件。
+
+为什么 `IStorage` 覆盖好友、群组和离线消息：
+
+- Step 16 到 Step 18 会连续实现登录、私聊和群聊。
+- 如果 Step 14 只定义用户接口，后续群聊时还要回头修改存储抽象。
+- 先把核心 IM 能力放进接口，可以减少后续 service 层反复改动。
+
+为什么有 `ICache` 和 `NullCache`：
+
+- 在线状态查询属于缓存边界，未来可以接 Redis 或进程内缓存。
+- 第一版单机服务不需要真实缓存，所以提供 `NullCache`。
+- `NullCache` 所有写入都是 no-op，查询永远返回空，但它能让业务层从一开始就依赖 `ICache`。
+
+常见追问：
+
+- 为什么业务层不应该直接依赖 SQLite？
+- `IStorage` 和 `SQLiteStorage` 的关系是什么？
+- 为什么测试要用 fake storage？
+- `NullCache` 有什么意义？
+- 离线消息为什么属于 storage，而在线 session 查询为什么更像 cache？

@@ -290,6 +290,36 @@
 - `git diff -- /home/yolo/jianli/PROJECT_MEMORY.md` from `/home/yolo/jianli` failed because `/home/yolo/jianli` is not a Git repository; this file is workspace-level metadata outside the LiteIM repo.
 - Reviewed MessageRouter code, server/CMake integration, tests, README tree, project layout tree, and project memory Step 13 text.
 - Preparing Step 13 commit with message `feat(service): add message router and heartbeat response`.
+
+## 2026-05-04 Step 14 Session
+
+- Started Step 14: define `IStorage` / `ICache` abstractions and `NullCache`.
+- Using `planning-with-files` because this is a multi-file step with code, tests, docs, verification, and commit.
+- Ran `session-catchup.py`; it reported older explanatory-only messages and no project-file changes to merge.
+- Checked Git status: current branch is clean before Step 14 edits.
+- Read the planning skill, memory index, `/home/yolo/jianli/PROJECT_MEMORY.md`, planning files, roadmap Step 14, `docs/database.md`, `sql/init.sql`, and current CMake.
+- Confirmed Step 14 scope: define storage/cache interfaces and no-op cache only; do not implement `SQLiteStorage`, real SQL schema, auth, chat, or storage-backed services.
+- Added `include/liteim/storage/StorageTypes.hpp`.
+- Added `include/liteim/storage/IStorage.hpp`.
+- Added `include/liteim/storage/ICache.hpp`.
+- Added `include/liteim/storage/NullCache.hpp`.
+- Added `src/storage/NullCache.cpp`.
+- Added `liteim_storage` in `src/CMakeLists.txt`.
+- Added `tests/test_storage_interfaces.cpp` and registered it in the test target.
+- Initial Step 14 verification passed:
+  - `cmake -S . -B build`
+  - `cmake --build build`
+  - `./build/tests/liteim_tests`
+- Added `tutorials/step14_storage_interfaces.md`.
+- Updated `README.md`, `docs/architecture.md`, `docs/database.md`, `docs/project_layout.md`, `docs/interview_notes.md`, `tutorials/README.md`, and `/home/yolo/jianli/PROJECT_MEMORY.md` for Step 14.
+- Final Step 14 verification passed:
+  - `cmake --build build`
+  - `./build/tests/liteim_tests`
+  - `ctest --test-dir build --output-on-failure`
+  - `./build/server/liteim_server` with Ctrl+C
+  - `git diff --check`
+- Reviewed storage interfaces, `NullCache`, storage tests, CMake integration, README tree, and project layout tree.
+- Preparing Step 14 commit with message `feat(storage): define storage and cache interfaces`.
 - Ran final `./build/server/liteim_server`; smoke run printed startup message.
 - Ran `git diff --check`; no whitespace errors.
 - Ran stale Step 10 wording search; it only matched the valid tutorial phrase saying a newly constructed `Acceptor` is not yet listening.

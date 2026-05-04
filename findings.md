@@ -154,3 +154,13 @@
 - Step 13 should integrate router wiring in `server/main.cpp` by installing a `TcpServer::setMessageCallback()` handler.
 - Step 13 must not implement registration, login, storage, private chat, group chat, friend list, history, or heartbeat timeout cleanup.
 - `MessageRouter` must not operate on raw fd values or manage sessions; it depends on `Session::sendPacket()` as the network-layer boundary.
+
+## Step 14 Design Notes
+
+- The authoritative Step 14 is `IStorage` / `ICache` abstraction from `/home/yolo/jianli/PROJECT_MEMORY.md`.
+- Step 14 should define storage contracts only; `SQLiteStorage`, SQL schema execution, registration/login behavior, and chat persistence remain later steps.
+- `IStorage` should cover users, friendships, groups, group members, private messages, group messages, history queries, group lookup, and offline-message queries.
+- Storage domain types should live under `include/liteim/storage/` so service/business code can depend on stable C++ structs instead of SQLite rows.
+- `ICache` should define the online-session cache boundary; `NullCache` should implement all methods as no-op / empty lookup behavior.
+- Add a separate `liteim_storage` target so future `liteim_service` can depend on storage abstractions without coupling to SQLite implementation details.
+- Tests should prove the interface can be implemented by a local test double and that `NullCache` is safe to call repeatedly without storing state.

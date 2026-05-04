@@ -13,11 +13,12 @@ The first milestone is the server MVP:
 5. Session lifecycle
 6. TcpServer connection manager
 7. MessageRouter heartbeat response
-8. Register and login
-9. Private chat
-10. Group chat
-11. SQLite persistence
-12. Heartbeat timeout
+8. Storage/cache abstraction
+9. Register and login
+10. Private chat
+11. Group chat
+12. SQLite persistence
+13. Heartbeat timeout
 
 ## Tech Stack
 
@@ -53,8 +54,13 @@ LiteIM/
 │       │   ├── FrameDecoder.hpp
 │       │   ├── MessageType.hpp
 │       │   └── Packet.hpp
-│       └── service/
-│           └── MessageRouter.hpp
+│       ├── service/
+│       │   └── MessageRouter.hpp
+│       └── storage/
+│           ├── ICache.hpp
+│           ├── IStorage.hpp
+│           ├── NullCache.hpp
+│           └── StorageTypes.hpp
 ├── src/
 │   ├── CMakeLists.txt
 │   ├── net/
@@ -69,8 +75,10 @@ LiteIM/
 │   ├── protocol/
 │   │   ├── FrameDecoder.cpp
 │   │   └── Packet.cpp
-│   └── service/
-│       └── MessageRouter.cpp
+│   ├── service/
+│   │   └── MessageRouter.cpp
+│   └── storage/
+│       └── NullCache.cpp
 ├── docs/
 ├── server/
 │   ├── CMakeLists.txt
@@ -91,6 +99,7 @@ LiteIM/
     ├── test_event_loop.cpp
     ├── test_session.cpp
     ├── test_socket_util.cpp
+    ├── test_storage_interfaces.cpp
     ├── test_tcp_server.cpp
     └── test_reactor_interfaces.cpp
 ```
@@ -130,4 +139,4 @@ ctest --test-dir build --output-on-failure
 ./build/tests/liteim_tests
 ```
 
-Current tests cover Packet encoding/validation, TCP frame decoding, Buffer behavior, SocketUtil helpers, Reactor interface declarations, Epoller add/mod/del plus LT poll behavior, EventLoop dispatch/quit behavior, Channel automatic EventLoop update plus callback dispatch behavior, Acceptor bind/listen/accept callback behavior, Session read/decode/write/close lifecycle behavior, TcpServer accept/session tracking/send/shutdown behavior, and MessageRouter heartbeat/error response routing.
+Current tests cover Packet encoding/validation, TCP frame decoding, Buffer behavior, SocketUtil helpers, Reactor interface declarations, Epoller add/mod/del plus LT poll behavior, EventLoop dispatch/quit behavior, Channel automatic EventLoop update plus callback dispatch behavior, Acceptor bind/listen/accept callback behavior, Session read/decode/write/close lifecycle behavior, TcpServer accept/session tracking/send/shutdown behavior, MessageRouter heartbeat/error response routing, and storage/cache interface contracts.

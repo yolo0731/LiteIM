@@ -52,3 +52,17 @@ target_compile_options(liteim_service PRIVATE
     -Wextra
     -Wpedantic
 )
+
+add_library(liteim_storage
+    storage/NullCache.cpp
+)
+
+target_include_directories(liteim_storage PUBLIC
+    ${PROJECT_SOURCE_DIR}/include
+)
+
+target_compile_options(liteim_storage PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+)

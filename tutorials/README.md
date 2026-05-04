@@ -48,3 +48,4 @@
 | Step 11 Session | 已完成 | 单连接生命周期、读写缓冲、Packet 解码和发送 |
 | Step 12 TcpServer | 已完成 | 组合 Acceptor/Session、连接表、按 fd/user 发送、signalfd 优雅关闭 |
 | Step 13 MessageRouter | 已完成 | 按 msg_type 分发、心跳响应、未知类型错误响应 |
+| Step 14 IStorage / ICache | 已完成 | 存储抽象、缓存抽象、NullCache no-op 实现 |
