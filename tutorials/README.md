@@ -49,3 +49,4 @@
 | Step 12 TcpServer | 已完成 | 组合 Acceptor/Session、连接表、按 fd/user 发送、signalfd 优雅关闭 |
 | Step 13 MessageRouter | 已完成 | 按 msg_type 分发、心跳响应、未知类型错误响应 |
 | Step 14 IStorage / ICache | 已完成 | 存储抽象、缓存抽象、NullCache no-op 实现 |
+| Step 15 SQLiteStorage | 已完成 | SQLite schema、prepared statement、用户/好友/群组/消息持久化 |

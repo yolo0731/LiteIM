@@ -164,3 +164,13 @@
 - `ICache` should define the online-session cache boundary; `NullCache` should implement all methods as no-op / empty lookup behavior.
 - Add a separate `liteim_storage` target so future `liteim_service` can depend on storage abstractions without coupling to SQLite implementation details.
 - Tests should prove the interface can be implemented by a local test double and that `NullCache` is safe to call repeatedly without storing state.
+
+## Step 15 Design Notes
+
+- The authoritative Step 15 is `SQLiteStorage` from `/home/yolo/jianli/PROJECT_MEMORY.md`.
+- `SQLiteStorage` should implement the existing `IStorage` contract without changing service or protocol behavior.
+- Constructor should open a database path, enable foreign keys, and execute `sql/init.sql`.
+- Tests should use `:memory:` for fast interface behavior checks and a `/tmp` file-backed database to prove persistence across connections.
+- Use SQLite prepared statements and bound parameters instead of string-concatenated SQL.
+- Expected duplicate/constraint cases should return `std::nullopt` or `false`; unexpected SQLite API failures should throw so defects are visible.
+- `NullCache` stays no-op in Step 15; no Redis or real online-state cache should be introduced.

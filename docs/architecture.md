@@ -450,3 +450,47 @@ SQLiteStorage
 - 不让业务层直接依赖 SQLite。
 
 先定义接口的好处是：后续可以用 `SQLiteStorage` 跑真实服务端，也可以用测试替身跑业务单元测试。业务层只关心“存储能做什么”，不关心“底层怎么存”。
+
+## Step 15：SQLiteStorage 存储实现
+
+Step 15 已经实现 `SQLiteStorage`：
+
+- 头文件：`include/liteim/storage/SQLiteStorage.hpp`
+- 实现文件：`src/storage/SQLiteStorage.cpp`
+- schema：`sql/init.sql`
+
+`SQLiteStorage` 是 `IStorage` 的 SQLite 实现。它位于 storage 层，不属于 service 层，也不处理协议消息。
+
+依赖方向仍然是：
+
+```text
+service layer
+    ↓ depends on
+IStorage
+    ↑ implemented by
+SQLiteStorage
+```
+
+`SQLiteStorage` 构造时打开数据库路径，默认是 `liteim.db`，然后执行 `sql/init.sql`。schema 当前包含：
+
+- `users`
+- `friendships`
+- `groups`
+- `group_members`
+- `messages`
+
+实现细节上，`SQLiteStorage` 使用 prepared statement 和参数绑定，而不是拼接 SQL 字符串。这样可以避免 SQL 注入风险，也能让字段类型和绑定位置更清楚。
+
+资源管理上：
+
+- `SQLiteStorage` 拥有一个 `sqlite3*` 连接。
+- 析构时关闭连接。
+- `.cpp` 内部的 `Statement` RAII 类拥有 `sqlite3_stmt*`。
+- `Statement` 析构时调用 `sqlite3_finalize()`。
+
+错误处理边界：
+
+- 用户名重复、外键约束失败等预期业务失败，会返回 `std::nullopt` 或 `false`。
+- 打不开数据库、schema 文件不存在、SQL prepare/step 出现非预期错误，会抛出异常。
+
+Step 15 不让 `MessageRouter` 依赖 storage，也不实现 `AuthService`。后续注册登录会在 Step 16 通过 `IStorage` 使用这里的 SQLite 实现。

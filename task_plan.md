@@ -2,25 +2,25 @@
 
 ## Goal
 
-Continue LiteIM as a step-by-step teaching project. Current active task is Step 14: define `IStorage` / `ICache` abstractions and `NullCache`.
+Continue LiteIM as a step-by-step teaching project. Current active task is Step 15: implement `SQLiteStorage`.
 
 ## Current Phase
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Check memory and repo state | complete | Read planning skill, session catchup, memory index, project memory Step 14, planning files, roadmap, database docs, SQL placeholder, CMake, and Git status. |
-| Record Step 14 design | complete | Defined storage/cache interfaces while keeping SQLiteStorage, SQL schema, auth, chat, and real cache behavior out of scope. |
-| Implement code | complete | Added storage domain types, `IStorage`, `ICache`, and `NullCache`; exposed the module through CMake. |
-| Add tests | complete | Added interface/NullCache tests that prove business-layer test doubles can implement `IStorage`. |
-| Update docs and tutorials | complete | Added Step 14 tutorial and synced README, database, architecture, layout, interview notes, tutorial index, and project memory. |
-| Build, test, review, commit | complete | Build, direct tests, CTest, server smoke run, whitespace check, final diff review, and Step 14 commit completed. |
+| Check memory and repo state | complete | Read planning skill, session catchup, memory index, project memory Step 15, current storage interfaces, CMake, tests, SQLite availability, and Git status. |
+| Record Step 15 design | complete | Implemented `SQLiteStorage` over `IStorage` while keeping auth/chat services and real cache behavior out of scope. |
+| Implement code | complete | Added SQLite schema, `SQLiteStorage` header/implementation, RAII statement helpers, and SQLite CMake linkage. |
+| Add tests | complete | Added SQLiteStorage tests for users, friends, groups, messages, offline queries, and file persistence. |
+| Update docs and tutorials | complete | Added Step 15 tutorial and synced README, database, architecture, layout, interview notes, tutorial index, and project memory. |
+| Build, test, review, commit | complete | Build, direct tests, CTest, server smoke run, whitespace check, final diff review, and Step 15 commit preparation completed. |
 
 ## Planning Hook Phase Status
 
 ### Phase 1: Check memory and repo state
 **Status:** complete
 
-### Phase 2: Record Step 14 design
+### Phase 2: Record Step 15 design
 **Status:** complete
 
 ### Phase 3: Implement code
@@ -35,32 +35,31 @@ Continue LiteIM as a step-by-step teaching project. Current active task is Step 
 ### Phase 6: Build, test, review, commit
 **Status:** complete
 
-## Step 14 Scope
+## Step 15 Scope
 
-Define storage and cache abstractions for future business services:
+Implement SQLite persistence behind the Step 14 `IStorage` contract:
 
-- Add storage domain types shared by `IStorage` and `ICache`.
-- Add `include/liteim/storage/IStorage.hpp`.
-- Add `include/liteim/storage/ICache.hpp`.
-- Add `include/liteim/storage/NullCache.hpp`.
-- Add `src/storage/NullCache.cpp`.
-- Define `IStorage` methods for users, friendships, groups, private/group messages, history, members, and offline messages.
-- Define an `ICache` interface for online-session cache lookups.
-- Implement `NullCache` as a no-op cache implementation.
-- Add a `liteim_storage` CMake target.
+- Add `include/liteim/storage/SQLiteStorage.hpp`.
+- Add `src/storage/SQLiteStorage.cpp`.
+- Replace the SQL placeholder in `sql/init.sql` with the Step 15 schema.
+- Open a SQLite database from a path, defaulting to `liteim.db`.
+- Execute `sql/init.sql` on startup.
+- Implement all current `IStorage` methods.
+- Keep `NullCache` as the single-process no-op cache implementation.
+- Link `liteim_storage` with SQLite3.
 
-Step 14 creates contracts only. It should make future business services depend on interfaces instead of SQLite.
+`SQLiteStorage` is the storage-layer implementation. It should translate storage interface calls into SQL but must not implement business protocol behavior.
 
-## Step 14 Design Boundaries
+## Step 15 Design Boundaries
 
-- Do not implement `SQLiteStorage`.
-- Do not add real SQL schema or database file access.
 - Do not implement registration/login/auth behavior.
 - Do not implement private chat, group chat, friend list, or history service behavior.
 - Do not introduce Redis or any real distributed cache.
 - Do not make `MessageRouter` depend on storage yet.
 - Do not change protocol encoding/decoding.
+- Do not change `IStorage` unless a clear SQLite mapping bug requires it.
 - Keep `NullCache` no-op; do not store online state in it.
+- Keep password hashing/salt generation out of Step 15; storage only stores the supplied salt/hash.
 
 ## Persistent Requirements
 

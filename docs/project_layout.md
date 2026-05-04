@@ -27,6 +27,7 @@ LiteIM/
 │           ├── ICache.hpp
 │           ├── IStorage.hpp
 │           ├── NullCache.hpp
+│           ├── SQLiteStorage.hpp
 │           └── StorageTypes.hpp
 ├── src/
 │   ├── CMakeLists.txt
@@ -45,7 +46,8 @@ LiteIM/
 │   ├── service/
 │   │   └── MessageRouter.cpp
 │   └── storage/
-│       └── NullCache.cpp
+│       ├── NullCache.cpp
+│       └── SQLiteStorage.cpp
 ├── server/
 │   ├── CMakeLists.txt
 │   └── main.cpp
@@ -89,6 +91,7 @@ LiteIM/
 #include "liteim/service/MessageRouter.hpp"
 #include "liteim/storage/IStorage.hpp"
 #include "liteim/storage/NullCache.hpp"
+#include "liteim/storage/SQLiteStorage.hpp"
 ```
 
 不要再使用旧写法：
@@ -139,7 +142,7 @@ service -> net -> protocol
 
 网络层不反向依赖业务层，这样 `Session`、`TcpServer` 和 `MessageRouter` 都能分别测试。
 
-`liteim_storage` 当前只提供存储/缓存接口和 `NullCache` no-op 实现，不链接 SQLite。后续 `SQLiteStorage` 会在这个模块里实现。
+`liteim_storage` 当前提供存储/缓存接口、`NullCache` no-op 实现和 `SQLiteStorage`。它链接 SQLite3，但 SQLite 依赖被限制在 storage 模块内部，业务层仍然面向 `IStorage`。
 
 ## 后续新增文件放哪里
 
@@ -259,6 +262,15 @@ include/liteim/storage/NullCache.hpp
 src/storage/NullCache.cpp
 ```
 
-`storage` 模块当前只定义抽象和 no-op 缓存，不实现 SQLite。后续业务层应该依赖 `IStorage` / `ICache`，真实 SQLite 访问留给 Step 15 的 `SQLiteStorage`。
+`storage` 模块在 Step 14 先定义抽象和 no-op 缓存。后续业务层应该依赖 `IStorage` / `ICache`，真实 SQLite 访问由 Step 15 的 `SQLiteStorage` 提供。
+
+Step 15 已经实现 `SQLiteStorage`：
+
+```text
+include/liteim/storage/SQLiteStorage.hpp
+src/storage/SQLiteStorage.cpp
+```
+
+`SQLiteStorage` 仍然属于 `storage` 模块。它实现 `IStorage`，打开 SQLite 数据库并执行 `sql/init.sql`，但不实现注册登录、私聊转发或群聊转发业务。业务层后续通过 `IStorage` 使用它，而不是直接包含 SQLite C API。
 
 每一步仍然要遵守：只实现当前 Step，编译通过，测试通过，文档同步更新。

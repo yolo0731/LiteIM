@@ -320,10 +320,37 @@
   - `git diff --check`
 - Reviewed storage interfaces, `NullCache`, storage tests, CMake integration, README tree, and project layout tree.
 - Preparing Step 14 commit with message `feat(storage): define storage and cache interfaces`.
-- Ran final `./build/server/liteim_server`; smoke run printed startup message.
-- Ran `git diff --check`; no whitespace errors.
-- Ran stale Step 10 wording search; it only matched the valid tutorial phrase saying a newly constructed `Acceptor` is not yet listening.
-- Reviewed the Step 10 source/test diff before commit.
+
+## 2026-05-04 Step 15 Session
+
+- Started Step 15: implement `SQLiteStorage`.
+- Using `planning-with-files` because this is a multi-file step with code, schema, tests, docs, verification, and commit.
+- Ran `session-catchup.py`; it reported older explanatory-only messages and no project-file changes to merge.
+- Checked Git status: current branch is ahead of `origin/main` by 1 commit and clean before Step 15 edits.
+- Read the planning skill, memory index, `/home/yolo/jianli/PROJECT_MEMORY.md`, planning files, current `IStorage` / `StorageTypes`, current CMake, and storage interface tests.
+- Confirmed SQLite3 is available: `pkg-config --modversion sqlite3` returned `3.45.1`; sqlite3 CLI exists at `/home/yolo/anaconda3/bin/sqlite3`.
+- Confirmed Step 15 scope: implement SQLite schema and `SQLiteStorage`; keep auth/chat services, protocol behavior, `MessageRouter` storage dependency, and real cache out of scope.
+- Added `include/liteim/storage/SQLiteStorage.hpp`.
+- Added `src/storage/SQLiteStorage.cpp` with SQLite connection ownership, schema execution, prepared statement helpers, and all current `IStorage` methods.
+- Replaced `sql/init.sql` placeholder with users, friendships, groups, group_members, and messages tables plus indexes.
+- Updated `src/CMakeLists.txt` to `find_package(SQLite3 REQUIRED)`, compile `SQLiteStorage.cpp`, and link `liteim_storage` with `SQLite::SQLite3`.
+- Added `tests/test_sqlite_storage.cpp` and registered it in the test target.
+- Added `LITEIM_SOURCE_DIR` compile definition for tests so CTest can find `sql/init.sql` from the build directory.
+- Initial Step 15 verification passed:
+  - `cmake -S . -B build`
+  - `cmake --build build`
+  - `./build/tests/liteim_tests`
+- Added `tutorials/step15_sqlite_storage.md`.
+- Updated `README.md`, `docs/architecture.md`, `docs/database.md`, `docs/project_layout.md`, `docs/interview_notes.md`, `tutorials/README.md`, and `/home/yolo/jianli/PROJECT_MEMORY.md` for Step 15.
+- Final Step 15 verification passed:
+  - `cmake -S . -B build`
+  - `cmake --build build`
+  - `./build/tests/liteim_tests`
+  - `ctest --test-dir build --output-on-failure`
+  - `./build/server/liteim_server` with Ctrl+C
+  - `git diff --check`
+- Reviewed `SQLiteStorage` source, schema, CMake linkage, SQLite tests, docs, tutorial, and planning-file diff before commit.
+- Preparing Step 15 commit with message `feat(storage): implement sqlite storage`.
 
 ## 2026-05-03 Step 11 Session
 

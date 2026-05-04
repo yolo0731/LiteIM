@@ -60,6 +60,7 @@ LiteIM/
 │           ├── ICache.hpp
 │           ├── IStorage.hpp
 │           ├── NullCache.hpp
+│           ├── SQLiteStorage.hpp
 │           └── StorageTypes.hpp
 ├── src/
 │   ├── CMakeLists.txt
@@ -78,7 +79,8 @@ LiteIM/
 │   ├── service/
 │   │   └── MessageRouter.cpp
 │   └── storage/
-│       └── NullCache.cpp
+│       ├── NullCache.cpp
+│       └── SQLiteStorage.cpp
 ├── docs/
 ├── server/
 │   ├── CMakeLists.txt
@@ -99,6 +101,7 @@ LiteIM/
     ├── test_event_loop.cpp
     ├── test_session.cpp
     ├── test_socket_util.cpp
+    ├── test_sqlite_storage.cpp
     ├── test_storage_interfaces.cpp
     ├── test_tcp_server.cpp
     └── test_reactor_interfaces.cpp
@@ -139,4 +142,4 @@ ctest --test-dir build --output-on-failure
 ./build/tests/liteim_tests
 ```
 
-Current tests cover Packet encoding/validation, TCP frame decoding, Buffer behavior, SocketUtil helpers, Reactor interface declarations, Epoller add/mod/del plus LT poll behavior, EventLoop dispatch/quit behavior, Channel automatic EventLoop update plus callback dispatch behavior, Acceptor bind/listen/accept callback behavior, Session read/decode/write/close lifecycle behavior, TcpServer accept/session tracking/send/shutdown behavior, MessageRouter heartbeat/error response routing, and storage/cache interface contracts.
+Current tests cover Packet encoding/validation, TCP frame decoding, Buffer behavior, SocketUtil helpers, Reactor interface declarations, Epoller add/mod/del plus LT poll behavior, EventLoop dispatch/quit behavior, Channel automatic EventLoop update plus callback dispatch behavior, Acceptor bind/listen/accept callback behavior, Session read/decode/write/close lifecycle behavior, TcpServer accept/session tracking/send/shutdown behavior, MessageRouter heartbeat/error response routing, storage/cache interface contracts, and SQLiteStorage persistence behavior.

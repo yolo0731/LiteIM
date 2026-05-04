@@ -53,12 +53,19 @@ target_compile_options(liteim_service PRIVATE
     -Wpedantic
 )
 
+find_package(SQLite3 REQUIRED)
+
 add_library(liteim_storage
     storage/NullCache.cpp
+    storage/SQLiteStorage.cpp
 )
 
 target_include_directories(liteim_storage PUBLIC
     ${PROJECT_SOURCE_DIR}/include
+)
+
+target_link_libraries(liteim_storage PRIVATE
+    SQLite::SQLite3
 )
 
 target_compile_options(liteim_storage PRIVATE

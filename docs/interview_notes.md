@@ -437,3 +437,43 @@
 - 为什么测试要用 fake storage？
 - `NullCache` 有什么意义？
 - 离线消息为什么属于 storage，而在线 session 查询为什么更像 cache？
+
+## SQLiteStorage 持久化实现
+
+面试时可以这样说：
+
+> 我实现了 `SQLiteStorage` 作为 `IStorage` 的具体落地。构造时打开 SQLite 数据库，开启 foreign key，并执行 `sql/init.sql` 建表。用户、好友、群组、群成员和消息都通过 prepared statement 读写。业务层仍然只依赖 `IStorage`，所以后续 `AuthService` 或 `ChatService` 不需要知道 SQLite C API。
+
+为什么使用 prepared statement：
+
+- 不把用户输入拼进 SQL 字符串，避免 SQL 注入风险。
+- 参数类型和绑定位置明确。
+- SQLite 可以复用解析后的 statement，后续性能更稳定。
+
+为什么用 RAII 包装 `sqlite3_stmt*`：
+
+- prepared statement 必须 `sqlite3_finalize()`。
+- 如果中间抛异常，手动 finalize 容易漏。
+- `.cpp` 内部的 `Statement` 对象析构时自动 finalize，资源边界更清楚。
+
+为什么构造时执行 `sql/init.sql`：
+
+- 服务端启动时可以保证表结构存在。
+- `CREATE TABLE IF NOT EXISTS` 让重复启动是幂等的。
+- 测试可以用同一份 schema 初始化 `:memory:` 或临时文件数据库。
+
+当前 schema 怎么设计：
+
+- `users` 保存账号、昵称、salt/hash 和用户类型。
+- `friendships` 保存双向好友关系。
+- `groups` 保存群基础信息。
+- `group_members` 保存群成员关系。
+- `messages` 同时保存私聊和群聊，通过 `message_type` 区分。
+
+常见追问：
+
+- `SQLiteStorage` 为什么不放在 service 层？
+- 为什么业务失败返回 `std::nullopt` / `false`，而 SQLite API 异常抛异常？
+- 为什么 `friendships` 要写双向关系？
+- 为什么私聊和群聊消息可以放在同一张 `messages` 表？
+- `PRAGMA foreign_keys = ON` 为什么需要每个连接都执行？
