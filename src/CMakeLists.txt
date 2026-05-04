@@ -33,3 +33,22 @@ target_compile_options(liteim_net PRIVATE
     -Wextra
     -Wpedantic
 )
+
+add_library(liteim_service
+    service/MessageRouter.cpp
+)
+
+target_include_directories(liteim_service PUBLIC
+    ${PROJECT_SOURCE_DIR}/include
+)
+
+target_link_libraries(liteim_service PUBLIC
+    liteim_net
+    liteim_protocol
+)
+
+target_compile_options(liteim_service PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+)

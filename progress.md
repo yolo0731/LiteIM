@@ -258,6 +258,38 @@
 - Ran final `cmake --build build`; build passed.
 - Ran final `ctest --test-dir build --output-on-failure`; tests passed.
 - Ran final `./build/tests/liteim_tests`; all tests passed, including four Acceptor tests. Existing invalid-fd socket utility tests printed expected syscall error logs.
+
+## 2026-05-04 Step 13 Session
+
+- Started Step 13: implement `MessageRouter` heartbeat routing.
+- Using `planning-with-files` because this is a multi-file implementation step with code, tests, docs, verification, and commit.
+- Initial sandboxed reads failed with `bwrap: setting up uid map: Permission denied`; continued with approved escalation for local reads.
+- Ran `session-catchup.py`; it reported older explanatory-only messages and no project-file changes to merge.
+- Read `/home/yolo/jianli/PROJECT_MEMORY.md`, LiteIM planning files, roadmap, `TcpServer`, protocol message types, CMake files, and test harness.
+- Checked Git status: current branch is ahead of `origin/main` by 3 commits, with no tracked working-tree changes before Step 13 edits.
+- Confirmed Step 13 scope: add service-layer `MessageRouter`, route `HEARTBEAT_REQ` to `HEARTBEAT_RESP`, return `ERROR_RESP` for unknown message types, and keep login/chat/storage/timeout cleanup out of scope.
+- Added `include/liteim/service/MessageRouter.hpp`.
+- Added `src/service/MessageRouter.cpp`.
+- Added `liteim_service` in `src/CMakeLists.txt` and linked it into server/tests.
+- Wired `server/main.cpp` so `TcpServer::setMessageCallback()` routes packets through `MessageRouter`.
+- Added `tests/test_message_router.cpp` using real `Session` + `socketpair` verification.
+- Registered MessageRouter tests in `tests/CMakeLists.txt` and `tests/test_main.cpp`.
+- Initial Step 13 verification passed:
+  - `cmake -S . -B build`
+  - `cmake --build build`
+  - `./build/tests/liteim_tests`
+  - `ctest --test-dir build --output-on-failure`
+- Added `tutorials/step13_message_router.md`.
+- Updated `README.md`, `docs/architecture.md`, `docs/project_layout.md`, `docs/interview_notes.md`, `tutorials/README.md`, and `/home/yolo/jianli/PROJECT_MEMORY.md` for Step 13.
+- Final verification passed so far:
+  - `cmake --build build`
+  - `./build/tests/liteim_tests`
+  - `ctest --test-dir build --output-on-failure`
+  - `./build/server/liteim_server` with Ctrl+C
+  - `git diff --check`
+- `git diff -- /home/yolo/jianli/PROJECT_MEMORY.md` from `/home/yolo/jianli` failed because `/home/yolo/jianli` is not a Git repository; this file is workspace-level metadata outside the LiteIM repo.
+- Reviewed MessageRouter code, server/CMake integration, tests, README tree, project layout tree, and project memory Step 13 text.
+- Preparing Step 13 commit with message `feat(service): add message router and heartbeat response`.
 - Ran final `./build/server/liteim_server`; smoke run printed startup message.
 - Ran `git diff --check`; no whitespace errors.
 - Ran stale Step 10 wording search; it only matched the valid tutorial phrase saying a newly constructed `Acceptor` is not yet listening.

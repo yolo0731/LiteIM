@@ -2,25 +2,25 @@
 
 ## Goal
 
-Continue LiteIM as a step-by-step teaching project. Current active task is Step 12: implement `TcpServer`.
+Continue LiteIM as a step-by-step teaching project. Current active task is Step 13: implement `MessageRouter` heartbeat routing.
 
 ## Current Phase
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Check memory and repo state | complete | Read planning skill, session catchup, project memory, planning files, roadmap, Acceptor/Session/EventLoop source, tests, and Git status. |
-| Record Step 12 design | complete | Implement `TcpServer` as the server coordinator while keeping MessageRouter, login, chat, and storage out of scope. |
-| Implement code | complete | Added `TcpServer`, integrated `Acceptor` and `Session`, added session/user send helpers, and wired `signalfd` shutdown. |
-| Add tests | complete | Added TcpServer tests for accept/session tracking, message callback, sendToSession/sendToUser, and signal shutdown; added Acceptor close test. |
-| Update docs and tutorials | complete | Added Step 12 tutorial and updated architecture, interview notes, tutorial index, README, layout docs, and project memory. |
-| Build, test, review, commit | complete | Build, CTest, direct tests, server Ctrl+C smoke run, whitespace check, and final diff review passed. |
+| Check memory and repo state | complete | Read planning skill, session catchup, project memory, planning files, roadmap, TcpServer/Packet/MessageType source, CMake, tests, and Git status. |
+| Record Step 13 design | complete | Implement `MessageRouter` as a service-layer dispatcher while keeping login, chat, storage, and heartbeat timeout cleanup out of scope. |
+| Implement code | complete | Added service module and route `HEARTBEAT_REQ` / unknown message responses through `Session::sendPacket()`. |
+| Add tests | complete | Added MessageRouter tests for heartbeat response, unknown type error response, seq_id preservation, and empty-body boundaries. |
+| Update docs and tutorials | complete | Added Step 13 tutorial and synced README, architecture, layout, interview notes, tutorial index, and project memory. |
+| Build, test, review, commit | complete | Build, direct tests, CTest, server Ctrl+C smoke run, whitespace check, final diff review, and Step 13 commit completed. |
 
 ## Planning Hook Phase Status
 
 ### Phase 1: Check memory and repo state
 **Status:** complete
 
-### Phase 2: Record Step 12 design
+### Phase 2: Record Step 13 design
 **Status:** complete
 
 ### Phase 3: Implement code
@@ -35,32 +35,31 @@ Continue LiteIM as a step-by-step teaching project. Current active task is Step 
 ### Phase 6: Build, test, review, commit
 **Status:** complete
 
-## Step 12 Scope
+## Step 13 Scope
 
-Implement `TcpServer`, the server coordinator:
+Implement `MessageRouter`, the first service-layer dispatcher:
 
-- Hold an `EventLoop*` supplied by the server entry point.
-- Hold one `Acceptor` for the listen socket.
-- Maintain active `Session` objects by connected fd.
-- Create and start a `Session` when `Acceptor` reports a new connection.
-- Remove closed sessions from the active map without destroying a `Session` while its callback stack is still unwinding.
-- Provide `sendToSession()`.
-- Provide a foundation for `sendToUser()` with explicit user-to-session binding.
-- Register `SIGINT` / `SIGTERM` with `signalfd`.
-- Add the signal fd to the same `EventLoop` through `Channel`.
-- On signal or `stop()`, close sessions, close the listen socket, disable signal handling, and call `EventLoop::quit()`.
+- Add `include/liteim/service/MessageRouter.hpp`.
+- Add `src/service/MessageRouter.cpp`.
+- Route packets by `packet.header.msg_type`.
+- Support `HEARTBEAT_REQ` by replying with `HEARTBEAT_RESP`.
+- Reply to unknown message types with `ERROR_RESP`.
+- Preserve the request `seq_id` in router-generated responses.
+- Keep response body small and deterministic so tests can assert it.
+- Integrate `MessageRouter` with `TcpServer::setMessageCallback()` in `server/main.cpp`.
 
-`TcpServer` coordinates networking objects only. It does not parse business message types or implement login/chat/storage semantics.
+`MessageRouter` is service-layer orchestration. It should depend on `Session::sendPacket()` but must not operate on raw fds, own sessions, or manage epoll state.
 
-## Step 12 Design Boundaries
+## Step 13 Design Boundaries
 
-- Do not implement `MessageRouter`.
-- Do not implement login, heartbeat response, private chat, or storage behavior.
-- Do not add `EPOLLET`; keep LT mode.
-- Do not add SQLite/database flush logic.
-- Do not implement timer/heartbeat timeout logic.
-- Do not make `Session` responsible for user identity.
-- Keep signal handling limited to `SIGINT` / `SIGTERM` and orderly network shutdown.
+- Do not implement registration/login/auth.
+- Do not implement private chat, group chat, history, friend list, or bot behavior.
+- Do not define `IStorage` / `ICache`; those belong to Step 14.
+- Do not add SQLite/database access.
+- Do not implement heartbeat timeout cleanup; timerfd/TimerHeap belongs to Step 20.
+- Do not add user identity binding to `MessageRouter`; login binding comes later.
+- Do not change protocol framing or `FrameDecoder`.
+- Do not make `MessageRouter` call `sendToSession()` or touch raw fd values.
 
 ## Persistent Requirements
 
@@ -84,3 +83,4 @@ Implement `TcpServer`, the server coordinator:
 | --- | --- | --- |
 | `bwrap: setting up uid map: Permission denied` | Normal sandboxed file reads | Used approved escalation for local project reads and builds. |
 | `/bin/bash: -c: line 1: unexpected EOF while looking for matching \`\`` | Stale-doc wording search included a backtick inside the shell string | Re-ran the search with a simpler expression that avoided backticks; no stale Step 9 wording was found in current docs/index files. |
+| `warning: Not a git repository. Use --no-index to compare two paths outside a working tree` | Ran `git diff -- /home/yolo/jianli/PROJECT_MEMORY.md` from `/home/yolo/jianli` | Treat `/home/yolo/jianli/PROJECT_MEMORY.md` as workspace-level metadata outside the LiteIM Git repo; verify repo-local diff from `/home/yolo/jianli/LiteIM` and inspect the external file directly if needed. |

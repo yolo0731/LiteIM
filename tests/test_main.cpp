@@ -13,6 +13,7 @@ std::vector<liteim::tests::TestCase> channelTests();
 std::vector<liteim::tests::TestCase> acceptorTests();
 std::vector<liteim::tests::TestCase> sessionTests();
 std::vector<liteim::tests::TestCase> tcpServerTests();
+std::vector<liteim::tests::TestCase> messageRouterTests();
 
 int main() {
     std::vector<liteim::tests::TestCase> tests;
@@ -49,6 +50,9 @@ int main() {
 
     const auto tcp_server_tests = tcpServerTests();
     tests.insert(tests.end(), tcp_server_tests.begin(), tcp_server_tests.end());
+
+    const auto message_router_tests = messageRouterTests();
+    tests.insert(tests.end(), message_router_tests.begin(), message_router_tests.end());
 
     return liteim::tests::runTests(tests);
 }

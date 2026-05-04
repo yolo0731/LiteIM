@@ -142,3 +142,15 @@
 - On signal shutdown, `TcpServer` should close active sessions, stop accepting, disable the signal channel/fd, and call `EventLoop::quit()`.
 - The interview section should explain the Step's design idea, not only provide a short quote.
 - Each Step should include common interview follow-up questions with short answers.
+
+## Step 13 Design Notes
+
+- The authoritative Step 13 is `MessageRouter` heartbeat foundation from `/home/yolo/jianli/PROJECT_MEMORY.md`.
+- `MessageRouter` belongs to a new `service` module: header in `include/liteim/service/`, implementation in `src/service/`.
+- `MessageRouter` should receive `net::Session&` and `protocol::Packet`, inspect only `packet.header.msg_type`, and reply through `Session::sendPacket()`.
+- The first supported route is `HEARTBEAT_REQ -> HEARTBEAT_RESP`.
+- Unknown message types should return `ERROR_RESP` so clients get deterministic feedback instead of silent drops.
+- Router-generated responses should preserve the request `seq_id` so clients can correlate request/response pairs.
+- Step 13 should integrate router wiring in `server/main.cpp` by installing a `TcpServer::setMessageCallback()` handler.
+- Step 13 must not implement registration, login, storage, private chat, group chat, friend list, history, or heartbeat timeout cleanup.
+- `MessageRouter` must not operate on raw fd values or manage sessions; it depends on `Session::sendPacket()` as the network-layer boundary.

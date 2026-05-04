@@ -365,3 +365,42 @@
 - 为什么 stop 时要先关闭 sessions，再关闭 listen socket？
 - 为什么 signal fd 也可以放进 epoll？
 - 当前 `sendToUser()` 和真正登录态绑定还差什么？
+
+## MessageRouter 消息分发
+
+面试时可以这样说：
+
+> 我在网络层之上增加了 `MessageRouter`。`Session` 负责把 TCP 字节流解成 `Packet`，`TcpServer` 负责连接管理和 message callback，`MessageRouter` 负责根据 `Packet.header.msg_type` 做业务分发。第一版只支持 `HEARTBEAT_REQ -> HEARTBEAT_RESP`，未知消息返回 `ERROR_RESP`。router 不直接操作 fd，也不保存 Session，只通过 `Session::sendPacket()` 把响应交回网络层。
+
+为什么要单独拆 `MessageRouter`：
+
+- `Session` 不应该理解登录、聊天、心跳这些业务语义。
+- `TcpServer` 不应该变成所有业务 switch 的集合。
+- 业务分发单独成层后，后续可以自然接 `AuthService`、`ChatService`、`GroupService`。
+- router 可以独立测试，不需要每个业务测试都重新搭完整服务端。
+
+为什么 `MessageRouter` 只通过 `Session::sendPacket()` 回复：
+
+- fd 的读写、输出缓冲区和关闭状态都由 `Session` 管理。
+- 非阻塞写可能短写，必须走 `Session` 的输出缓冲。
+- router 只表达“要回什么 Packet”，不关心底层什么时候可写。
+
+为什么响应保留 `seq_id`：
+
+- 客户端可能同时发多个请求。
+- 保留请求 `seq_id` 后，客户端能把响应和请求对应起来。
+- 这是二进制协议里常见的 request/response 关联方式。
+
+为什么未知消息返回 `ERROR_RESP`：
+
+- 静默丢弃会让客户端难以判断服务端是否收到请求。
+- 明确错误响应方便客户端处理，也方便测试定位。
+- 后续新业务没实现时，也能保持协议行为可预期。
+
+常见追问：
+
+- `MessageRouter` 和 `TcpServer` 的边界是什么？
+- 为什么 router 不直接拿 fd 写？
+- 什么时候应该把分发逻辑拆到具体 service？
+- 心跳响应和心跳超时清理有什么区别？
+- 未来登录成功后，用户和 Session 应该在哪里绑定？

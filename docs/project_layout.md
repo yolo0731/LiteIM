@@ -15,11 +15,14 @@ LiteIM/
 │       │   ├── Epoller.hpp
 │       │   ├── EventLoop.hpp
 │       │   ├── Session.hpp
-│       │   └── SocketUtil.hpp
-│       └── protocol/
-│           ├── FrameDecoder.hpp
-│           ├── MessageType.hpp
-│           └── Packet.hpp
+│       │   ├── SocketUtil.hpp
+│       │   └── TcpServer.hpp
+│       ├── protocol/
+│       │   ├── FrameDecoder.hpp
+│       │   ├── MessageType.hpp
+│       │   └── Packet.hpp
+│       └── service/
+│           └── MessageRouter.hpp
 ├── src/
 │   ├── CMakeLists.txt
 │   ├── net/
@@ -29,10 +32,13 @@ LiteIM/
 │   │   ├── Epoller.cpp
 │   │   ├── EventLoop.cpp
 │   │   ├── Session.cpp
-│   │   └── SocketUtil.cpp
-│   └── protocol/
-│       ├── FrameDecoder.cpp
-│       └── Packet.cpp
+│   │   ├── SocketUtil.cpp
+│   │   └── TcpServer.cpp
+│   ├── protocol/
+│   │   ├── FrameDecoder.cpp
+│   │   └── Packet.cpp
+│   └── service/
+│       └── MessageRouter.cpp
 ├── server/
 │   ├── CMakeLists.txt
 │   └── main.cpp
@@ -72,6 +78,8 @@ LiteIM/
 #include "liteim/net/Channel.hpp"
 #include "liteim/net/EventLoop.hpp"
 #include "liteim/net/Session.hpp"
+#include "liteim/net/TcpServer.hpp"
+#include "liteim/service/MessageRouter.hpp"
 ```
 
 不要再使用旧写法：
@@ -90,7 +98,8 @@ LiteIM/
 ```text
 src/CMakeLists.txt
   ├── liteim_protocol
-  └── liteim_net
+  ├── liteim_net
+  └── liteim_service
 
 server/CMakeLists.txt
   └── liteim_server
@@ -99,7 +108,7 @@ tests/CMakeLists.txt
   └── liteim_tests
 ```
 
-`liteim_protocol` 和 `liteim_net` 都通过：
+`liteim_protocol`、`liteim_net` 和 `liteim_service` 都通过：
 
 ```cmake
 target_include_directories(... PUBLIC ${PROJECT_SOURCE_DIR}/include)
@@ -111,6 +120,14 @@ target_include_directories(... PUBLIC ${PROJECT_SOURCE_DIR}/include)
 
 - `liteim_server` 链接库后能包含 `liteim/...` 头文件。
 - `liteim_tests` 链接库后也能包含 `liteim/...` 头文件。
+
+`liteim_service` 链接 `liteim_net` 和 `liteim_protocol`。当前依赖方向是：
+
+```text
+service -> net -> protocol
+```
+
+网络层不反向依赖业务层，这样 `Session`、`TcpServer` 和 `MessageRouter` 都能分别测试。
 
 ## 后续新增文件放哪里
 
@@ -210,5 +227,14 @@ src/net/TcpServer.cpp
 ```
 
 `TcpServer` 仍然属于 `net` 模块，因为它组合 `EventLoop`、`Acceptor` 和 `Session`，负责连接集合、按 session/user 发送和网络层优雅关闭。它不实现登录、私聊、群聊或数据库逻辑，这些仍然属于后续 `MessageRouter`、service 和 storage 模块。
+
+Step 13 已经实现 `MessageRouter`：
+
+```text
+include/liteim/service/MessageRouter.hpp
+src/service/MessageRouter.cpp
+```
+
+`MessageRouter` 属于 `service` 模块，因为它根据 `Packet.header.msg_type` 做业务分发。当前只支持 `HEARTBEAT_REQ -> HEARTBEAT_RESP`，未知类型返回 `ERROR_RESP`。它不直接操作 fd，也不管理连接生命周期，只通过 `Session::sendPacket()` 把响应交回网络层。
 
 每一步仍然要遵守：只实现当前 Step，编译通过，测试通过，文档同步更新。
