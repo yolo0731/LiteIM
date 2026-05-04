@@ -50,3 +50,27 @@
 | Step 13 MessageRouter | 已完成 | 按 msg_type 分发、心跳响应、未知类型错误响应 |
 | Step 14 IStorage / ICache | 已完成 | 存储抽象、缓存抽象、NullCache no-op 实现 |
 | Step 15 SQLiteStorage | 已完成 | SQLite schema、prepared statement、用户/好友/群组/消息持久化 |
+
+## 后续计划
+
+Step 15 之后路线已经调整：LiteIM 的主线不再是堆数据库/缓存技术，而是先跑通聊天闭环，再补 C++ 网络高性能关键点，最后做仿微信 Qt 客户端和 AI Bot 接入。
+
+| 计划 Step | 状态 | 对应能力 |
+| --- | --- | --- |
+| Step 16 AuthService | 计划中 | 注册、登录、Session 绑定用户身份 |
+| Step 17 ChatService 私聊 | 计划中 | 私聊保存、在线推送、离线落库 |
+| Step 18 GroupService 群聊 | 计划中 | 群成员查询、群消息保存和推送 |
+| Step 19 历史消息 | 计划中 | 私聊/群聊最近消息查询，服务 Qt 会话加载 |
+| Step 20 TimerHeap 心跳 | 计划中 | `timerfd`、连接活跃时间、超时清理 |
+| Step 21 CLI 客户端 | 计划中 | 命令行协议调试和服务端闭环验证 |
+| Step 22 eventfd 任务投递 | 计划中 | `runInLoop()`、`queueInLoop()`、跨线程唤醒 |
+| Step 23 EventLoopThreadPool | 计划中 | 简化 one loop per thread，多 Reactor |
+| Step 24 业务线程池 | 计划中 | 隔离登录、聊天、存储访问等耗时任务 |
+| Step 25 Session 回压 | 计划中 | 输出缓冲区高水位，慢客户端保护 |
+| Step 26 Qt TcpClient | 计划中 | Qt 可选构建、`QTcpSocket`、TLV 编解码 |
+| Step 27 Qt 登录注册 | 计划中 | 登录/注册窗口和错误提示 |
+| Step 28 Qt 主窗口 | 计划中 | 仿微信三栏布局，会话列表，AI Bot 入口 |
+| Step 29 Qt 聊天气泡 | 计划中 | 私聊/群聊消息气泡和历史消息展示 |
+| Step 30 Qt 心跳断线 | 计划中 | `QTimer` 心跳、断线提示、Bot 联系人入口 |
+| Step 31 测试压测 | 计划中 | 端到端测试、简单 benchmark、p99/内存统计 |
+| Step 32 最终文档 | 计划中 | README、截图、运行说明、面试讲解 |

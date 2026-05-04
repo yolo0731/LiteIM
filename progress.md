@@ -403,3 +403,23 @@
 - Ran final `./build/server/liteim_server`; smoke run printed startup message.
 - Ran `git diff --check`; no whitespace errors.
 - Completed Step 11 planning phase status.
+
+## 2026-05-05 Simplified Refactor Session
+
+- Started a broad LiteIM roadmap reset request based on the simplified plan: C++ networking remains the main resume line, Qt client provides a WeChat-style demo surface, MySQL/Redis are supporting components, and PersonaAgent will first connect as a BotClient.
+- Using `planning-with-files` because this is a multi-stage code and documentation refactor.
+- Ran `session-catchup.py`; it reported older standalone tutoring context only, with no project-file changes to merge.
+- Checked Git status; the LiteIM worktree was clean before this refactor.
+- Inspected the root CMake, `client_qt/CMakeLists.txt`, current file layout, protocol headers, and Qt tool availability.
+- Confirmed Qt 5.15.2 tools are installed locally.
+- Updated `task_plan.md` for the roadmap reset.
+- Added findings for the simplified resume direction and Qt client boundaries.
+- User clarified not to implement the whole project now; reset the plan into Step-style work and also synchronize Step 15 and earlier markdown that conflicts with the new scheme.
+- Updated `/home/yolo/jianli/PROJECT_MEMORY.md` top-level priorities and Step 16-32 route.
+- Updated `tutorials/00_roadmap.md` to reflect the new 32-step LiteIM plan.
+- Updated `tutorials/README.md` with planned Step 16-32 entries.
+- Updated `README.md`, `docs/architecture.md`, `docs/database.md`, `docs/project_layout.md`, and `docs/interview_notes.md` to align with the new route and weaken MySQL/Redis wording.
+- Searched for stale roadmap phrases such as `共 28`, old Qt Step 22-24 wording, and database-heavy storage wording; no stale matches remained.
+- Ran `git diff --check`; no whitespace errors.
+- Current diff is docs/planning only; no source code or build files were changed.
+- Created the roadmap reset commit with message `docs: reset liteim roadmap for qt client`.

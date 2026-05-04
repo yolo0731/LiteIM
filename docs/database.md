@@ -1,8 +1,15 @@
 # LiteIM 数据库说明
 
-本文档用于记录 LiteIM 的 SQLite 表结构和存储层设计。
+本文档用于记录 LiteIM 当前的 SQLite 表结构和存储层设计。
 
 Step 14 已经先定义 `IStorage` / `ICache` 抽象，Step 15 已经实现 `SQLiteStorage` 并补充 `sql/init.sql`。
+
+当前路线口径：
+
+- SQLite 是 Step 15 已完成的单机持久化实现，适合本地开发、测试和教学复盘。
+- LiteIM 的简历主线是 C++ 网络编程、Reactor、Session 生命周期、Qt 客户端和 Agent Bot 接入。
+- MySQL / Redis 后续如果加入，只作为简单支持组件，不作为本项目主打技术点。
+- 业务层继续依赖 `IStorage` / `ICache`，不要直接依赖具体数据库或缓存 API。
 
 计划表：
 
@@ -16,7 +23,7 @@ Step 14 已经先定义 `IStorage` / `ICache` 抽象，Step 15 已经实现 `SQL
 
 - 业务层依赖 `IStorage` 接口，不直接依赖 SQLite。
 - 单元测试可以使用 `InMemoryStorage` 替代 SQLite。
-- SQLite 是第一版单机持久化方案，不引入 Redis、MySQL 或分布式存储。
+- SQLite 是第一版单机持久化方案。后续如果改 MySQL，要作为独立重构 Step，并保持业务层接口不变。
 
 ## Step 14：存储和缓存接口
 

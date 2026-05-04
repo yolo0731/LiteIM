@@ -1,20 +1,36 @@
 # LiteIM 架构说明
 
-本文档用于记录 LiteIM 的整体架构。后续实现 Reactor、协议层、业务层、存储层和定时器模块时，会逐步补充详细说明。
+本文档用于记录 LiteIM 的整体架构。当前项目已经完成到 Step 15，后续路线已经调整为：先跑通服务端聊天闭环，再补 `eventfd` / 多 Reactor / 业务线程池 / 回压这些 C++ 网络关键点，最后做仿微信 Qt 客户端和 PersonaAgent BotClient 接入。
 
 规划模块：
 
 - `net`：网络层，包含 `EventLoop`、`Epoller`、`Channel`、`Acceptor`、`Session`、`TcpServer`、`Buffer`。
 - `protocol`：协议层，包含 `Packet`、`MessageType`、`FrameDecoder`。
 - `service`：业务层，包含 `MessageRouter`、`AuthService`、`ChatService`、`GroupService`、`BotService`。
-- `storage`：存储层，包含 `IStorage`、`SQLiteStorage`、`ICache`、`NullCache`。
+- `storage`：存储层，包含 `IStorage`、`SQLiteStorage`、`ICache`、`NullCache`。数据库/缓存是支持组件，不作为项目主线。
 - `timer`：定时器和心跳超时清理，后续会接入 `timerfd`。
+- `client_qt`：Qt Widgets 客户端，后续使用 `QTcpSocket` 和同一套 TLV 协议实现仿微信三栏聊天界面。
 
 文档目标：
 
 - 说明每一层负责什么。
 - 说明模块之间如何依赖。
 - 说明为什么网络层、协议层、业务层和存储层要解耦。
+
+## 当前路线口径
+
+LiteIM 的简历主线是 C++ 网络编程和可演示的聊天软件：
+
+```text
+C++ epoll server
+    + custom TLV protocol
+    + Session lifecycle
+    + eventfd / EventLoopThreadPool later
+    + Qt Widgets chat client later
+    + Python PersonaAgent BotClient later
+```
+
+MySQL 和 Redis 后续可以作为简单支持组件出现，但不要把它们写成项目核心亮点。当前 Step 15 的 `SQLiteStorage` 是已经完成的单机持久化实现；如果后续替换为 MySQL，应作为独立 Step 重构，并保持业务层只依赖 `IStorage`。
 
 ## 当前工程目录分层
 

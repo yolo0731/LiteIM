@@ -174,3 +174,16 @@
 - Use SQLite prepared statements and bound parameters instead of string-concatenated SQL.
 - Expected duplicate/constraint cases should return `std::nullopt` or `false`; unexpected SQLite API failures should throw so defects are visible.
 - `NullCache` stays no-op in Step 15; no Redis or real online-state cache should be introduced.
+
+## 2026-05-05 Simplified Resume Refactor Direction
+
+- The project should become a C++/Qt IM application, not only a headless server.
+- The main resume line should be C++ networking and Qt application integration: epoll/Reactor, Session lifecycle, TLV framing, eventfd wakeup, one-loop-per-thread, business thread pool, and a WeChat-style Qt client.
+- MySQL and Redis should be weakened in wording and implementation scope because they are supporting components, not the user's main skill claim.
+- The first Qt client should use Qt Widgets and `QTcpSocket`; do not reimplement epoll on the client side.
+- The client UI should mimic the familiar chat layout: left sidebar, conversation list, right chat panel, message bubbles, and input area.
+- The client must not copy WeChat branding, logo, icons, or assets.
+- PersonaAgent should first integrate as a Python BotClient using the same LiteIM protocol. Avoid Redis Streams or AgentGateway in the first integration pass.
+- User clarified the current task is not to implement the refactor now. The task is to reset the Step plan after Step 15 and update markdown files.
+- Step 15 before/after docs that conflict with the new direction should also be synchronized, but completed Step 1-15 code should not be rewritten in this roadmap-only turn.
+- Full Qt client code, MySQL/Redis replacement, EventLoopThreadPool, business thread pool, backpressure, benchmark, and Agent integration should remain separate future stages.

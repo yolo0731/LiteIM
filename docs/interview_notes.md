@@ -477,3 +477,29 @@
 - 为什么 `friendships` 要写双向关系？
 - 为什么私聊和群聊消息可以放在同一张 `messages` 表？
 - `PRAGMA foreign_keys = ON` 为什么需要每个连接都执行？
+
+## Step 15 后的新项目讲法
+
+后续简历和面试主线建议这样讲：
+
+> LiteIM 的主线不是数据库系统，而是 C++ 网络服务端和可演示聊天软件。我先用 Linux socket、epoll 和 Reactor 做服务端网络层，再用自定义 TLV 协议解决 TCP 半包/粘包问题，后续补 `eventfd`、one loop per thread、业务线程池和慢客户端回压。客户端侧用 Qt Widgets 和 `QTcpSocket` 做仿微信三栏聊天界面，最后让 Python PersonaAgent 作为 BotClient 接入，像普通联系人一样和用户聊天。
+
+MySQL / Redis 怎么讲：
+
+- 可以说“后续可替换/补充为 MySQL、Redis”，但不要把它们作为主打亮点。
+- 当前已经有 `IStorage` / `ICache` 抽象，所以替换具体存储实现不会影响业务层设计。
+- 面试中如果被问到数据库，重点讲“业务层不直接依赖数据库 API”，不要主动展开复杂索引、事务隔离、Redis 集群等自己不熟的内容。
+
+Qt 客户端怎么讲：
+
+- 服务端用 epoll 是为了练 Linux 网络编程。
+- 客户端用 `QTcpSocket` 是因为 Qt 自带事件循环，没必要在 GUI 里再造 epoll。
+- 客户端和服务端复用同一套 TLV 协议，客户端也要处理半包/粘包。
+- UI 只借鉴常见聊天软件三栏布局，不复制微信品牌或素材。
+
+PersonaAgent 接入怎么讲：
+
+- 第一版让 Python Agent 作为普通 bot 用户登录 LiteIM。
+- 用户给 AI Bot 发私聊，LiteIM 按普通消息路由给 BotClient。
+- BotClient 调用 LangGraph/RAG 生成回复，再通过 LiteIM 协议发回来。
+- 这样 Agent 和 C++ 服务端边界清楚，LiteIM 不需要知道 LLM 内部实现。

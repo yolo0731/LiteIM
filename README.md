@@ -1,33 +1,24 @@
 # LiteIM
 
-LiteIM is a C++17 instant messaging project for internship preparation. The server will use Linux socket, non-blocking I/O and epoll to implement a simplified Reactor model. The desktop client will use Qt Widgets and QTcpSocket. The protocol will use a fixed-size TLV-style header plus JSON body to handle TCP sticky packets and partial packets.
+LiteIM is a C++17 instant messaging project for internship preparation. The main learning line is Linux network programming: non-blocking sockets, epoll, Reactor, TCP stream framing and Session lifecycle management. The desktop client will use Qt Widgets and QTcpSocket to provide a WeChat-style chat UI without copying WeChat branding or assets.
 
 When developing in the `/home/yolo/jianli` workspace, also read `../PROJECT_MEMORY.md` for the current project goals, Step rules and teaching workflow.
 
-The first milestone is the server MVP:
+The current completed milestone is Step 15: the server networking foundation, protocol layer, heartbeat router, storage/cache interfaces and SQLite storage implementation are in place. The next milestones are:
 
-1. CMake project skeleton
-2. Packet protocol encoding and validation
-3. TCP frame decoder
-4. epoll-based Reactor
-5. Session lifecycle
-6. TcpServer connection manager
-7. MessageRouter heartbeat response
-8. Storage/cache abstraction
-9. Register and login
-10. Private chat
-11. Group chat
-12. SQLite persistence
-13. Heartbeat timeout
+1. Service MVP: register/login, private chat, group chat, history query, heartbeat timeout and CLI client.
+2. Networking resume highlights: eventfd wakeup, queued cross-thread tasks, EventLoopThreadPool, business ThreadPool and Session high-water-mark backpressure.
+3. Qt client: optional Qt Widgets target, QTcpSocket codec, login/register UI, three-column chat window, message bubbles, heartbeat and AI bot contact entry.
+4. Verification: end-to-end tests, simple benchmark client, screenshots and final interview notes.
 
 ## Tech Stack
 
 - Language: C++17
 - Build: CMake
 - Server networking: Linux socket, non-blocking I/O, epoll
-- Client UI: Qt 6 Widgets, QTcpSocket
+- Client UI: Qt Widgets, QTcpSocket
 - Protocol: fixed-size header + JSON body
-- Storage: SQLite
+- Storage: `IStorage` abstraction with current SQLite implementation; MySQL/Redis may be added later as simple supporting components, not the main project claim
 - JSON: nlohmann_json
 - Tests: lightweight C++ test executable first, GoogleTest or Catch2 later
 

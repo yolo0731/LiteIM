@@ -2,64 +2,76 @@
 
 ## Goal
 
-Continue LiteIM as a step-by-step teaching project. Current active task is Step 15: implement `SQLiteStorage`.
+Reset the LiteIM roadmap after Step 15 toward a resume-ready C++/Qt IM project:
+
+- Keep the C++ server focused on Linux networking: nonblocking socket, epoll, Reactor, Session lifecycle, protocol framing, and later eventfd-based one-loop-per-thread.
+- Add a WeChat-style Qt Widgets desktop client so the project can be demonstrated as a real chat application.
+- Keep MySQL and Redis as simple supporting components later; do not make database/cache expertise the main resume claim.
+- Keep PersonaAgent integration simple: a Python BotClient logs in as a bot contact and chats through the same LiteIM protocol.
+
+Current active phase: roadmap reset only. Do not implement the full refactor in this turn.
 
 ## Current Phase
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Check memory and repo state | complete | Read planning skill, session catchup, memory index, project memory Step 15, current storage interfaces, CMake, tests, SQLite availability, and Git status. |
-| Record Step 15 design | complete | Implemented `SQLiteStorage` over `IStorage` while keeping auth/chat services and real cache behavior out of scope. |
-| Implement code | complete | Added SQLite schema, `SQLiteStorage` header/implementation, RAII statement helpers, and SQLite CMake linkage. |
-| Add tests | complete | Added SQLiteStorage tests for users, friends, groups, messages, offline queries, and file persistence. |
-| Update docs and tutorials | complete | Added Step 15 tutorial and synced README, database, architecture, layout, interview notes, tutorial index, and project memory. |
-| Build, test, review, commit | complete | Build, direct tests, CTest, server smoke run, whitespace check, final diff review, and Step 15 commit preparation completed. |
+| Check memory and repo state | complete | Read planning skill, session catchup, Git status, existing Qt placeholder, protocol definitions, and project memory. |
+| Record simplified refactor direction | complete | Updated planning files so networking/Qt/Agent integration become the main line and MySQL/Redis become optional supporting topics. |
+| Update Step roadmap | complete | Rewrote Step 16+ in project memory and tutorials roadmap. |
+| Sync docs index | complete | Updated tutorial index and high-level docs that describe the future route. |
+| Verify docs-only diff | complete | Git status confirms only markdown/planning files changed; `git diff --check` passed. |
+| Review and commit | complete | Reviewed roadmap-only diff and created the roadmap reset commit. |
 
 ## Planning Hook Phase Status
 
 ### Phase 1: Check memory and repo state
 **Status:** complete
 
-### Phase 2: Record Step 15 design
+### Phase 2: Record simplified refactor direction
 **Status:** complete
 
-### Phase 3: Implement code
+### Phase 3: Update Step roadmap
 **Status:** complete
 
-### Phase 4: Add tests
+### Phase 4: Sync docs index
 **Status:** complete
 
-### Phase 5: Update docs and tutorials
+### Phase 5: Verify docs-only diff
 **Status:** complete
 
-### Phase 6: Build, test, review, commit
+### Phase 6: Review and commit
 **Status:** complete
 
-## Step 15 Scope
+## This Turn Scope
 
-Implement SQLite persistence behind the Step 14 `IStorage` contract:
+This turn should only reset the plan after Step 15:
 
-- Add `include/liteim/storage/SQLiteStorage.hpp`.
-- Add `src/storage/SQLiteStorage.cpp`.
-- Replace the SQL placeholder in `sql/init.sql` with the Step 15 schema.
-- Open a SQLite database from a path, defaulting to `liteim.db`.
-- Execute `sql/init.sql` on startup.
-- Implement all current `IStorage` methods.
-- Keep `NullCache` as the single-process no-op cache implementation.
-- Link `liteim_storage` with SQLite3.
+- Keep current server code intact.
+- Keep Step 15 as the current completed implementation point.
+- Update future Step definitions in `/home/yolo/jianli/PROJECT_MEMORY.md`.
+- Update `tutorials/00_roadmap.md` and tutorial index to match the new route.
+- Record that Qt client and high-performance network refactors are future steps, not current implementation.
 
-`SQLiteStorage` is the storage-layer implementation. It should translate storage interface calls into SQL but must not implement business protocol behavior.
+## Refactor Roadmap
 
-## Step 15 Design Boundaries
+Future stages should be implemented as separate steps and commits:
 
-- Do not implement registration/login/auth behavior.
-- Do not implement private chat, group chat, friend list, or history service behavior.
-- Do not introduce Redis or any real distributed cache.
-- Do not make `MessageRouter` depend on storage yet.
-- Do not change protocol encoding/decoding.
-- Do not change `IStorage` unless a clear SQLite mapping bug requires it.
-- Keep `NullCache` no-op; do not store online state in it.
-- Keep password hashing/salt generation out of Step 15; storage only stores the supplied salt/hash.
+1. Step 16-21: service-side MVP: auth, private chat, group chat, history, heartbeat timeout, CLI client.
+2. Step 22-25: networking resume highlights: `eventfd`, `queueInLoop()`, `EventLoopThreadPool`, business thread pool, and simple backpressure.
+3. Step 26-30: Qt client: optional Qt target, `QTcpSocket`, TLV codec, login/register, WeChat-style main window, chat bubbles, heartbeat, and AI bot contact placeholder.
+4. Step 31-32: tests, simple benchmark, README screenshots, and interview docs.
+5. Optional later step: basic MySQL/Redis adapters if time allows; keep them supporting and do not make them the main claim.
+
+## Design Boundaries
+
+- Do not implement the full roadmap in one commit.
+- Do not overstate MySQL/Redis; keep them as supporting components.
+- Do not delete the completed Step 15 SQLite work during the roadmap reset. If storage changes later, do it as a separate step.
+- Do not add Redis Pub/Sub, Redis Streams, Redis Cluster, distributed locks, or advanced database tuning in the first pass.
+- Do not implement Qt image/file/voice/video transfer, message recall, or Moments-like features.
+- Do not copy WeChat branding, icons, or assets; only use a familiar three-column chat layout.
+- Do not make Qt build mandatory before CI and local Qt availability are reliable.
+- Keep every stage buildable, tested, documented, and separately commit-ready.
 
 ## Persistent Requirements
 

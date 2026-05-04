@@ -2,6 +2,8 @@
 
 本文档记录 LiteIM 当前采用的 C++ 项目目录布局，以及为什么要把 `.hpp` 和 `.cpp` 分开。
 
+当前路线已经调整：LiteIM 先完成服务端聊天闭环，再补 `eventfd`、多 Reactor、业务线程池和慢客户端回压，最后实现仿微信 Qt 客户端和 PersonaAgent BotClient 接入。已有 Step 1-15 文件保持有效；后续新模块仍按本文目录规则放置。
+
 ## 当前目录布局
 
 ```text
@@ -142,7 +144,7 @@ service -> net -> protocol
 
 网络层不反向依赖业务层，这样 `Session`、`TcpServer` 和 `MessageRouter` 都能分别测试。
 
-`liteim_storage` 当前提供存储/缓存接口、`NullCache` no-op 实现和 `SQLiteStorage`。它链接 SQLite3，但 SQLite 依赖被限制在 storage 模块内部，业务层仍然面向 `IStorage`。
+`liteim_storage` 当前提供存储/缓存接口、`NullCache` no-op 实现和 `SQLiteStorage`。它链接 SQLite3，但 SQLite 依赖被限制在 storage 模块内部，业务层仍然面向 `IStorage`。后续如果加入 MySQL/Redis，也应作为 storage/cache 的支持实现，不直接污染 service 或 net 层。
 
 ## 后续新增文件放哪里
 
