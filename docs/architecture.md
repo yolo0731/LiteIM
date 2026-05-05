@@ -86,6 +86,7 @@ liteim_protocol
        -> toString(MessageType)
        -> isRequestType(MessageType)
        -> isResponseType(MessageType)
+       -> isPushType(MessageType)
   -> TlvType
        -> toString(TlvType)
 ```
@@ -95,7 +96,7 @@ liteim_protocol
 - `MessageType` 只定义消息类型编号，例如登录请求、私聊请求、群聊推送、Bot 消息和错误响应。
 - `TlvType` 只定义 body 里的字段类型编号，例如用户名、密码、消息文本、群组 ID、错误信息和 Persona ID。
 - `toString()` 只用于日志、测试和调试，不参与网络字节序转换。
-- `isRequestType()` / `isResponseType()` 只做类型分类，后续 `MessageRouter` 会基于这个分类处理请求。
+- `isRequestType()` / `isResponseType()` / `isPushType()` 只做类型分类，后续 `MessageRouter`、Qt 客户端和 Python BotClient 会基于这个分类处理请求、响应和服务端推送。
 - Step 3 不定义 `PacketHeader`，不编码 TLV body，也不处理 TCP 半包 / 粘包；这些分别属于 Step 4、Step 5 和 Step 6。
 
 ## Current Step

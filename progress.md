@@ -162,6 +162,7 @@ init: create LiteIM project structure with googletest
 - `MessageType` 表示一帧消息的业务类型，后续会进入 Packet header 的 `msg_type` 字段。
 - `TlvType` 表示 TLV body 中每个字段的类型，例如用户名、消息文本、群组 ID、错误信息和 Persona ID。
 - `Push` 消息用于后续服务端主动投递给接收方，它既不是 request，也不是 response。
+- 补充修正：`Push` 需要 `isPushType()` 显式分类，不能只靠 `!isRequestType() && !isResponseType()`，否则会和 `Unknown` 混在一起。
 
 代码完成：
 
@@ -172,10 +173,12 @@ init: create LiteIM project structure with googletest
 - 新增 `src/protocol/Tlv.cpp`。
 - 更新 `src/CMakeLists.txt`，接入 `protocol` 子目录。
 - 更新 `tests/CMakeLists.txt`，让 `liteim_tests` 链接 `liteim_protocol`。
+- 补充修正 `MessageType`：新增 `ListGroupsRequest` / `ListGroupsResponse`，并把群聊消息编号调整为 `406/407/408`。
+- 补充 `isPushType()`，显式识别 `PrivateMessagePush`、`GroupMessagePush` 和 `BotMessagePush`。
 
 测试完成：
 
-- 新增 `tests/protocol/message_type_test.cpp`，覆盖核心消息类型字符串、未知消息类型、请求类型分类、响应类型分类和 Push/Unknown 分类。
+- 新增 `tests/protocol/message_type_test.cpp`，覆盖核心消息类型字符串、未知消息类型、请求类型分类、响应类型分类、Push 类型分类和 Unknown 不分类。
 - 新增 `tests/protocol/tlv_type_test.cpp`，覆盖核心 TLV 字段字符串和未知 TLV 类型。
 
 验证结果：
@@ -183,7 +186,7 @@ init: create LiteIM project structure with googletest
 - `cmake -S . -B build`：通过。
 - `cmake --build build`：通过。
 - `./build/server/liteim_server`：通过，输出 `LiteIM server scaffold is running on 0.0.0.0:9000`。
-- `ctest --test-dir build --output-on-failure`：通过，22/22 tests passed。
+- `ctest --test-dir build --output-on-failure`：通过，23/23 tests passed。
 
 收尾完成：
 

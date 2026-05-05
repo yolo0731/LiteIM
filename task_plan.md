@@ -38,8 +38,8 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 2 docs | done | README, docs, findings, progress, and tutorials were updated for the Step 2 route. |
 | Step 2 commit | done | Commit message: `feat(base): add config logger and error code`. |
 | Step 3 concept | done | Step 3 defines protocol message and TLV field types only; Packet encoding is reserved for Step 4. |
-| Step 3 code | done | Added `liteim_protocol` with `MessageType`, `TlvType`, string conversion, and request/response classification. |
-| Step 3 tests | done | Added protocol GoogleTest coverage; CTest passed with 22 total tests. |
+| Step 3 code | done | Added `liteim_protocol` with `MessageType`, `TlvType`, string conversion, and request/response/push classification. |
+| Step 3 tests | done | Added protocol GoogleTest coverage; CTest passed with 23 total tests after push classification fix. |
 | Step 3 docs | done | README, docs, findings, progress, and tutorials were updated for the Step 3 route. |
 | Step 3 commit | done | Commit message: `feat(protocol): define message and tlv types`. |
 
@@ -208,7 +208,8 @@ Expected new tests:
 - `TEST(MessageTypeTest, UnknownTypeReturnsUnknown)`
 - `TEST(MessageTypeTest, RequestTypesAreClassified)`
 - `TEST(MessageTypeTest, ResponseTypesAreClassified)`
-- `TEST(MessageTypeTest, PushAndUnknownTypesAreNotRequestOrResponse)`
+- `TEST(MessageTypeTest, PushTypesAreClassified)`
+- `TEST(MessageTypeTest, UnknownTypesAreNotClassified)`
 - `TEST(TlvTypeTest, CoreTypesReturnReadableNames)`
 - `TEST(TlvTypeTest, UnknownTypeReturnsUnknown)`
 

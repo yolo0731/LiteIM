@@ -144,9 +144,11 @@ Step 3 只实现协议类型定义，不进入二进制 Packet 编解码或 TCP 
 
 - `MessageType` 使用 `std::uint16_t` 作为底层类型，和后续 Packet header 的 `msg_type` 字段匹配。
 - 消息类型按范围分组：心跳、认证、好友、私聊、群聊、离线/历史、Bot 和错误响应。
-- 私聊、群聊和 Bot 都保留 `Push` 类型，用于后续服务端向接收方主动推送消息；`Push` 既不是 request，也不是 response。
+- 私聊、群聊和 Bot 都保留 `Push` 类型，用于后续服务端向接收方主动推送消息；`Push` 既不是 request，也不是 response，但需要通过 `isPushType()` 显式识别，避免和 `Unknown` 混在一起。
 - `isRequestType()` 只返回客户端或 BotClient 主动请求类型。
 - `isResponseType()` 只返回服务端对请求的响应类型，`ErrorResponse` 归为 response，方便后续统一错误返回。
+- `isPushType()` 只返回 `PrivateMessagePush`、`GroupMessagePush` 和 `BotMessagePush`。
+- `ListGroupsRequest` / `ListGroupsResponse` 已放入 4xx 群聊类型段，避免 Step 37 再回头修改协议编号。
 - 未知 `MessageType` 和 `TlvType` 都返回 `UNKNOWN`，后续解析到未注册类型时可以安全记录日志而不是崩溃。
 - `TlvType` 先覆盖登录、用户、好友、群组、会话、消息、错误和 Bot/Persona 接入需要的字段类型。
 - 本 Step 没有定义 TLV value 的二进制格式、长度编码、网络字节序或 Packet header；这些属于 Step 4 和 Step 5。
@@ -168,7 +170,7 @@ Step 3 只实现协议类型定义，不进入二进制 Packet 编解码或 TCP 
 - Step 0 验证 CMake 空骨架可 configure/build。
 - Step 1 开始，每个行为变化都要配 GoogleTest 测试。
 - Step 2 使用 `tests/base/*_test.cpp` 覆盖默认配置、配置文件覆盖、缺失配置保留默认值、缺失文件、未知 key、非法端口、错误码字符串、`Status` 成功/失败状态、日志级别解析、logger 初始化和时间戳格式。
-- Step 3 使用 `tests/protocol/*_test.cpp` 覆盖消息类型字符串、未知类型回退、请求/响应分类、Push 类型分类和 TLV 字段字符串。
+- Step 3 使用 `tests/protocol/*_test.cpp` 覆盖消息类型字符串、未知类型回退、请求/响应/Push 分类、群列表消息类型和 TLV 字段字符串。
 - 协议、Buffer、FrameDecoder 等底层模块优先写确定性的 GoogleTest 单元测试。
 - 后续业务层测试优先使用 gMock mock `IStorage` / `ICache`，避免单元测试依赖真实 MySQL / Redis。
 - 网络行为先写 smoke test，等 CLI / Python 客户端出现后再补 E2E。

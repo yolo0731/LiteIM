@@ -42,6 +42,10 @@ std::string_view toString(MessageType type) noexcept {
             return "JOIN_GROUP_REQUEST";
         case MessageType::JoinGroupResponse:
             return "JOIN_GROUP_RESPONSE";
+        case MessageType::ListGroupsRequest:
+            return "LIST_GROUPS_REQUEST";
+        case MessageType::ListGroupsResponse:
+            return "LIST_GROUPS_RESPONSE";
         case MessageType::GroupMessageRequest:
             return "GROUP_MESSAGE_REQUEST";
         case MessageType::GroupMessageResponse:
@@ -82,6 +86,7 @@ bool isRequestType(MessageType type) noexcept {
         case MessageType::PrivateMessageRequest:
         case MessageType::CreateGroupRequest:
         case MessageType::JoinGroupRequest:
+        case MessageType::ListGroupsRequest:
         case MessageType::GroupMessageRequest:
         case MessageType::OfflineMessagesRequest:
         case MessageType::HistoryRequest:
@@ -98,6 +103,7 @@ bool isRequestType(MessageType type) noexcept {
         case MessageType::PrivateMessagePush:
         case MessageType::CreateGroupResponse:
         case MessageType::JoinGroupResponse:
+        case MessageType::ListGroupsResponse:
         case MessageType::GroupMessageResponse:
         case MessageType::GroupMessagePush:
         case MessageType::OfflineMessagesResponse:
@@ -122,6 +128,7 @@ bool isResponseType(MessageType type) noexcept {
         case MessageType::PrivateMessageResponse:
         case MessageType::CreateGroupResponse:
         case MessageType::JoinGroupResponse:
+        case MessageType::ListGroupsResponse:
         case MessageType::GroupMessageResponse:
         case MessageType::OfflineMessagesResponse:
         case MessageType::HistoryResponse:
@@ -139,12 +146,55 @@ bool isResponseType(MessageType type) noexcept {
         case MessageType::PrivateMessagePush:
         case MessageType::CreateGroupRequest:
         case MessageType::JoinGroupRequest:
+        case MessageType::ListGroupsRequest:
         case MessageType::GroupMessageRequest:
         case MessageType::GroupMessagePush:
         case MessageType::OfflineMessagesRequest:
         case MessageType::HistoryRequest:
         case MessageType::BotChatRequest:
         case MessageType::BotMessagePush:
+            return false;
+    }
+
+    return false;
+}
+
+bool isPushType(MessageType type) noexcept {
+    switch (type) {
+        case MessageType::PrivateMessagePush:
+        case MessageType::GroupMessagePush:
+        case MessageType::BotMessagePush:
+            return true;
+        case MessageType::Unknown:
+        case MessageType::HeartbeatRequest:
+        case MessageType::HeartbeatResponse:
+        case MessageType::RegisterRequest:
+        case MessageType::RegisterResponse:
+        case MessageType::LoginRequest:
+        case MessageType::LoginResponse:
+        case MessageType::LogoutRequest:
+        case MessageType::LogoutResponse:
+        case MessageType::AddFriendRequest:
+        case MessageType::AddFriendResponse:
+        case MessageType::ListFriendsRequest:
+        case MessageType::ListFriendsResponse:
+        case MessageType::PrivateMessageRequest:
+        case MessageType::PrivateMessageResponse:
+        case MessageType::CreateGroupRequest:
+        case MessageType::CreateGroupResponse:
+        case MessageType::JoinGroupRequest:
+        case MessageType::JoinGroupResponse:
+        case MessageType::ListGroupsRequest:
+        case MessageType::ListGroupsResponse:
+        case MessageType::GroupMessageRequest:
+        case MessageType::GroupMessageResponse:
+        case MessageType::OfflineMessagesRequest:
+        case MessageType::OfflineMessagesResponse:
+        case MessageType::HistoryRequest:
+        case MessageType::HistoryResponse:
+        case MessageType::BotChatRequest:
+        case MessageType::BotChatResponse:
+        case MessageType::ErrorResponse:
             return false;
     }
 

@@ -31,9 +31,11 @@ enum class MessageType : std::uint16_t {
     CreateGroupResponse = 401,
     JoinGroupRequest = 402,
     JoinGroupResponse = 403,
-    GroupMessageRequest = 404,
-    GroupMessageResponse = 405,
-    GroupMessagePush = 406,
+    ListGroupsRequest = 404,
+    ListGroupsResponse = 405,
+    GroupMessageRequest = 406,
+    GroupMessageResponse = 407,
+    GroupMessagePush = 408,
 
     OfflineMessagesRequest = 500,
     OfflineMessagesResponse = 501,
@@ -50,5 +52,6 @@ enum class MessageType : std::uint16_t {
 std::string_view toString(MessageType type) noexcept;
 bool isRequestType(MessageType type) noexcept;
 bool isResponseType(MessageType type) noexcept;
+bool isPushType(MessageType type) noexcept;
 
 }  // namespace liteim
