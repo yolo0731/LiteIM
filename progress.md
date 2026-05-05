@@ -1,425 +1,54 @@
 # LiteIM Progress
 
-## 2026-04-29 Step 4 Session
+## 2026-05-05 Step 0 Reset
 
-- Confirmed `planning-with-files` skill is installed locally.
-- Read `SKILL.md` and ran `session-catchup.py` for the LiteIM project.
-- Checked repository status: current branch is ahead of origin by 1 commit; `.codex` is untracked and unrelated.
-- Started Step 4 implementation.
-- Drafted `include/liteim/net/Buffer.hpp`.
-- Drafted `src/net/Buffer.cpp`.
-- Drafted `tests/test_buffer.cpp`.
-- Updated CMake files to add `liteim_net` and link it into tests/server.
-- Updated `tests/test_main.cpp` to include `bufferTests()`.
-- Ran `cmake -S . -B build`.
-- Ran `cmake --build build`.
-- Ran `ctest --test-dir build --output-on-failure`.
-- Ran `./build/tests/liteim_tests`.
-- Current Buffer tests pass.
-- Updated `docs/architecture.md` with Buffer architecture notes.
-- Updated `docs/interview_notes.md` with Buffer interview notes.
-- Added `tutorials/step04_buffer.md`.
-- Updated `tutorials/README.md` to mark Step 4 complete.
-- Final verification passed:
-  - `cmake -S . -B build`
-  - `cmake --build build`
-  - `ctest --test-dir build --output-on-failure`
-  - `./build/tests/liteim_tests`
-  - `./build/server/liteim_server`
+本次进度是 `Step 0: reset workspace`，目标是把 LiteIM 文件夹清理成可以从零教学推进的起点。
 
-## 2026-04-30 Hook Follow-up
+## 已完成
 
-- Received `planning-with-files` stop hook asking to update progress and continue remaining phases.
-- Current recorded Step 4 work was already implemented and verified on 2026-04-29.
-- Next action: read `task_plan.md` and confirm whether any remaining phases are actually pending.
-- Read `task_plan.md`; all listed phases are already marked complete, including implementation, docs, build, tests, and commit preparation.
-- No remaining phases were found to continue.
-- Received a repeated `planning-with-files` stop hook after answering the Buffer `append` explanation.
-- Next action: re-read `task_plan.md` to confirm whether any new remaining phases were added.
-- Re-read `task_plan.md`; no new phases were added and all current phases remain complete.
-- Received another repeated `planning-with-files` stop hook after explaining Buffer readable/consumed data.
-- Next action: read `task_plan.md` again and continue only if it contains a pending phase.
-- Re-read `task_plan.md`; all phases still show `complete`, so there is no remaining implementation or documentation phase to continue.
+- 删除旧源码目录：`include/`、`src/`、`server/`。
+- 删除旧测试目录：`tests/`。
+- 删除旧教程目录：`tutorials/`。
+- 删除旧文档目录：`docs/`。
+- 删除旧 Qt 临时目录：`client_qt/`。
+- 删除旧 SQL 目录：`sql/`。
+- 删除旧构建产物：`build/`。
+- 删除空的 `.codex` 临时文件。
+- 重建新路线目标目录：`include/liteim/*`、`src/*`、`server`、`client_cli`、`client_qt`、`bench`、`tests`、`scripts`、`docker`、`docs`、`tutorials`、`.github/workflows`。
+- 为当前空目录添加 `.gitkeep`，方便 Git 记录 Step 0 骨架。
+- 将根 `CMakeLists.txt` 改成 Step 0 空 CMake 骨架。
+- 重写 README、task_plan、findings、progress。
+- 新增 `docs/architecture.md`、`docs/project_layout.md`、`tutorials/README.md`、`tutorials/step00_reset.md`。
+- 更新 `/home/yolo/jianli/PROJECT_MEMORY.md`，加入 Step 0 说明，并把 Qt 描述统一为常见 IM 三栏布局。
 
-## 2026-04-30 Testing Explanation Requirement
+## 当前状态
 
-- User requested that every Step include an explanation of the test section.
-- Updated root project memory to require explaining what each Step's tests verify and how to run them.
-- Updated `findings.md` with the same requirement for LiteIM planning recovery.
-- Updated Step 4 tutorial's testing section to include test purpose and test commands as the template for future Steps.
+| 项目 | 状态 | 说明 |
+| --- | --- | --- |
+| Step 0 清理 | done | 旧路线代码、测试、教程和 build 产物已删除。 |
+| Step 0 骨架 | done | 新路线目录已重建。 |
+| Step 0 文档 | done | README、计划文件、docs 和 tutorial 已更新。 |
+| Step 0 验证 | done | CMake configure/build、CTest 和旧文件名检查已完成。 |
+| Step 0 commit | pending | 提交信息：`chore: reset LiteIM workspace for high performance roadmap`。 |
+| Step 1 | pending | 下一步创建真正可构建的 server/test target。 |
 
-## 2026-04-30 Tutorial Depth Requirement
+## 下一步
 
-- User requested clearer Step markdown files.
-- New requirement: every Step tutorial should explain newly added functions/interfaces, test purpose, rough test strategy, detailed interview explanation, and common interview questions.
-- Updating root memory, planning files, and existing Step 1-4 tutorials to match this standard.
-- Updated `tutorials/README.md` with the Step tutorial writing requirements.
-- Updated Step 1 with engineering-chain test purpose and common interview questions.
-- Updated Step 2 with interface purpose table, protocol test strategy, and protocol interview follow-up questions.
-- Updated Step 3 with FrameDecoder interface purpose table, decoder test strategy, and TCP framing interview follow-up questions.
-- Updated Step 4 with Buffer interface purpose table, clearer `compactIfNeeded()` explanation, test strategy, and Buffer interview follow-up questions.
+验证 Step 0：
 
-## 2026-04-30 Tutorial Table Removal Requirement
+```bash
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build --output-on-failure
+rg -n "SQLiteStorage|step15_sqlite|InMemoryStorage|server/net|server/protocol" .
+```
 
-- User clarified that Step markdown files should not include interface overview tables.
-- New convention: explain each `.hpp` / `.cpp` function separately in prose.
-- Updating project memory, planning files, and Step 2-4 tutorials to remove the overview tables.
+然后进入 Step 1：`init: create LiteIM high performance project structure`。
 
-## 2026-04-30 Step 5 Session
+## Step 0 验证结果
 
-- Started Step 5: `SocketUtil`.
-- Read root project memory and LiteIM planning files.
-- Checked repository status: clean except untracked `.codex`.
-- Updated `task_plan.md` for Step 5.
-- Recorded Step 5 design notes in `findings.md`.
-- Implemented `include/liteim/net/SocketUtil.hpp`.
-- Implemented `src/net/SocketUtil.cpp`.
-- Added `tests/test_socket_util.cpp`.
-- Updated `server/CMakeLists.txt`, `tests/CMakeLists.txt`, and `tests/test_main.cpp`.
-- Ran initial build and tests successfully.
-- Updated `docs/architecture.md` with SocketUtil architecture notes.
-- Updated `docs/interview_notes.md` with SocketUtil interview notes.
-- Added `tutorials/step05_socket_util.md`.
-- Updated `tutorials/README.md` to mark Step 5 complete.
-- Final verification passed:
-  - `cmake -S . -B build`
-  - `cmake --build build`
-  - `ctest --test-dir build --output-on-failure`
-  - `./build/tests/liteim_tests`
-  - `./build/server/liteim_server`
-- Direct test output includes expected invalid-fd errno logs from failure-path tests.
-
-## 2026-05-01 Step 6 Session
-
-- Started Step 6: define Reactor core interfaces.
-- Using `planning-with-files` because this is a multi-file implementation step.
-- Ran `session-catchup.py`; it reported previous explanatory-only messages, with no code changes to merge.
-- Read `/home/yolo/jianli/PROJECT_MEMORY.md`, `task_plan.md`, `findings.md`, and recent `progress.md`.
-- Checked repository status: existing user modification in `tutorials/step05_socket_util.md` and untracked `.codex`.
-- Planned to avoid staging the Step 5 tutorial user edit and `.codex`.
-- Confirmed current build/test layout:
-  - `liteim_net` contains `Buffer.cpp` and `SocketUtil.cpp`.
-  - `liteim_tests` uses the project-local lightweight test framework.
-- Step 6 design decision: define only `Epoller.hpp`, `Channel.hpp`, and `EventLoop.hpp`; tests will use compile-time/interface checks without constructing classes whose methods are not implemented yet.
-- Added `include/liteim/net/Epoller.hpp`, `include/liteim/net/Channel.hpp`, and `include/liteim/net/EventLoop.hpp`.
-- Added `tests/test_reactor_interfaces.cpp`.
-- Updated `tests/CMakeLists.txt` and `tests/test_main.cpp` to include the new interface tests.
-- Ran `cmake -S . -B build`.
-- Ran `cmake --build build`; build passed.
-- Updated `docs/architecture.md` with Reactor interface architecture notes.
-- Updated `docs/interview_notes.md` with Reactor interface interview notes.
-- Added `tutorials/step06_reactor_interfaces.md`.
-- Updated `tutorials/README.md` to mark Step 6 complete.
-- Ran `ctest --test-dir build --output-on-failure`; tests passed.
-- Ran `./build/tests/liteim_tests`; all tests passed, including three Reactor interface tests.
-- Ran `./build/server/liteim_server`; smoke run printed startup message.
-- Ran `git diff --check`; no whitespace errors.
-- Reviewed Step 6 diff.
-- Preparing to commit only Step 6 files; leaving `tutorials/step05_socket_util.md` and `.codex` unstaged.
-
-## 2026-05-01 Layout Refactor Session
-
-- Started project layout refactor before Step 7.
-- User requested a more mature folder structure and asked to keep docs, `AGENTS.md`, and `PROJECT_MEMORY.md` updated.
-- Read planning-with-files instructions and ran `session-catchup.py`.
-- Checked Git status: tracked tree clean; only untracked `.codex` exists.
-- Inspected current CMake files, include directives, README, docs, AGENTS, and project memory.
-- Chosen layout:
-  - `include/liteim/...` for headers.
-  - `src/...` for library implementation.
-  - `server/main.cpp` for executable entry.
-  - `tests/` for tests.
-- This is a layout-only refactor; Step 7 `Epoller` behavior will not be implemented here.
-- Moved protocol headers to `include/liteim/protocol/`.
-- Moved net headers to `include/liteim/net/`.
-- Moved protocol implementation files to `src/protocol/`.
-- Moved net implementation files to `src/net/`.
-- Added `src/CMakeLists.txt` for `liteim_protocol` and `liteim_net`.
-- Updated source/test include directives to use `liteim/...`.
-- Updated README, docs, AGENTS.md, PROJECT_MEMORY.md, and path references in tutorials.
-- Added `docs/project_layout.md`.
-- Added `.codex` to `.gitignore` so the local empty tool file does not keep appearing in Git status.
-- Ran `cmake -S . -B build`; configure passed.
-- Ran `cmake --build build`; build passed after include/src refactor.
-- Ran `ctest --test-dir build --output-on-failure`; tests passed.
-- Ran `./build/tests/liteim_tests`; all tests passed.
-- Ran `./build/server/liteim_server`; smoke run printed startup message.
-- Ran `git diff --check`; no whitespace errors.
-
-## 2026-05-01 Step 7 Session
-
-- Started Step 7: implement `Epoller`.
-- Using `planning-with-files` because this is a multi-file implementation step.
-- Ran `session-catchup.py`; it only reported previous explanatory-only messages and no code changes to merge.
-- Checked Git status: tracked worktree was clean before Step 7 edits.
-- Read `task_plan.md`, `findings.md`, `progress.md`, `tutorials/00_roadmap.md`, `/home/yolo/jianli/PROJECT_MEMORY.md`, Reactor headers, CMake files, and existing tests.
-- Confirmed the active Step 7 definition is `Epoller` from the current project memory and plan; `tutorials/00_roadmap.md` has stale Step 6-9 wording that should be corrected during documentation updates.
-- Step 7 implementation boundary: implement `Epoller` RAII, add/mod/del, and `poll()` using LT mode only.
-- Step 7 may add minimal `Channel` state methods needed for `Epoller` tests, but callback dispatch and EventLoop integration remain later steps.
-- Added `src/net/Epoller.cpp` with RAII epoll fd ownership, `poll()`, `updateChannel()`, and `removeChannel()`.
-- Added `src/net/Channel.cpp` with fd/event/revent state methods, event mask mutators, and callback setters; `handleEvent()` and automatic `EventLoop` updates remain unimplemented for later steps.
-- Updated `src/CMakeLists.txt` to compile `Channel.cpp` and `Epoller.cpp` into `liteim_net`.
-- Added `tests/test_epoller.cpp`.
-- Updated `tests/CMakeLists.txt` and `tests/test_main.cpp` to register Epoller tests.
-- Ran `cmake -S . -B build`; configure passed.
-- Ran `cmake --build build`; build passed.
-- Ran `ctest --test-dir build --output-on-failure`; tests passed.
-- Ran `./build/tests/liteim_tests`; all tests passed, including six Epoller tests.
-- Added `tutorials/step07_epoller.md`.
-- Updated `docs/architecture.md`, `docs/interview_notes.md`, `docs/project_layout.md`, `tutorials/README.md`, `tutorials/00_roadmap.md`, and `README.md` for Step 7.
-- Final verification passed:
-  - `cmake -S . -B build`
-  - `cmake --build build`
-  - `ctest --test-dir build --output-on-failure`
-  - `./build/tests/liteim_tests`
-  - `./build/server/liteim_server`
-  - `git diff --check`
-- Added `### Phase` / `**Status:** complete` markers to `task_plan.md` so the planning-with-files completion hook can parse the completed Step 8 phases.
-- No `.clang-format`, `.clang-tidy`, or `.cmake-format` config exists in the repo yet, so no separate formatter/linter command was available.
-- Reviewed the Step 7 code and documentation diff before commit.
-
-## 2026-05-02 Step 8 Session
-
-- Started Step 8: implement `EventLoop` skeleton.
-- Using `planning-with-files` because this is a multi-file implementation step.
-- Ran `session-catchup.py`; it only reported old explanatory-only messages and no code changes to merge.
-- Checked Git status: tracked worktree was clean before Step 8 edits.
-- Read the planning skill, memory index, `/home/yolo/jianli/PROJECT_MEMORY.md`, current planning files, Reactor headers/implementations, CMake, and existing tests.
-- Confirmed Step 8 scope: `EventLoop` owns `Epoller`, `loop()` polls active channels, calls `Channel::handleEvent()`, and supports `quit()`, `updateChannel()`, and `removeChannel()`.
-- Step 8 boundary: implement basic `Channel::handleEvent()` dispatch so `EventLoop::loop()` is testable, but leave automatic `Channel::update()` integration for Step 9.
-- Added `src/net/EventLoop.cpp` with `EventLoop` ownership of `Epoller`, `loop()`, `quit()`, `updateChannel()`, and `removeChannel()`.
-- Updated `include/liteim/net/EventLoop.hpp` to use `std::atomic_bool` for the quit flag.
-- Updated `src/net/Channel.cpp` with basic `handleEvent()` callback dispatch for read/write/close/error events.
-- Updated `src/CMakeLists.txt` to compile `EventLoop.cpp` into `liteim_net`.
-- Added `tests/test_event_loop.cpp`.
-- Updated `tests/CMakeLists.txt` and `tests/test_main.cpp` to register EventLoop tests.
-- Ran `cmake -S . -B build`; configure passed.
-- Ran `cmake --build build`; build passed.
-- Ran `ctest --test-dir build --output-on-failure`; tests passed.
-- Ran `./build/tests/liteim_tests`; all tests passed, including five EventLoop tests.
-- Added `tutorials/step08_event_loop.md`.
-- Updated `README.md`, `docs/architecture.md`, `docs/interview_notes.md`, `docs/project_layout.md`, and `tutorials/README.md` for Step 8.
-- Final verification passed:
-  - `cmake -S . -B build`
-  - `cmake --build build`
-  - `ctest --test-dir build --output-on-failure`
-  - `./build/tests/liteim_tests`
-  - `./build/server/liteim_server`
-  - `git diff --check`
-
-## 2026-05-03 Step 9 Session
-
-- Started Step 9: implement `Channel` and connect it to `EventLoop`.
-- Using `planning-with-files` because this is a multi-file implementation step.
-- Ran `session-catchup.py`; it reported only previous explanatory-only messages and no code changes to merge.
-- Checked Git status: tracked worktree was clean before Step 9 edits.
-- Read the planning skill, memory index, `/home/yolo/jianli/PROJECT_MEMORY.md`, current planning files, Reactor source files, tests, README, and docs.
-- Confirmed Step 9 scope: wire `Channel::enableReading()`, `enableWriting()`, `disableWriting()`, and `disableAll()` through private `Channel::update()` into `EventLoop`.
-- Step 9 boundary: no `Acceptor`, no `Session`, no bind/listen/accept flow, no ET mode, and no `EventLoop` wakeup fd.
-- Implemented `Channel::update()` in `src/net/Channel.cpp`.
-- `enableReading()`, `enableWriting()`, `disableWriting()`, and `disableAll()` now call `update()` after changing `events_`.
-- `Channel::update()` calls `EventLoop::updateChannel(this)` when interested events remain and `EventLoop::removeChannel(this)` when the channel has no interested events.
-- Preserved low-level Epoller tests by making `Channel(nullptr, fd)` update local event masks without touching an `EventLoop`.
-- Added `tests/test_channel.cpp`.
-- Updated `tests/CMakeLists.txt` and `tests/test_main.cpp` to register Channel tests.
-- Added `tutorials/step09_channel.md`.
-- Updated `README.md`, `docs/architecture.md`, `docs/interview_notes.md`, `docs/project_layout.md`, and `tutorials/README.md` for Step 9.
-- Ran `cmake -S . -B build`; configure passed.
-- Ran `cmake --build build`; build passed.
-- Ran `ctest --test-dir build --output-on-failure`; tests passed.
-- Ran `./build/tests/liteim_tests`; all tests passed, including four Channel tests. The invalid-fd socket utility tests printed expected syscall error logs.
-- Ran `./build/server/liteim_server`; smoke run printed startup message.
-- Ran `git diff --check`; no whitespace errors.
-- First stale-doc wording `rg` command failed because the shell string contained an unescaped backtick; reran with a simpler expression and found no stale Step 9 wording in README, docs, tutorial index, or roadmap.
-- Reviewed the Step 9 code/test diff before commit.
-
-## 2026-05-03 Step 10 Session
-
-- Started Step 10: implement `Acceptor`.
-- Using `planning-with-files` because this is a multi-file implementation step.
-- Ran `session-catchup.py`; it reported only previous explanatory-only messages and no code changes to merge.
-- Checked Git status: tracked worktree was clean before Step 10 edits.
-- Read the planning skill, memory index, `/home/yolo/jianli/PROJECT_MEMORY.md`, current planning files, `SocketUtil`, and `Channel`.
-- Confirmed Step 10 scope: create/bind/listen a nonblocking socket, register it with `EventLoop`, accept pending connections until `EAGAIN`, set accepted fds nonblocking via `accept4`, and notify a callback.
-- Step 10 boundary: no `Session`, no `TcpServer`, no protocol parsing, no online-session map, no business routing, and no ET mode.
-- Added `include/liteim/net/Acceptor.hpp`.
-- Added `src/net/Acceptor.cpp`.
-- Updated `src/CMakeLists.txt` to compile `Acceptor.cpp` into `liteim_net`.
-- Added `tests/test_acceptor.cpp`.
-- Updated `tests/CMakeLists.txt` and `tests/test_main.cpp` to register Acceptor tests.
-- Ran initial `cmake -S . -B build`; configure passed.
-- Ran initial `cmake --build build`; build passed.
-- Ran initial `ctest --test-dir build --output-on-failure`; tests passed.
-- Ran initial `./build/tests/liteim_tests`; all tests passed, including four Acceptor tests. Existing invalid-fd socket utility tests printed expected syscall error logs.
-- Added `tutorials/step10_acceptor.md`.
-- Updated `README.md`, `docs/architecture.md`, `docs/interview_notes.md`, `docs/project_layout.md`, and `tutorials/README.md` for Step 10.
-- Adjusted `Acceptor::listen()` so `listening_` becomes true only after listen fd read-interest registration succeeds.
-- Ran final `cmake -S . -B build`; configure passed.
-- Ran final `cmake --build build`; build passed.
-- Ran final `ctest --test-dir build --output-on-failure`; tests passed.
-- Ran final `./build/tests/liteim_tests`; all tests passed, including four Acceptor tests. Existing invalid-fd socket utility tests printed expected syscall error logs.
-
-## 2026-05-04 Step 13 Session
-
-- Started Step 13: implement `MessageRouter` heartbeat routing.
-- Using `planning-with-files` because this is a multi-file implementation step with code, tests, docs, verification, and commit.
-- Initial sandboxed reads failed with `bwrap: setting up uid map: Permission denied`; continued with approved escalation for local reads.
-- Ran `session-catchup.py`; it reported older explanatory-only messages and no project-file changes to merge.
-- Read `/home/yolo/jianli/PROJECT_MEMORY.md`, LiteIM planning files, roadmap, `TcpServer`, protocol message types, CMake files, and test harness.
-- Checked Git status: current branch is ahead of `origin/main` by 3 commits, with no tracked working-tree changes before Step 13 edits.
-- Confirmed Step 13 scope: add service-layer `MessageRouter`, route `HEARTBEAT_REQ` to `HEARTBEAT_RESP`, return `ERROR_RESP` for unknown message types, and keep login/chat/storage/timeout cleanup out of scope.
-- Added `include/liteim/service/MessageRouter.hpp`.
-- Added `src/service/MessageRouter.cpp`.
-- Added `liteim_service` in `src/CMakeLists.txt` and linked it into server/tests.
-- Wired `server/main.cpp` so `TcpServer::setMessageCallback()` routes packets through `MessageRouter`.
-- Added `tests/test_message_router.cpp` using real `Session` + `socketpair` verification.
-- Registered MessageRouter tests in `tests/CMakeLists.txt` and `tests/test_main.cpp`.
-- Initial Step 13 verification passed:
-  - `cmake -S . -B build`
-  - `cmake --build build`
-  - `./build/tests/liteim_tests`
-  - `ctest --test-dir build --output-on-failure`
-- Added `tutorials/step13_message_router.md`.
-- Updated `README.md`, `docs/architecture.md`, `docs/project_layout.md`, `docs/interview_notes.md`, `tutorials/README.md`, and `/home/yolo/jianli/PROJECT_MEMORY.md` for Step 13.
-- Final verification passed so far:
-  - `cmake --build build`
-  - `./build/tests/liteim_tests`
-  - `ctest --test-dir build --output-on-failure`
-  - `./build/server/liteim_server` with Ctrl+C
-  - `git diff --check`
-- `git diff -- /home/yolo/jianli/PROJECT_MEMORY.md` from `/home/yolo/jianli` failed because `/home/yolo/jianli` is not a Git repository; this file is workspace-level metadata outside the LiteIM repo.
-- Reviewed MessageRouter code, server/CMake integration, tests, README tree, project layout tree, and project memory Step 13 text.
-- Preparing Step 13 commit with message `feat(service): add message router and heartbeat response`.
-
-## 2026-05-04 Step 14 Session
-
-- Started Step 14: define `IStorage` / `ICache` abstractions and `NullCache`.
-- Using `planning-with-files` because this is a multi-file step with code, tests, docs, verification, and commit.
-- Ran `session-catchup.py`; it reported older explanatory-only messages and no project-file changes to merge.
-- Checked Git status: current branch is clean before Step 14 edits.
-- Read the planning skill, memory index, `/home/yolo/jianli/PROJECT_MEMORY.md`, planning files, roadmap Step 14, `docs/database.md`, `sql/init.sql`, and current CMake.
-- Confirmed Step 14 scope: define storage/cache interfaces and no-op cache only; do not implement `SQLiteStorage`, real SQL schema, auth, chat, or storage-backed services.
-- Added `include/liteim/storage/StorageTypes.hpp`.
-- Added `include/liteim/storage/IStorage.hpp`.
-- Added `include/liteim/storage/ICache.hpp`.
-- Added `include/liteim/storage/NullCache.hpp`.
-- Added `src/storage/NullCache.cpp`.
-- Added `liteim_storage` in `src/CMakeLists.txt`.
-- Added `tests/test_storage_interfaces.cpp` and registered it in the test target.
-- Initial Step 14 verification passed:
-  - `cmake -S . -B build`
-  - `cmake --build build`
-  - `./build/tests/liteim_tests`
-- Added `tutorials/step14_storage_interfaces.md`.
-- Updated `README.md`, `docs/architecture.md`, `docs/database.md`, `docs/project_layout.md`, `docs/interview_notes.md`, `tutorials/README.md`, and `/home/yolo/jianli/PROJECT_MEMORY.md` for Step 14.
-- Final Step 14 verification passed:
-  - `cmake --build build`
-  - `./build/tests/liteim_tests`
-  - `ctest --test-dir build --output-on-failure`
-  - `./build/server/liteim_server` with Ctrl+C
-  - `git diff --check`
-- Reviewed storage interfaces, `NullCache`, storage tests, CMake integration, README tree, and project layout tree.
-- Preparing Step 14 commit with message `feat(storage): define storage and cache interfaces`.
-
-## 2026-05-04 Step 15 Session
-
-- Started Step 15: implement `SQLiteStorage`.
-- Using `planning-with-files` because this is a multi-file step with code, schema, tests, docs, verification, and commit.
-- Ran `session-catchup.py`; it reported older explanatory-only messages and no project-file changes to merge.
-- Checked Git status: current branch is ahead of `origin/main` by 1 commit and clean before Step 15 edits.
-- Read the planning skill, memory index, `/home/yolo/jianli/PROJECT_MEMORY.md`, planning files, current `IStorage` / `StorageTypes`, current CMake, and storage interface tests.
-- Confirmed SQLite3 is available: `pkg-config --modversion sqlite3` returned `3.45.1`; sqlite3 CLI exists at `/home/yolo/anaconda3/bin/sqlite3`.
-- Confirmed Step 15 scope: implement SQLite schema and `SQLiteStorage`; keep auth/chat services, protocol behavior, `MessageRouter` storage dependency, and real cache out of scope.
-- Added `include/liteim/storage/SQLiteStorage.hpp`.
-- Added `src/storage/SQLiteStorage.cpp` with SQLite connection ownership, schema execution, prepared statement helpers, and all current `IStorage` methods.
-- Replaced `sql/init.sql` placeholder with users, friendships, groups, group_members, and messages tables plus indexes.
-- Updated `src/CMakeLists.txt` to `find_package(SQLite3 REQUIRED)`, compile `SQLiteStorage.cpp`, and link `liteim_storage` with `SQLite::SQLite3`.
-- Added `tests/test_sqlite_storage.cpp` and registered it in the test target.
-- Added `LITEIM_SOURCE_DIR` compile definition for tests so CTest can find `sql/init.sql` from the build directory.
-- Initial Step 15 verification passed:
-  - `cmake -S . -B build`
-  - `cmake --build build`
-  - `./build/tests/liteim_tests`
-- Added `tutorials/step15_sqlite_storage.md`.
-- Updated `README.md`, `docs/architecture.md`, `docs/database.md`, `docs/project_layout.md`, `docs/interview_notes.md`, `tutorials/README.md`, and `/home/yolo/jianli/PROJECT_MEMORY.md` for Step 15.
-- Final Step 15 verification passed:
-  - `cmake -S . -B build`
-  - `cmake --build build`
-  - `./build/tests/liteim_tests`
-  - `ctest --test-dir build --output-on-failure`
-  - `./build/server/liteim_server` with Ctrl+C
-  - `git diff --check`
-- Reviewed `SQLiteStorage` source, schema, CMake linkage, SQLite tests, docs, tutorial, and planning-file diff before commit.
-- Preparing Step 15 commit with message `feat(storage): implement sqlite storage`.
-
-## 2026-05-03 Step 11 Session
-
-- Started Step 11: implement `Session`.
-- Using `planning-with-files` because this is a multi-file implementation step.
-- Ran `session-catchup.py`; it reported only previous explanatory-only messages and no code changes to merge.
-- Checked Git status before Step 11 and found one pre-existing uncommitted wording edit in `tutorials/step10_acceptor.md`.
-- Inspected the `tutorials/step10_acceptor.md` diff; it only clarifies the `Channel*` dangling-pointer explanation. It will be preserved and not staged into the Step 11 commit.
-- Read the planning skill, memory index, `/home/yolo/jianli/PROJECT_MEMORY.md`, current planning files, `Buffer`, `FrameDecoder`, `Packet`, and `Channel`.
-- Confirmed Step 11 scope: one connected-client `Session` with fd ownership, `Channel`, `FrameDecoder`, output `Buffer`, read loop, message callback, write loop, `sendPacket()`, and `close()`.
-- Step 11 boundary: no `TcpServer`, no `MessageRouter`, no login/chat/storage logic, no ET mode, and no EventLoop wakeup fd.
-- Added `include/liteim/net/Session.hpp`.
-- Added `src/net/Session.cpp`.
-- Updated `src/CMakeLists.txt` to compile `Session.cpp` into `liteim_net`.
-- Added `tests/test_session.cpp`.
-- Updated `tests/CMakeLists.txt` and `tests/test_main.cpp` to register Session tests.
-- Ran initial `cmake -S . -B build`; configure passed.
-- Ran initial `cmake --build build`; build passed.
-- Ran initial `ctest --test-dir build --output-on-failure`; tests passed.
-- Ran initial `./build/tests/liteim_tests`; all tests passed, including six Session tests. Existing invalid-fd socket utility tests printed expected syscall error logs.
-- Added `tutorials/step11_session.md`.
-- Updated `README.md`, `docs/architecture.md`, `docs/interview_notes.md`, `docs/project_layout.md`, and `tutorials/README.md` for Step 11.
-- Ran final `cmake -S . -B build`; configure passed.
-- Ran final `cmake --build build`; build passed.
-- Ran final `ctest --test-dir build --output-on-failure`; tests passed.
-- Ran final `./build/tests/liteim_tests`; all tests passed, including six Session tests. Existing invalid-fd socket utility tests printed expected syscall error logs.
-
-## 2026-05-04 Step 12 Session
-
-- Started Step 12: implement `TcpServer`.
-- Used `planning-with-files` and ran session catchup. Catchup only found previous pure Q&A context, so no code state needed to be synchronized.
-- Ordinary sandbox reads hit `bwrap: setting up uid map: Permission denied`; switched local inspection commands to approved escalation.
-- Confirmed authoritative Step 12 from `/home/yolo/jianli/PROJECT_MEMORY.md`: `TcpServer` coordinates `EventLoop`, `Acceptor`, `Session`, manages sessions, provides `sendToSession()` / `sendToUser()` foundation, and handles SIGINT/SIGTERM through `signalfd`.
-- Confirmed Step 12 boundary: no `MessageRouter`, no login/chat/storage logic, no SQLite flush, no ET mode, and no timer heartbeat timeout.
-- Chosen API direction: `TcpServer` holds an external `EventLoop*` so the existing server-entry pattern remains `TcpServer server(&loop, ip, port); server.start(); loop.loop();`.
-- Added `include/liteim/net/TcpServer.hpp` and `src/net/TcpServer.cpp`.
-- Added `Acceptor::close()` so `TcpServer::stop()` can actively stop accepting and close the listen socket before destruction.
-- Updated `server/main.cpp` to create `EventLoop`, start `TcpServer` on `0.0.0.0:9000`, run `loop.loop()`, and stop cleanly on Ctrl+C.
-- Added `tests/test_tcp_server.cpp` and registered it in `tests/CMakeLists.txt` / `tests/test_main.cpp`.
-- Added an Acceptor close/idempotency test for the new public close API.
-- Updated `README.md`, `docs/architecture.md`, `docs/project_layout.md`, `docs/interview_notes.md`, `tutorials/README.md`, `tutorials/step12_tcp_server.md`, and `/home/yolo/jianli/PROJECT_MEMORY.md`.
-- Ran `cmake --build build`; build passed.
-- Ran `./build/tests/liteim_tests`; all tests passed, including new Acceptor close and four TcpServer tests. Existing invalid-fd SocketUtil tests printed expected errno logs.
-- Ran `ctest --test-dir build --output-on-failure`; 1/1 test passed.
-- Ran `./build/server/liteim_server`, observed `LiteIM server listening on port 9000`, sent Ctrl+C, and observed `LiteIM server stopped`.
-- Ran `git diff --check`; no whitespace errors.
-- Created the Step 12 commit with message `feat(net): implement tcp server session management`.
-- Note: `/home/yolo/jianli/PROJECT_MEMORY.md` was updated as required by the workspace instructions, but it is outside the LiteIM git repository and is not part of the LiteIM commit.
-- Non-blocking issue: attempted `git diff -- /home/yolo/jianli/PROJECT_MEMORY.md` from `/home/yolo/jianli`, but that directory is not a git repository. Resolution: treat `PROJECT_MEMORY.md` as a workspace-level project note and verify LiteIM repo status separately.
-- Ran final `./build/server/liteim_server`; smoke run printed startup message.
-- Ran `git diff --check`; no whitespace errors.
-- Completed Step 11 planning phase status.
-
-## 2026-05-05 Simplified Refactor Session
-
-- Started a broad LiteIM roadmap reset request based on the simplified plan: C++ networking remains the main resume line, Qt client provides a WeChat-style demo surface, MySQL/Redis are supporting components, and PersonaAgent will first connect as a BotClient.
-- Using `planning-with-files` because this is a multi-stage code and documentation refactor.
-- Ran `session-catchup.py`; it reported older standalone tutoring context only, with no project-file changes to merge.
-- Checked Git status; the LiteIM worktree was clean before this refactor.
-- Inspected the root CMake, `client_qt/CMakeLists.txt`, current file layout, protocol headers, and Qt tool availability.
-- Confirmed Qt 5.15.2 tools are installed locally.
-- Updated `task_plan.md` for the roadmap reset.
-- Added findings for the simplified resume direction and Qt client boundaries.
-- User clarified not to implement the whole project now; reset the plan into Step-style work and also synchronize Step 15 and earlier markdown that conflicts with the new scheme.
-- Updated `/home/yolo/jianli/PROJECT_MEMORY.md` top-level priorities and Step 16-32 route.
-- Updated `tutorials/00_roadmap.md` to reflect the new 32-step LiteIM plan.
-- Updated `tutorials/README.md` with planned Step 16-32 entries.
-- Updated `README.md`, `docs/architecture.md`, `docs/database.md`, `docs/project_layout.md`, and `docs/interview_notes.md` to align with the new route and weaken MySQL/Redis wording.
-- Searched for stale roadmap phrases such as `共 28`, old Qt Step 22-24 wording, and database-heavy storage wording; no stale matches remained.
-- Ran `git diff --check`; no whitespace errors.
-- Current diff is docs/planning only; no source code or build files were changed.
-- Created the roadmap reset commit with message `docs: reset liteim roadmap for qt client`.
+- `cmake -S . -B build`：通过。
+- `cmake --build build`：通过。
+- `ctest --test-dir build --output-on-failure`：通过，当前没有测试用例，符合 Step 0 预期。
+- 旧路线文件名检查：无 `SQLite`、`InMemory`、`step15`、`server/net`、`server/protocol` 文件路径残留。
+- 内容检查只剩文档里的禁止旧路线说明和检查命令，不是主线实现。

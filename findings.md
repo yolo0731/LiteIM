@@ -1,189 +1,69 @@
 # LiteIM Findings
 
-## Project Memory
+## 权威来源
 
-- Root project memory lives at `/home/yolo/jianli/PROJECT_MEMORY.md`.
-- Step workflow: concept first, code second, tests third, git commit last.
-- Each Step must explain the test section: what the new tests verify, why those cases matter, and how to run them.
-- `docs/` should primarily use Chinese explanations.
-- Current LiteIM Step 4 commit message should be `feat(net): add buffer abstraction`.
+- `/home/yolo/jianli/PROJECT_MEMORY.md` 是 LiteIM 和 PersonaAgent 的唯一总方案来源。
+- LiteIM 现在从 `Step 0` 重新开始。
+- 当前路线是 `LiteIM High Performance + Qt Client + PersonaAgent 20-Step Edition`。
+- 如果 `README.md`、`task_plan.md`、`progress.md`、教程或源码与 `PROJECT_MEMORY.md` 冲突，统一改回 `PROJECT_MEMORY.md` 的路线。
 
-## Planning With Files
+## Step 0 清理结论
 
-- Skill installed at `/home/yolo/.codex/skills/planning-with-files/SKILL.md`.
-- The skill requires `task_plan.md`, `findings.md`, and `progress.md` in the project root.
-- `session-catchup.py` was run for `/home/yolo/jianli/LiteIM` and produced no output.
+本次 Step 0 的目的不是实现功能，而是清掉旧路线，留下干净起点。
 
-## Step 4 Design Notes
+已经删除的旧内容类型：
 
-- `Buffer` belongs to the net module: header in `include/liteim/net/`, implementation in `src/net/`.
-- `Buffer` is a generic byte container for future `Session` input and output buffers.
-- `Buffer` must not call `read()`, `write()`, or know about `Packet`.
-- `FrameDecoder` may keep its own internal protocol buffer for now; Step 4 does not refactor it.
-- Use a simple `std::string` plus `read_index_` design to avoid erasing from the front on every partial retrieve.
-- `Buffer::retrieve(len)` clears the whole buffer when `len >= readableBytes()`.
-- `Buffer::append(nullptr, 0)` is allowed as a no-op; `append(nullptr, nonzero)` throws `std::invalid_argument`.
-- Step 4 introduces `liteim_net` as a separate static library for network-layer components.
+- 旧 `include/liteim/net`、`protocol`、`service`、`storage` 实现。
+- 旧 `src/` 实现。
+- 旧 `server/` 入口。
+- 旧 `tests/` 单元测试。
+- 旧 `tutorials/step01-step15` 教程。
+- 旧 `docs/` 文档。
+- 旧 `sql/` SQLite / 初始化脚本目录。
+- 旧 `client_qt/` 临时结构。
+- 旧 `build/` 构建产物。
+- 空的 `.codex` 临时文件。
 
-## Step 5 Design Notes
+保留和重建的内容：
 
-- `SocketUtil` belongs to the net module and should be part of `liteim_net`.
-- `SocketUtil` only wraps low-level Linux socket helpers; it must not implement `Acceptor`, `Session`, or epoll.
-- `createNonBlockingSocket()` should create an IPv4 TCP socket with nonblocking behavior.
-- `setNonBlocking()` should use `fcntl()` so it can also be applied to accepted connection fds later.
-- `setReuseAddr()` and `setReusePort()` should wrap `setsockopt()`.
-- `getSocketError()` should wrap `getsockopt(SO_ERROR)`.
-- System call failures should print `errno` and a readable error message.
+- `.gitignore`。
+- `LICENSE`。
+- 空 CMake 骨架。
+- README / task_plan / findings / progress。
+- `docs/architecture.md` 和 `docs/project_layout.md`。
+- `tutorials/README.md` 和 `tutorials/step00_reset.md`。
+- 新路线目标目录，并用 `.gitkeep` 保留。
 
-## Step 6 Design Notes
+## 核心架构结论
 
-- Step 6 only defines the Reactor core header interfaces. Do not implement epoll operations or callback dispatch yet.
-- `Epoller` should own the future `epoll` fd and expose `updateChannel()`, `removeChannel()`, and `poll()`.
-- `Channel` should bind one fd to its interested events, returned events, and callbacks. It should not own the fd.
-- `EventLoop` should own an `Epoller` and expose `loop()`, `quit()`, `updateChannel()`, and `removeChannel()`.
-- Use forward declarations between `EventLoop`, `Epoller`, and `Channel` to avoid header include cycles.
-- Because methods are declared but not implemented in Step 6, tests must not construct these classes or call methods requiring definitions.
-- Interface tests should include all three headers together, use type traits/static assertions, and verify event constants. Passing this test proves the headers are self-consistent and ready for later implementation.
+- 先搭高性能网络底座，再做业务、MySQL、Redis、Qt 和 Agent 接入。
+- 不再走旧的单 Reactor 业务 baseline。
+- 最终 LiteIM 不使用 SQLite。
+- `InMemoryStorage` 不能作为主线存储实现；后续最多作为测试 double / mock。
+- 服务端使用 C++17、CMake、Linux nonblocking socket、epoll LT、eventfd、timerfd、signalfd 和自定义 TLV 协议。
+- 使用 one-loop-per-thread：每个 I/O 线程拥有一个 `EventLoop`。
+- 主 Reactor 负责 `accept`，子 Reactor 负责连接读写事件。
+- MySQL / Redis 阻塞调用必须进入业务 `ThreadPool`，不能在 I/O 线程执行。
+- 业务线程不能直接修改 `Session`；响应必须通过 `EventLoop::queueInLoop()` 或 `EventLoop::runInLoop()` 投递回连接所属 I/O 线程。
+- `Session` / `TcpConnection` 生命周期使用 `shared_ptr` / `weak_ptr` 管理，避免跨线程长期持有裸指针。
+- 慢客户端保护必须显式实现，通过输出缓冲区高水位触发关闭或限流。
 
-## Layout Refactor Design Notes
+## Step 1 约束
 
-- Mature C++ projects commonly separate headers from implementation:
-  - `include/liteim/...` exposes include paths used by other targets.
-  - `src/...` contains `.cpp` implementation files for libraries.
-  - `server/main.cpp` remains the executable entry point.
-- Use project-qualified include paths such as `liteim/net/Buffer.hpp` instead of `net/Buffer.hpp`.
-- Build libraries from `src/CMakeLists.txt` and link them from `server` and `tests`.
-- Keep behavior unchanged: no Step 7 epoll implementation, no new networking runtime behavior.
-- Documentation must be updated with the new structure because stale path docs hurt teaching and interview review.
+Step 1 只做第一层工程初始化：
 
-## Step 7 Design Notes
+- 添加真正的 CMake target。
+- 添加 `server/main.cpp`。
+- 添加最小 `tests/test_main.cpp`。
+- 保持 Qt、MySQL、Redis、协议、Reactor 都不提前实现。
 
-- The current authoritative Step 7 is `Epoller`, based on `/home/yolo/jianli/PROJECT_MEMORY.md` and the active `task_plan.md`.
-- `tutorials/00_roadmap.md` still has older wording that maps Step 6 to `Epoller` and Step 7 to `Channel`; update it during Step 7 documentation so it matches the actual completed Step 6 interface split.
-- `Epoller` owns only the `epoll` fd. It does not own `Channel` objects or socket fds.
-- Store `Channel*` in `epoll_event.data.ptr`, because `EventLoop` will later dispatch events through `Channel` instead of raw fd-only state.
-- Use `epoll_create1(EPOLL_CLOEXEC)` so child processes do not inherit the epoll fd after future `exec`.
-- Use LT mode only. Do not add `EPOLLET` in `Epoller`; callers provide plain interested events such as `EPOLLIN` and `EPOLLOUT`.
-- `updateChannel()` should use `EPOLL_CTL_ADD` the first time a fd appears and `EPOLL_CTL_MOD` after that.
-- `removeChannel()` should erase registered fd state after `EPOLL_CTL_DEL`; repeated remove on an unknown fd should be a no-op.
-- `poll()` should handle `EINTR` by returning an empty active-event list, so future signal interruptions do not crash the event loop.
-- Step 7 needs minimal `Channel` state definitions to construct test channels and expose fd/event masks to `Epoller`; callback setters are simple state setters, while `handleEvent()` dispatch and automatic `EventLoop` updates remain later-step work.
+Step 1 不允许恢复旧 Step 1-15 文件。旧代码里的知识可以参考，但文件本身不作为新路线起点。
 
-## Step 8 Design Notes
+## 测试要求
 
-- The authoritative Step 8 is `EventLoop` skeleton from `/home/yolo/jianli/PROJECT_MEMORY.md`.
-- `EventLoop` is the Reactor scheduling layer: it owns `Epoller`, polls active events, and asks each active `Channel` to handle its event.
-- `EventLoop` does not own `Channel` objects or socket fds. Later `Acceptor` and `Session` objects will own their channels/fds and unregister before destruction.
-- `quit()` should be safe to call from a callback while `loop()` is running. Use an atomic stop flag so tests and future cross-thread shutdown paths do not introduce a data race.
-- `quit()` does not add a wakeup fd in Step 8. If another thread calls `quit()` while `epoll_wait()` is blocked, the loop exits after the next event or timeout. A future `eventfd`/`signalfd` wakeup can improve this.
-- `Channel::handleEvent()` needs a concrete callback dispatch implementation in Step 8 because `EventLoop::loop()` calls it and tests should verify read callbacks can stop the loop.
-- Keep Step 9 meaningful by not wiring `Channel::enableReading()` / `enableWriting()` to automatically call `EventLoop::updateChannel()` yet. Step 8 uses explicit `loop.updateChannel(&channel)`.
-- EventLoop tests should use `pipe()` as a real fd source, matching Step 7 Epoller tests, so they verify actual `epoll_wait()` integration rather than only in-memory state.
-
-## Step 9 Design Notes
-
-- The authoritative Step 9 is `Channel` plus automatic `EventLoop` integration from `/home/yolo/jianli/PROJECT_MEMORY.md`.
-- Most `Channel` state and callback dispatch already landed in Step 7 and Step 8; Step 9 should focus on the missing private `Channel::update()` bridge.
-- `enableReading()`, `enableWriting()`, `disableWriting()`, and `disableAll()` should remain the public semantic API. Callers should not need to manually call `loop.updateChannel(&channel)` after Step 9.
-- When a `Channel` still has interested events, `update()` should call `EventLoop::updateChannel(this)`.
-- When a `Channel` has no interested events, `update()` should call `EventLoop::removeChannel(this)` so epoll stops tracking that fd instead of registering a zero event mask.
-- `Channel` does not own the fd or the loop. Future `Acceptor` and `Session` must unregister their channel before closing the fd or destroying the channel.
-- Existing low-level Epoller tests construct `Channel(nullptr, fd)` to test `Epoller` directly. Step 9 should preserve that by letting null-loop channels update local event masks without touching an `EventLoop`; production objects should pass a real loop.
-- Step 9 tests should include real `pipe()` fd behavior to prove automatic registration/removal works through `EventLoop` and `Epoller`, not only direct `handleEvent()` calls.
-
-## Step 10 Design Notes
-
-- The authoritative Step 10 is `Acceptor` from `/home/yolo/jianli/PROJECT_MEMORY.md`.
-- `Acceptor` should own only the listen fd and the listen `Channel`.
-- Accepted client fds should be created with `accept4(..., SOCK_NONBLOCK | SOCK_CLOEXEC)`.
-- `handleRead()` should loop accept until `EAGAIN` / `EWOULDBLOCK`; this avoids leaving pending connections queued after one readiness notification.
-- `EINTR` during accept should retry, and `ECONNABORTED` can be skipped because the peer may close before accept completes.
-- If no new-connection callback is installed, accepted fds should be closed immediately to avoid leaks.
-- Once a callback is called successfully, ownership of the accepted fd moves to the callback. Future `TcpServer` will create `Session` objects from those fds.
-- Tests should bind to `127.0.0.1:0` so the OS chooses an available local port, then query the actual port from `Acceptor`.
-- Tests should use real localhost TCP connections, not mocks, so they verify `socket` / `bind` / `listen` / `accept4` / `EventLoop` integration.
-
-## Step 11 Design Notes
-
-- The authoritative Step 11 is `Session` from `/home/yolo/jianli/PROJECT_MEMORY.md`.
-- `Session` should own one connected client fd and one `Channel`; it should unregister before closing.
-- Use an explicit `start()` method so future `TcpServer` can set message/close callbacks before read interest is registered.
-- `handleRead()` should loop `read()` until `EAGAIN` / `EWOULDBLOCK`; `EINTR` retries; read 0 means peer closed.
-- Read bytes should go into `FrameDecoder`; complete packets should call `MessageCallback`.
-- If `FrameDecoder` enters error state, close the session. Protocol behavior remains unchanged.
-- `sendPacket()` should call `encodePacket()`, append to `output_buffer_`, and enable write interest. It should not bypass the output buffer.
-- `handleWrite()` should write from `output_buffer_.peek()` and call `retrieve(n)` for successful writes; disable writing when the buffer is empty.
-- A close callback should be fd-based so future `TcpServer` can erase the session from its map without exposing ownership details in Step 11.
-- Tests can use `socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0)` as a connected stream fd pair; this verifies nonblocking read/write/event-loop behavior without requiring full `TcpServer`.
-- Preserve the uncommitted `tutorials/step10_acceptor.md` wording change as pre-existing user/worktree state and do not stage it into the Step 11 commit.
-
-## Testing Explanation Requirement
-
-- Future Step tutorials and final responses must include a short testing explanation.
-- The testing explanation should cover test files, test purpose, normal cases, edge/error cases, commands, and what passing tests prove.
-- Do not only list `ctest`; explain why the tests exist.
-
-## Tutorial Depth Requirement
-
-- Future `tutorials/stepXX_*.md` files must explain each new public function/interface in that Step.
-- Function explanations should include purpose, inputs, outputs, side effects, and edge/error behavior.
-- Do not use interface overview tables in Step tutorials. Explain functions one by one in the `.hpp` / `.cpp` sections instead.
-
-## Step 12 Design Notes
-
-- The authoritative Step 12 is `TcpServer` from `/home/yolo/jianli/PROJECT_MEMORY.md`.
-- `TcpServer` should coordinate `EventLoop`, `Acceptor`, and `Session`; it should not implement `MessageRouter`, login, chat, or storage.
-- The existing roadmap expects `TcpServer server(&loop, "0.0.0.0", 9000); server.start(); loop.loop();`, so `TcpServer` should hold an `EventLoop*` rather than create a private blocking loop.
-- `Acceptor` owns the listen fd and should expose an orderly close path so `TcpServer::stop()` can stop accepting before the object is destroyed.
-- `TcpServer` should store sessions as `std::shared_ptr<Session>` keyed by fd, but close callbacks must not destroy the current `Session` while `Session::closeConnection()` is still on the stack. Retire closed sessions briefly before cleanup.
-- `sendToSession()` should look up an active session by fd and call `Session::sendPacket()`.
-- `sendToUser()` can be a foundation API backed by an explicit `user_id -> session_fd` binding map; Step 12 should not infer user identity from packets.
-- `signalfd` should be registered through `Channel` in the same `EventLoop`, with `SIGINT` and `SIGTERM` blocked via `sigprocmask` so the signals are delivered through the fd instead of default process termination.
-- On signal shutdown, `TcpServer` should close active sessions, stop accepting, disable the signal channel/fd, and call `EventLoop::quit()`.
-- The interview section should explain the Step's design idea, not only provide a short quote.
-- Each Step should include common interview follow-up questions with short answers.
-
-## Step 13 Design Notes
-
-- The authoritative Step 13 is `MessageRouter` heartbeat foundation from `/home/yolo/jianli/PROJECT_MEMORY.md`.
-- `MessageRouter` belongs to a new `service` module: header in `include/liteim/service/`, implementation in `src/service/`.
-- `MessageRouter` should receive `net::Session&` and `protocol::Packet`, inspect only `packet.header.msg_type`, and reply through `Session::sendPacket()`.
-- The first supported route is `HEARTBEAT_REQ -> HEARTBEAT_RESP`.
-- Unknown message types should return `ERROR_RESP` so clients get deterministic feedback instead of silent drops.
-- Router-generated responses should preserve the request `seq_id` so clients can correlate request/response pairs.
-- Step 13 should integrate router wiring in `server/main.cpp` by installing a `TcpServer::setMessageCallback()` handler.
-- Step 13 must not implement registration, login, storage, private chat, group chat, friend list, history, or heartbeat timeout cleanup.
-- `MessageRouter` must not operate on raw fd values or manage sessions; it depends on `Session::sendPacket()` as the network-layer boundary.
-
-## Step 14 Design Notes
-
-- The authoritative Step 14 is `IStorage` / `ICache` abstraction from `/home/yolo/jianli/PROJECT_MEMORY.md`.
-- Step 14 should define storage contracts only; `SQLiteStorage`, SQL schema execution, registration/login behavior, and chat persistence remain later steps.
-- `IStorage` should cover users, friendships, groups, group members, private messages, group messages, history queries, group lookup, and offline-message queries.
-- Storage domain types should live under `include/liteim/storage/` so service/business code can depend on stable C++ structs instead of SQLite rows.
-- `ICache` should define the online-session cache boundary; `NullCache` should implement all methods as no-op / empty lookup behavior.
-- Add a separate `liteim_storage` target so future `liteim_service` can depend on storage abstractions without coupling to SQLite implementation details.
-- Tests should prove the interface can be implemented by a local test double and that `NullCache` is safe to call repeatedly without storing state.
-
-## Step 15 Design Notes
-
-- The authoritative Step 15 is `SQLiteStorage` from `/home/yolo/jianli/PROJECT_MEMORY.md`.
-- `SQLiteStorage` should implement the existing `IStorage` contract without changing service or protocol behavior.
-- Constructor should open a database path, enable foreign keys, and execute `sql/init.sql`.
-- Tests should use `:memory:` for fast interface behavior checks and a `/tmp` file-backed database to prove persistence across connections.
-- Use SQLite prepared statements and bound parameters instead of string-concatenated SQL.
-- Expected duplicate/constraint cases should return `std::nullopt` or `false`; unexpected SQLite API failures should throw so defects are visible.
-- `NullCache` stays no-op in Step 15; no Redis or real online-state cache should be introduced.
-
-## 2026-05-05 Simplified Resume Refactor Direction
-
-- The project should become a C++/Qt IM application, not only a headless server.
-- The main resume line should be C++ networking and Qt application integration: epoll/Reactor, Session lifecycle, TLV framing, eventfd wakeup, one-loop-per-thread, business thread pool, and a WeChat-style Qt client.
-- MySQL and Redis should be weakened in wording and implementation scope because they are supporting components, not the user's main skill claim.
-- The first Qt client should use Qt Widgets and `QTcpSocket`; do not reimplement epoll on the client side.
-- The client UI should mimic the familiar chat layout: left sidebar, conversation list, right chat panel, message bubbles, and input area.
-- The client must not copy WeChat branding, logo, icons, or assets.
-- PersonaAgent should first integrate as a Python BotClient using the same LiteIM protocol. Avoid Redis Streams or AgentGateway in the first integration pass.
-- User clarified the current task is not to implement the refactor now. The task is to reset the Step plan after Step 15 and update markdown files.
-- Step 15 before/after docs that conflict with the new direction should also be synchronized, but completed Step 1-15 code should not be rewritten in this roadmap-only turn.
-- Full Qt client code, MySQL/Redis replacement, EventLoopThreadPool, business thread pool, backpressure, benchmark, and Agent integration should remain separate future stages.
+- Step 0 验证 CMake 空骨架可 configure/build。
+- Step 1 开始，每个行为变化都要配测试。
+- 协议、Buffer、FrameDecoder 等底层模块优先写确定性的 GoogleTest 单元测试。
+- 网络行为先写 smoke test，等 CLI / Python 客户端出现后再补 E2E。
+- MySQL / Redis 区分纯单元测试和依赖 Docker Compose 的集成测试。
+- README 和报告里的 QPS、p99、内存占用只能来自真实压测结果，不能写虚构数字。

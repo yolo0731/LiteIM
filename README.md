@@ -1,136 +1,183 @@
 # LiteIM
 
-LiteIM is a C++17 instant messaging project for internship preparation. The main learning line is Linux network programming: non-blocking sockets, epoll, Reactor, TCP stream framing and Session lifecycle management. The desktop client will use Qt Widgets and QTcpSocket to provide a WeChat-style chat UI without copying WeChat branding or assets.
+LiteIM 是一个从 Step 0 重新开始推进的 C++17 高性能即时通讯系统。项目主线是 C++ 后端、Linux 网络编程和高性能服务器开发；Qt Widgets 客户端用于后期演示真实聊天效果，PersonaAgent 后续作为普通 Bot 用户接入 LiteIM。
 
-When developing in the `/home/yolo/jianli` workspace, also read `../PROJECT_MEMORY.md` for the current project goals, Step rules and teaching workflow.
+权威总方案见：[`../PROJECT_MEMORY.md`](../PROJECT_MEMORY.md)。如果本文档与 `PROJECT_MEMORY.md` 冲突，以 `PROJECT_MEMORY.md` 为准。
 
-The current completed milestone is Step 15: the server networking foundation, protocol layer, heartbeat router, storage/cache interfaces and SQLite storage implementation are in place. The next milestones are:
+## 当前状态
 
-1. Service MVP: register/login, private chat, group chat, history query, heartbeat timeout and CLI client.
-2. Networking resume highlights: eventfd wakeup, queued cross-thread tasks, EventLoopThreadPool, business ThreadPool and Session high-water-mark backpressure.
-3. Qt client: optional Qt Widgets target, QTcpSocket codec, login/register UI, three-column chat window, message bubbles, heartbeat and AI bot contact entry.
-4. Verification: end-to-end tests, simple benchmark client, screenshots and final interview notes.
+当前处于 `Step 0: reset workspace`。
 
-## Tech Stack
+本 Step 已将旧路线文件夹清理为干净起点：
 
-- Language: C++17
-- Build: CMake
-- Server networking: Linux socket, non-blocking I/O, epoll
-- Client UI: Qt Widgets, QTcpSocket
-- Protocol: fixed-size header + JSON body
-- Storage: `IStorage` abstraction with current SQLite implementation; MySQL/Redis may be added later as simple supporting components, not the main project claim
-- JSON: nlohmann_json
-- Tests: lightweight C++ test executable first, GoogleTest or Catch2 later
+- 删除旧的网络层、协议层、业务层、测试、教程和 build 产物。
+- 删除 SQLite / `InMemoryStorage` 路线相关文件。
+- 重建新路线所需的空目录骨架。
+- 保留 `.gitignore`、`LICENSE`、README、计划文件和 Step 0 教程。
+- `CMakeLists.txt` 只保留 Step 0 空骨架；真正的 server/test target 从 Step 1 开始添加。
 
-Boost.Asio is intentionally not used. The server networking layer will be implemented with Linux socket and epoll so the project can demonstrate event-driven I/O, connection lifecycle management, heartbeat detection and TCP stream framing.
+下一步是 `Step 1: init CMake project structure`。
 
-## Directory Structure
+## 项目目标
+
+最终目标是一套可以演示、可以压测、可以用于简历讲解的 IM 系统：
+
+```text
+Qt/CLI/User Client
+    -> LiteIM C++ IM Server
+    -> Python BotClient
+    -> PersonaAgent LangGraph AgentService
+    -> Python BotClient
+    -> LiteIM
+    -> Qt/CLI/User Client
+```
+
+LiteIM 服务端最终负责：
+
+- TCP 长连接接入
+- TLV 二进制协议编解码
+- 半包 / 粘包处理
+- 登录注册
+- 好友关系
+- 私聊
+- 群聊
+- 离线消息
+- 历史消息
+- 心跳超时
+- 慢客户端回压
+- Bot 用户路由
+
+## 技术定位
+
+LiteIM 的简历表达重点是：
+
+> 基于 C++17 / Linux epoll 实现主从 Reactor 高性能 IM 服务端，I/O 线程负责非阻塞网络读写和协议编解码，业务线程池负责 MySQL / Redis 阻塞任务；通过 Qt 客户端和 Python BotClient 展示真实聊天闭环，并为 PersonaAgent 接入预留统一 Bot 用户入口。
+
+核心技术点：
+
+- C++17 / CMake
+- Linux nonblocking socket
+- epoll LT
+- eventfd 跨线程唤醒
+- one-loop-per-thread Reactor
+- 主从 Reactor `TcpServer`
+- business `ThreadPool`
+- timerfd 心跳超时
+- signalfd 优雅退出
+- 自定义 TLV 二进制协议
+- TCP 流式解码器
+- `shared_ptr` / `weak_ptr` 管理连接生命周期
+- 输出缓冲区高水位回压
+- MySQL 连接池、RAII `ConnectionGuard`、prepared statement、DAO
+- Redis 在线状态、每会话未读计数、登录失败限流
+- GoogleTest / CTest
+- Python E2E 测试
+- 压测工具
+- GitHub Actions CI + ASan
+- Qt Widgets + `QTcpSocket` 演示客户端
+
+## 目标架构
+
+```text
+                         +----------------------+
+                         |  Qt Widgets Client   |
+                         |  CLI Client          |
+                         |  Python BotClient    |
+                         +----------+-----------+
+                                    |
+                              TLV over TCP
+                                    |
++------------------------------- LiteIM Server -------------------------------+
+|                                                                            |
+|  Main Reactor                                                               |
+|  - nonblocking listen socket                                                |
+|  - epoll accept events                                                      |
+|  - dispatch new connections                                                 |
+|                                                                            |
+|  Sub Reactor Thread Pool                                                    |
+|  - one EventLoop per I/O thread                                             |
+|  - epoll read/write events                                                  |
+|  - eventfd queueInLoop wakeup                                               |
+|  - FrameDecoder + Session lifecycle                                         |
+|  - output-buffer high-water-mark backpressure                               |
+|                                                                            |
+|  Business Thread Pool                                                       |
+|  - AuthService / ChatService / GroupService / HistoryService                |
+|  - MySQL DAO and Redis cache operations                                     |
+|  - post responses back to the owning EventLoop                              |
+|                                                                            |
++---------------------------+----------------------+-------------------------+
+                            |                      |
+                         MySQL                  Redis
+                   persistent entities      online/unread/rate-limit
+```
+
+关键边界：
+
+- I/O 线程不执行 MySQL / Redis 阻塞调用。
+- 业务线程不直接修改 `Session`。
+- 跨线程发送统一通过 `EventLoop::queueInLoop()` 或 `EventLoop::runInLoop()` 回到连接所属 I/O 线程。
+- PersonaAgent 不嵌入 C++ 服务端，只通过 Python BotClient 接入。
+
+## Step 路线
+
+LiteIM 按 `Step 0 + Step 1-54` 推进，每一步都遵循：
+
+```text
+concept -> handwritten code -> tests -> commit
+```
+
+阶段划分：
+
+| 阶段 | Step | 目标 |
+| --- | --- | --- |
+| Phase 0 | Step 0 | 清理旧文件夹，建立干净起点。 |
+| Phase 1 | Step 1-20 | 高性能网络底座，多 Reactor echo server。 |
+| Phase 2 | Step 21-30 | MySQL / Redis 存储缓存层。 |
+| Phase 3 | Step 31-40 | 异步 IM 业务闭环和 BotGateway。 |
+| Phase 4 | Step 41-45 | CLI、Python E2E、压测、GoogleTest、ASan、CI。 |
+| Phase 5 | Step 46-53 | Qt Widgets 常见 IM 三栏客户端。 |
+| Phase 6 | Step 54 | README、架构图、Qt 截图、压测报告和面试文档。 |
+
+Qt 客户端放在服务端主线之后实现，目标是演示登录、会话列表、消息气泡、私聊、群聊、历史消息、心跳/断线提示和 AI Bot 联系人入口。Qt 不使用微信名称、logo、图标或素材。
+
+## 当前目录结构
 
 ```text
 LiteIM/
 ├── CMakeLists.txt
-├── README.md
-├── include/
-│   └── liteim/
-│       ├── net/
-│       │   ├── Acceptor.hpp
-│       │   ├── Buffer.hpp
-│       │   ├── Channel.hpp
-│       │   ├── Epoller.hpp
-│       │   ├── EventLoop.hpp
-│       │   ├── Session.hpp
-│       │   ├── SocketUtil.hpp
-│       │   └── TcpServer.hpp
-│       ├── protocol/
-│       │   ├── FrameDecoder.hpp
-│       │   ├── MessageType.hpp
-│       │   └── Packet.hpp
-│       ├── service/
-│       │   └── MessageRouter.hpp
-│       └── storage/
-│           ├── ICache.hpp
-│           ├── IStorage.hpp
-│           ├── NullCache.hpp
-│           ├── SQLiteStorage.hpp
-│           └── StorageTypes.hpp
-├── src/
-│   ├── CMakeLists.txt
-│   ├── net/
-│   │   ├── Acceptor.cpp
-│   │   ├── Buffer.cpp
-│   │   ├── Channel.cpp
-│   │   ├── Epoller.cpp
-│   │   ├── EventLoop.cpp
-│   │   ├── Session.cpp
-│   │   ├── SocketUtil.cpp
-│   │   └── TcpServer.cpp
-│   ├── protocol/
-│   │   ├── FrameDecoder.cpp
-│   │   └── Packet.cpp
-│   ├── service/
-│   │   └── MessageRouter.cpp
-│   └── storage/
-│       ├── NullCache.cpp
-│       └── SQLiteStorage.cpp
-├── docs/
+├── include/liteim/{base,net,protocol,concurrency,timer,storage,cache,service}/
+├── src/{base,net,protocol,concurrency,timer,storage,cache,service}/
 ├── server/
-│   ├── CMakeLists.txt
-│   └── main.cpp
+├── client_cli/
 ├── client_qt/
-│   └── CMakeLists.txt
-├── sql/
-└── tests/
-    ├── CMakeLists.txt
-    ├── TestUtil.hpp
-    ├── test_acceptor.cpp
-    ├── test_protocol.cpp
-    ├── test_frame_decoder.cpp
-    ├── test_message_router.cpp
-    ├── test_buffer.cpp
-    ├── test_channel.cpp
-    ├── test_epoller.cpp
-    ├── test_event_loop.cpp
-    ├── test_session.cpp
-    ├── test_socket_util.cpp
-    ├── test_sqlite_storage.cpp
-    ├── test_storage_interfaces.cpp
-    ├── test_tcp_server.cpp
-    └── test_reactor_interfaces.cpp
+├── bench/
+├── tests/
+├── scripts/
+├── docker/
+├── docs/
+├── tutorials/
+└── .github/workflows/
 ```
 
-Headers and implementation files are intentionally separated:
+空目录用 `.gitkeep` 保留，方便从 Step 1 开始逐步填充。
 
-- `include/liteim/...` contains headers used by other targets.
-- `src/...` contains library implementation files.
-- `server/main.cpp` is only the server executable entry point.
-- Tests include project headers through paths such as `liteim/net/Buffer.hpp`.
+## Step 0 验证
 
-## Build
+Step 0 只有空 CMake 骨架，没有 server/test target。可以运行：
 
 ```bash
 cmake -S . -B build
 cmake --build build
-```
-
-## Run
-
-```bash
-./build/server/liteim_server
-```
-
-Expected output:
-
-```text
-LiteIM server listening on port 9000
-```
-
-Press `Ctrl+C` to stop the server through the `signalfd` shutdown path.
-
-## Test
-
-```bash
 ctest --test-dir build --output-on-failure
-./build/tests/liteim_tests
 ```
 
-Current tests cover Packet encoding/validation, TCP frame decoding, Buffer behavior, SocketUtil helpers, Reactor interface declarations, Epoller add/mod/del plus LT poll behavior, EventLoop dispatch/quit behavior, Channel automatic EventLoop update plus callback dispatch behavior, Acceptor bind/listen/accept callback behavior, Session read/decode/write/close lifecycle behavior, TcpServer accept/session tracking/send/shutdown behavior, MessageRouter heartbeat/error response routing, storage/cache interface contracts, and SQLiteStorage persistence behavior.
+预期结果：CMake configure/build 成功；CTest 当前没有测试用例。
+
+## 当前执行文件
+
+- [`../PROJECT_MEMORY.md`](../PROJECT_MEMORY.md)：总路线。
+- [`task_plan.md`](task_plan.md)：当前执行计划。
+- [`findings.md`](findings.md)：设计结论和风险记录。
+- [`progress.md`](progress.md)：真实完成进度。
+- [`tutorials/step00_reset.md`](tutorials/step00_reset.md)：Step 0 教程。
