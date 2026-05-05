@@ -21,8 +21,19 @@ FetchContent_Declare(
     GIT_TAG v1.14.0
 )
 
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(googletest)
+FetchContent_Declare(
+    spdlog
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG v1.13.0
+)
 
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(googletest)
+FetchContent_MakeAvailable(spdlog)
+
+add_subdirectory(src)
 add_subdirectory(server)
 add_subdirectory(tests)

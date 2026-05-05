@@ -32,6 +32,11 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 1 code | done | Added root CMake wiring, GoogleTest FetchContent, minimal `server`, and gtest-based `tests` target. |
 | Step 1 tests | done | CMake configure/build, server smoke run, and CTest passed with `SmokeTest.GoogleTestWorks`. |
 | Step 1 commit | done | Commit message: `init: create LiteIM project structure with googletest`. |
+| Step 2 concept | done | Step 2 introduces shared base components used by later networking, protocol, storage, cache, Qt, and tests. |
+| Step 2 code | done | Added `liteim_base` with `Config`, `Logger`, `ErrorCode`, `Status`, and `Timestamp`; server now initializes logging from default config. |
+| Step 2 tests | done | Added base GoogleTest coverage; CTest passed with 15 total tests. |
+| Step 2 docs | done | README, docs, findings, progress, and tutorials were updated for the Step 2 route. |
+| Step 2 commit | done | Commit message: `feat(base): add config logger and error code`. |
 
 ## Current Decision
 
@@ -105,6 +110,64 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+## Step 2 Target
+
+Step 2 adds the first real reusable library module:
+
+```text
+LiteIM/
+├── include/liteim/base/
+│   ├── Config.hpp
+│   ├── ErrorCode.hpp
+│   ├── Logger.hpp
+│   ├── Status.hpp
+│   └── Timestamp.hpp
+├── src/
+│   ├── CMakeLists.txt
+│   └── base/
+│       ├── CMakeLists.txt
+│       ├── Config.cpp
+│       ├── ErrorCode.cpp
+│       ├── Logger.cpp
+│       ├── Status.cpp
+│       └── Timestamp.cpp
+└── tests/base/
+    ├── config_test.cpp
+    ├── error_code_test.cpp
+    ├── logger_test.cpp
+    └── timestamp_test.cpp
+```
+
+Step 2 intentionally creates only the `base` module. Protocol, network, MySQL, Redis, CLI, Qt, benchmark, scripts, and Docker directories still wait for their own Steps.
+
+Step 2 verification:
+
+```bash
+cmake -S . -B build
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+```
+
+Expected tests:
+
+- `TEST(ConfigTest, DefaultsContainExpectedValues)`
+- `TEST(ConfigTest, LoadFromFileOverridesConfiguredValues)`
+- `TEST(ConfigTest, MissingValuesKeepDefaults)`
+- `TEST(ConfigTest, MissingFileReturnsNotFound)`
+- `TEST(ConfigTest, UnknownKeyFails)`
+- `TEST(ConfigTest, InvalidPortFails)`
+- `TEST(ErrorCodeTest, ToStringReturnsReadableNames)`
+- `TEST(StatusTest, OkStatusHasOkCode)`
+- `TEST(StatusTest, ErrorStatusCarriesCodeAndMessage)`
+- `TEST(LoggerTest, ParseLogLevelReturnsExpectedLevel)`
+- `TEST(LoggerTest, UnknownLogLevelFallsBackToInfo)`
+- `TEST(LoggerTest, InitCreatesReusableLogger)`
+- `TEST(TimestampTest, NowReturnsPositiveEpochMilliseconds)`
+- `TEST(TimestampTest, Iso8601StringUsesUtcFormat)`
+
+Next Step: `Step 3: define MessageType and TLV types`.
+
 ## Persistent Requirements
 
 - Every Step follows: concept -> code -> tests -> commit.
@@ -121,3 +184,4 @@ ctest --test-dir build --output-on-failure
 | Existing worktree contained old SQLite/InMemoryStorage route files | Step 0 cleanup | Deleted old implementation files. |
 | Step 0 initially created all future directories with `.gitkeep` | User review | Removed them; future directories will be created only when each Step needs them. |
 | Sandbox `bwrap` uid map failure | Running shell commands | Used approved escalated execution for repository inspection and cleanup. |
+| `session-catchup.py` reported old Buffer pure-Q&A context | Step 2 continuation | Ignored it for implementation because the current authoritative route restarts from Step 0 and old Buffer files no longer exist. |
