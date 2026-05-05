@@ -4,6 +4,7 @@ add_executable(liteim_tests
     base/error_code_test.cpp
     base/logger_test.cpp
     base/timestamp_test.cpp
+    protocol/frame_decoder_test.cpp
     protocol/message_type_test.cpp
     protocol/packet_test.cpp
     protocol/tlv_codec_test.cpp

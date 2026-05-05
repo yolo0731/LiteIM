@@ -1,4 +1,5 @@
 add_library(liteim_protocol
+    FrameDecoder.cpp
     MessageType.cpp
     Packet.cpp
     Tlv.cpp

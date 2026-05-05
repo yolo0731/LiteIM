@@ -52,6 +52,11 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 5 tests | done | Added TLV codec GoogleTest coverage; CTest passes with 45 total tests. |
 | Step 5 docs | done | README, docs, findings, progress, and tutorials were updated for the Step 5 route. |
 | Step 5 commit | done | Commit message: `feat(protocol): implement tlv codec`. |
+| Step 6 concept | done | Step 6 defines a socket-agnostic TCP byte-stream frame decoder. |
+| Step 6 code | done | Added `FrameDecoder` with internal buffering, multi-packet output, error state, and reset. |
+| Step 6 tests | done | Added FrameDecoder GoogleTest coverage; CTest passes with 54 total tests. |
+| Step 6 docs | done | README, docs, findings, progress, and tutorials were updated for the Step 6 route. |
+| Step 6 commit | done | Commit message: `feat(protocol): implement tcp frame decoder`. |
 
 ## Current Decision
 
@@ -318,7 +323,57 @@ Expected new tests:
 - `TEST(TlvCodecTest, WrongUint64LengthReturnsError)`
 - `TEST(TlvCodecTest, UnknownTypeCannotBeEncoded)`
 
-Next Step: `Step 6: implement FrameDecoder`.
+## Step 6 Target
+
+Step 6 extends the protocol module with TCP byte-stream frame decoding:
+
+```text
+LiteIM/
+├── include/liteim/protocol/
+│   ├── FrameDecoder.hpp
+│   ├── MessageType.hpp
+│   ├── Packet.hpp
+│   ├── Tlv.hpp
+│   └── TlvCodec.hpp
+├── src/protocol/
+│   ├── CMakeLists.txt
+│   ├── FrameDecoder.cpp
+│   ├── MessageType.cpp
+│   ├── Packet.cpp
+│   ├── Tlv.cpp
+│   └── TlvCodec.cpp
+└── tests/protocol/
+    ├── frame_decoder_test.cpp
+    ├── message_type_test.cpp
+    ├── packet_test.cpp
+    ├── tlv_type_test.cpp
+    └── tlv_codec_test.cpp
+```
+
+Step 6 intentionally implements only socket-agnostic stream decoding. It does not create the network `Buffer`, socket helpers, epoll, Reactor, or `Session`.
+
+Step 6 verification:
+
+```bash
+cmake -S . -B build
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+```
+
+Expected new tests:
+
+- `TEST(FrameDecoderTest, CompletePacketEmitsOnePacket)`
+- `TEST(FrameDecoderTest, PacketSplitAcrossFeedsEmitsAfterSecondFeed)`
+- `TEST(FrameDecoderTest, MultiplePacketsInOneFeedAreDecoded)`
+- `TEST(FrameDecoderTest, HalfPacketThenStickyPacketAreDecodedTogether)`
+- `TEST(FrameDecoderTest, InvalidMagicEntersErrorState)`
+- `TEST(FrameDecoderTest, InvalidVersionEntersErrorState)`
+- `TEST(FrameDecoderTest, OversizedBodyLengthEntersErrorState)`
+- `TEST(FrameDecoderTest, ErrorStateRejectsFurtherFeedUntilReset)`
+- `TEST(FrameDecoderTest, NullInputWithNonzeroLengthReturnsError)`
+
+Next Step: `Step 7: implement Buffer`.
 
 ## Persistent Requirements
 

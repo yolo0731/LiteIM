@@ -286,3 +286,46 @@ init: create LiteIM project structure with googletest
 - 删除暂时没有真实字段需求的 `appendInt64()`。
 - 新增 `getRepeatedUint64()`，用于读取重复 `FriendId`、`UserId`、`GroupId`、`MessageId` 等 ID 列表。
 - 保持 C++17 和当前项目 `Status + output parameter` 风格，不改成 C++20 `std::span` 或 `std::byte`。
+
+## 2026-05-06 Step 6 FrameDecoder
+
+本次进入 `Step 6: implement FrameDecoder`。
+
+开始状态：
+
+- 工作区已有用户暂存改动：`include/liteim/protocol/TlvCodec.hpp`、`src/base/Config.cpp` 和 `src/protocol/Packet.cpp`。
+- Step 6 不修改这 3 个文件，不把它们纳入 Step 6 commit。
+
+概念完成：
+
+- 明确 TCP 是字节流，不保留消息边界。
+- `FrameDecoder` 只负责连续字节流到完整 `Packet` 的解包。
+- 本 Step 不读 socket、不调用 epoll、不解析 TLV body、不做业务路由。
+- 错误 header 进入 error 状态，等待上层关闭连接或显式 `reset()`。
+
+代码完成：
+
+- 新增 `include/liteim/protocol/FrameDecoder.hpp`。
+- 新增 `src/protocol/FrameDecoder.cpp`。
+- 更新 `src/protocol/CMakeLists.txt`，把 `FrameDecoder.cpp` 加入 `liteim_protocol`。
+- 更新 `tests/CMakeLists.txt`，加入 `tests/protocol/frame_decoder_test.cpp`。
+- 新增 `FrameDecoder::feed()`、`hasError()`、`bufferedBytes()` 和 `reset()`。
+
+测试完成：
+
+- 新增 `tests/protocol/frame_decoder_test.cpp`，覆盖完整包、半包、粘包、半包后接粘包、错误 magic、错误 version、body_len 超限、error 状态拒绝继续解析和空指针输入。
+
+验证结果：
+
+- `cmake -S . -B build`：通过。
+- `cmake --build build`：通过。
+- `./build/server/liteim_server`：通过，输出 `LiteIM server scaffold is running on 0.0.0.0:9000`。
+- `ctest --test-dir build --output-on-failure`：通过，54/54 tests passed。
+
+收尾完成：
+
+- 已更新 README、docs、findings、task_plan、progress 和 tutorials。
+- 已新增 `tutorials/step06_frame_decoder.md`。
+- 已更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Step 6 测试清单。
+- 本次按用户要求保留本地 `build/` 目录。
+- 提交完成：`feat(protocol): implement tcp frame decoder`。
