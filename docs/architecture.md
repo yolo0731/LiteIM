@@ -1,6 +1,6 @@
 # LiteIM Architecture
 
-本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 0，只建立目录和文档，不包含服务端实现。
+本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 1，只包含最小 `liteim_server` 和 `liteim_tests`，还没有真正的网络层实现。
 
 ## Target Data Flow
 
@@ -34,4 +34,4 @@ User Client -> LiteIM -> Python BotClient -> AgentService -> Python BotClient ->
 
 ## Current Step
 
-Step 0 only resets the workspace. Real architecture code starts from Step 1.
+Step 1 only creates the minimal buildable server/test targets. Real networking architecture starts in later steps.

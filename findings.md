@@ -60,19 +60,31 @@
 
 Step 1 只做第一层工程初始化：
 
-- 创建 Step 1 真正需要的最小目录。
-- 添加真正的 CMake target。
+- 只创建 Step 1 真正需要的 `server/` 和 `tests/` 目录。
+- 添加真正的 CMake target：`liteim_server` 和 `liteim_tests`。
+- 根 CMake 用 `FetchContent` 接入 GoogleTest v1.14.0。
+- `tests/CMakeLists.txt` 链接 `GTest::gtest_main` 并使用 `gtest_discover_tests`。
 - 添加 `server/main.cpp`。
-- 添加最小 `tests/test_main.cpp`。
-- 保持 Qt、MySQL、Redis、协议、Reactor 都不提前实现。
+- 添加最小 GoogleTest 用例 `TEST(SmokeTest, GoogleTestWorks)`。
+- 保持 `include/`、`src/`、Qt、MySQL、Redis、协议、Reactor 都不提前实现。
 
 Step 1 不允许恢复旧 Step 1-15 文件。旧代码里的知识可以参考，但文件本身不作为新路线起点。
+
+## Step 1 实现结论
+
+- 根 `CMakeLists.txt` 只接入 `server/` 和 `tests/`。
+- `server/CMakeLists.txt` 生成 `liteim_server`。
+- `tests/CMakeLists.txt` 生成 `liteim_tests`，链接 `GTest::gtest_main`，并通过 `gtest_discover_tests` 注册 CTest。
+- `server/main.cpp` 只打印启动信息。
+- `tests/test_main.cpp` 使用 `TEST(SmokeTest, GoogleTestWorks)` 验证 C++17 编译环境和 GoogleTest/CTest 链路。
+- Step 1 没有创建 `.gitkeep`，也没有提前创建未来目录。
 
 ## 测试要求
 
 - Step 0 验证 CMake 空骨架可 configure/build。
-- Step 1 开始，每个行为变化都要配测试。
+- Step 1 开始，每个行为变化都要配 GoogleTest 测试。
 - 协议、Buffer、FrameDecoder 等底层模块优先写确定性的 GoogleTest 单元测试。
+- 后续业务层测试优先使用 gMock mock `IStorage` / `ICache`，避免单元测试依赖真实 MySQL / Redis。
 - 网络行为先写 smoke test，等 CLI / Python 客户端出现后再补 E2E。
 - MySQL / Redis 区分纯单元测试和依赖 Docker Compose 的集成测试。
 - README 和报告里的 QPS、p99、内存占用只能来自真实压测结果，不能写虚构数字。

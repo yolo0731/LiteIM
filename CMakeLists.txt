@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
+include(FetchContent)
+
 project(LiteIM
     VERSION 0.1.0
     DESCRIPTION "C++17 epoll based high-performance instant messaging system"
@@ -11,5 +13,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 enable_testing()
+include(GoogleTest)
 
-message(STATUS "LiteIM Step 0 reset scaffold: implementation targets start from Step 1")
+FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG v1.14.0
+)
+
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
+add_subdirectory(server)
+add_subdirectory(tests)

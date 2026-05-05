@@ -14,7 +14,7 @@ LiteIM is planned as a C++17 high-performance IM system:
 - slow-client output-buffer backpressure.
 - custom TLV binary protocol and TCP stream decoder.
 - MySQL persistence and Redis online/unread/rate-limit state.
-- CLI, Python E2E, benchmark, GoogleTest, ASan, CI.
+- CLI, Python E2E, benchmark, GoogleTest/gMock, ASan/UBSan, CI.
 - Qt Widgets demo client with a familiar IM three-column chat layout.
 - PersonaAgent integration through a Python BotClient.
 
@@ -27,11 +27,11 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 0 keep minimal root | done | Removed premature empty folders and `.gitkeep`; future directories will be created by the Step that needs them. |
 | Step 0 docs | done | Rewrote README, findings, progress, task plan, docs, and tutorial index for the minimal Step 0 route. |
 | Step 0 verification | done | CMake configure/build and CTest passed; `.gitkeep` and stale-route filename checks returned no matches. |
-| Step 0 commit | pending | Commit message: `chore: keep LiteIM step0 minimal`. |
-| Step 1 concept | pending | Explain high-performance project structure and why it differs from the old route. |
-| Step 1 code | pending | Add real CMake targets, minimal server entry, and minimal test target. |
-| Step 1 tests | pending | Verify configure, build, server smoke run, and CTest. |
-| Step 1 commit | pending | Commit message: `init: create LiteIM high performance project structure`. |
+| Step 0 commit | done | Commit: `29e41e9 chore: keep LiteIM step0 minimal`. |
+| Step 1 concept | done | Step 1 creates a minimal buildable server/test project and introduces GoogleTest from the start. |
+| Step 1 code | done | Added root CMake wiring, GoogleTest FetchContent, minimal `server`, and gtest-based `tests` target. |
+| Step 1 tests | done | CMake configure/build, server smoke run, and CTest passed with `SmokeTest.GoogleTestWorks`. |
+| Step 1 commit | done | Commit message: `init: create LiteIM project structure with googletest`. |
 
 ## Current Decision
 
@@ -81,12 +81,15 @@ Step 1 should add the first real buildable project structure:
 
 ```text
 LiteIM/
-├── include/liteim/base/
-├── src/base/
+├── CMakeLists.txt
 ├── server/main.cpp
+├── server/CMakeLists.txt
 ├── tests/test_main.cpp
-└── CMakeLists.txt + target CMake files
+└── tests/CMakeLists.txt
 ```
+
+Step 1 intentionally does not create `include/`, `src/`, `client_qt/`, `bench/`, `scripts`, or `docker`. It does introduce GoogleTest through CMake `FetchContent` because all later steps should use gtest cases instead of a custom test framework.
+Those directories will be created in the Step that first needs them.
 
 Step 1 verification:
 
@@ -102,6 +105,7 @@ ctest --test-dir build --output-on-failure
 - Every Step follows: concept -> code -> tests -> commit.
 - Every Step tutorial explains new public functions, important private helpers, tests, edge cases, and interview talking points.
 - Tests must be explained, not just listed.
+- Tests use GoogleTest from Step 1; later Step plans should name concrete `TEST` / `TEST_F` / `TEST_P` cases when possible.
 - README benchmark numbers must only use real local benchmark results.
 - Each code Step must build and pass relevant tests before commit.
 

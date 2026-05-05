@@ -11,6 +11,6 @@ concept -> handwritten code -> tests -> commit
 | Step | 文件 | 状态 |
 | --- | --- | --- |
 | Step 0 | [`step00_reset.md`](step00_reset.md) | done |
-| Step 1 | `step01_project_init.md` | pending |
+| Step 1 | [`step01_project_init.md`](step01_project_init.md) | done |
 
 旧 Step 1-15 教程已删除，后续会按新的高性能路线逐步重写。目录也会按 Step 的实际需求逐步创建。
