@@ -151,3 +151,43 @@ init: create LiteIM project structure with googletest
 恢复说明：
 
 - `planning-with-files` 的 `session-catchup.py` 提示了旧版 Buffer 纯问答上下文，但该内容属于重构前路线，当前 Step 2 以 `/home/yolo/jianli/PROJECT_MEMORY.md` 和当前 LiteIM 文件为准。
+
+## 2026-05-05 Step 3 Protocol Types
+
+本次进入 `Step 3: define MessageType and TLV types`。
+
+概念完成：
+
+- 明确 Step 3 只做协议枚举和分类，不做 Packet 编解码。
+- `MessageType` 表示一帧消息的业务类型，后续会进入 Packet header 的 `msg_type` 字段。
+- `TlvType` 表示 TLV body 中每个字段的类型，例如用户名、消息文本、群组 ID、错误信息和 Persona ID。
+- `Push` 消息用于后续服务端主动投递给接收方，它既不是 request，也不是 response。
+
+代码完成：
+
+- 新增 `include/liteim/protocol/MessageType.hpp`。
+- 新增 `include/liteim/protocol/Tlv.hpp`。
+- 新增 `src/protocol/CMakeLists.txt`。
+- 新增 `src/protocol/MessageType.cpp`。
+- 新增 `src/protocol/Tlv.cpp`。
+- 更新 `src/CMakeLists.txt`，接入 `protocol` 子目录。
+- 更新 `tests/CMakeLists.txt`，让 `liteim_tests` 链接 `liteim_protocol`。
+
+测试完成：
+
+- 新增 `tests/protocol/message_type_test.cpp`，覆盖核心消息类型字符串、未知消息类型、请求类型分类、响应类型分类和 Push/Unknown 分类。
+- 新增 `tests/protocol/tlv_type_test.cpp`，覆盖核心 TLV 字段字符串和未知 TLV 类型。
+
+验证结果：
+
+- `cmake -S . -B build`：通过。
+- `cmake --build build`：通过。
+- `./build/server/liteim_server`：通过，输出 `LiteIM server scaffold is running on 0.0.0.0:9000`。
+- `ctest --test-dir build --output-on-failure`：通过，22/22 tests passed。
+
+收尾完成：
+
+- 已更新 README、docs、findings、task_plan、progress 和 tutorials。
+- 已更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Step 3 测试清单。
+- 已删除临时 `build/` 产物。
+- 提交完成：`feat(protocol): define message and tlv types`。

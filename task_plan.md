@@ -37,6 +37,11 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 2 tests | done | Added base GoogleTest coverage; CTest passed with 15 total tests. |
 | Step 2 docs | done | README, docs, findings, progress, and tutorials were updated for the Step 2 route. |
 | Step 2 commit | done | Commit message: `feat(base): add config logger and error code`. |
+| Step 3 concept | done | Step 3 defines protocol message and TLV field types only; Packet encoding is reserved for Step 4. |
+| Step 3 code | done | Added `liteim_protocol` with `MessageType`, `TlvType`, string conversion, and request/response classification. |
+| Step 3 tests | done | Added protocol GoogleTest coverage; CTest passed with 22 total tests. |
+| Step 3 docs | done | README, docs, findings, progress, and tutorials were updated for the Step 3 route. |
+| Step 3 commit | done | Commit message: `feat(protocol): define message and tlv types`. |
 
 ## Current Decision
 
@@ -167,6 +172,47 @@ Expected tests:
 - `TEST(TimestampTest, Iso8601StringUsesUtcFormat)`
 
 Next Step: `Step 3: define MessageType and TLV types`.
+
+## Step 3 Target
+
+Step 3 adds the first protocol module:
+
+```text
+LiteIM/
+├── include/liteim/protocol/
+│   ├── MessageType.hpp
+│   └── Tlv.hpp
+├── src/protocol/
+│   ├── CMakeLists.txt
+│   ├── MessageType.cpp
+│   └── Tlv.cpp
+└── tests/protocol/
+    ├── message_type_test.cpp
+    └── tlv_type_test.cpp
+```
+
+Step 3 intentionally defines only protocol type identifiers and classification helpers. It does not create `PacketHeader`, encode/decode TLV, handle byte order, manage buffers, or implement TCP half-packet/sticky-packet logic.
+
+Step 3 verification:
+
+```bash
+cmake -S . -B build
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+```
+
+Expected new tests:
+
+- `TEST(MessageTypeTest, CoreTypesReturnReadableNames)`
+- `TEST(MessageTypeTest, UnknownTypeReturnsUnknown)`
+- `TEST(MessageTypeTest, RequestTypesAreClassified)`
+- `TEST(MessageTypeTest, ResponseTypesAreClassified)`
+- `TEST(MessageTypeTest, PushAndUnknownTypesAreNotRequestOrResponse)`
+- `TEST(TlvTypeTest, CoreTypesReturnReadableNames)`
+- `TEST(TlvTypeTest, UnknownTypeReturnsUnknown)`
+
+Next Step: `Step 4: implement Packet encode/decode`.
 
 ## Persistent Requirements
 

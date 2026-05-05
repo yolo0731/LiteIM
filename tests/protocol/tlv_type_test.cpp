@@ -1,0 +1,21 @@
+#include "liteim/protocol/Tlv.hpp"
+
+#include <gtest/gtest.h>
+
+TEST(TlvTypeTest, CoreTypesReturnReadableNames) {
+    EXPECT_EQ(liteim::toString(liteim::TlvType::Username), "USERNAME");
+    EXPECT_EQ(liteim::toString(liteim::TlvType::UserId), "USER_ID");
+    EXPECT_EQ(liteim::toString(liteim::TlvType::FriendId), "FRIEND_ID");
+    EXPECT_EQ(liteim::toString(liteim::TlvType::GroupId), "GROUP_ID");
+    EXPECT_EQ(liteim::toString(liteim::TlvType::ConversationId), "CONVERSATION_ID");
+    EXPECT_EQ(liteim::toString(liteim::TlvType::MessageText), "MESSAGE_TEXT");
+    EXPECT_EQ(liteim::toString(liteim::TlvType::UnreadCount), "UNREAD_COUNT");
+    EXPECT_EQ(liteim::toString(liteim::TlvType::ErrorMessage), "ERROR_MESSAGE");
+    EXPECT_EQ(liteim::toString(liteim::TlvType::BotId), "BOT_ID");
+    EXPECT_EQ(liteim::toString(liteim::TlvType::PersonaId), "PERSONA_ID");
+}
+
+TEST(TlvTypeTest, UnknownTypeReturnsUnknown) {
+    EXPECT_EQ(liteim::toString(liteim::TlvType::Unknown), "UNKNOWN");
+    EXPECT_EQ(liteim::toString(static_cast<liteim::TlvType>(65535)), "UNKNOWN");
+}

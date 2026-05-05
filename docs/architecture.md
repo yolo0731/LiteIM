@@ -1,6 +1,6 @@
 # LiteIM Architecture
 
-本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 2，已经有最小 `liteim_server`、`liteim_tests` 和 `liteim_base` 基础公共模块，还没有真正的网络层实现。
+本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 3，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base` 和 `liteim_protocol` 协议类型模块，还没有真正的网络层实现。
 
 ## Target Data Flow
 
@@ -76,6 +76,28 @@ liteim_base
 
 这些基础能力会被协议层、网络层、存储层、缓存层、业务层和测试复用，但它们本身不依赖任何上层模块。
 
+## Current Protocol Layer
+
+当前 Step 3 已经实现协议层最底层的类型定义：
+
+```text
+liteim_protocol
+  -> MessageType
+       -> toString(MessageType)
+       -> isRequestType(MessageType)
+       -> isResponseType(MessageType)
+  -> TlvType
+       -> toString(TlvType)
+```
+
+职责边界：
+
+- `MessageType` 只定义消息类型编号，例如登录请求、私聊请求、群聊推送、Bot 消息和错误响应。
+- `TlvType` 只定义 body 里的字段类型编号，例如用户名、密码、消息文本、群组 ID、错误信息和 Persona ID。
+- `toString()` 只用于日志、测试和调试，不参与网络字节序转换。
+- `isRequestType()` / `isResponseType()` 只做类型分类，后续 `MessageRouter` 会基于这个分类处理请求。
+- Step 3 不定义 `PacketHeader`，不编码 TLV body，也不处理 TCP 半包 / 粘包；这些分别属于 Step 4、Step 5 和 Step 6。
+
 ## Current Step
 
-Step 2 adds reusable base utilities. Real protocol and networking architecture starts in later steps.
+Step 3 adds protocol type definitions. Packet encoding and stream decoding start in later steps.
