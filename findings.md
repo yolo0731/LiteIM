@@ -153,6 +153,35 @@ Step 3 只实现协议类型定义，不进入二进制 Packet 编解码或 TCP 
 - `TlvType` 先覆盖登录、用户、好友、群组、会话、消息、错误和 Bot/Persona 接入需要的字段类型。
 - 本 Step 没有定义 TLV value 的二进制格式、长度编码、网络字节序或 Packet header；这些属于 Step 4 和 Step 5。
 
+## Step 4 约束
+
+Step 4 只实现 fixed Packet header 编解码和校验，不进入 TLV body 字段编解码或 TCP 流式解码。
+
+本 Step 允许新增：
+
+- `include/liteim/protocol/Packet.hpp`
+- `src/protocol/Packet.cpp`
+- `tests/protocol/packet_test.cpp`
+
+本 Step 不允许提前新增：
+
+- `TlvCodec`
+- `FrameDecoder`
+- `Buffer`
+- socket / epoll / Reactor 相关代码
+
+## Step 4 实现结论
+
+- `PacketHeader` 固定 20 字节，字段顺序为 `magic`、`version`、`flags`、`msg_type`、`seq_id`、`body_len`。
+- `magic` 固定为 `0x4C494D31`，对应 ASCII `LIM1`。
+- `version` 当前固定为 `1`，`flags` 当前固定为 `0`。
+- `body_len` 上限为 1MB，避免异常 header 让后续解码器无限缓存。
+- Header 多字节字段手动按网络字节序写入和读取，不直接 `memcpy` 整个结构体，避免结构体 padding、对齐和本机字节序影响 wire format。
+- `validateHeader()` 只校验 header 级别约束，不检查 TLV body、登录态或业务权限。
+- `encodePacket()` 会用 `packet.body.size()` 重新设置 `body_len`，不信任调用方传入的 `packet.header.body_len`。
+- `parseHeader()` 只解析 fixed header，不解析 body；完整包拼接和半包/粘包处理属于后续 `FrameDecoder`。
+- `liteim_protocol` 因为使用 `Status` / `ErrorCode`，需要链接 `liteim_base`。
+
 ## PersonaAgent 最新路线结论
 
 - PersonaAgent 作为项目二独立推进，不嵌入 C++ LiteIM 服务端。
@@ -171,6 +200,7 @@ Step 3 只实现协议类型定义，不进入二进制 Packet 编解码或 TCP 
 - Step 1 开始，每个行为变化都要配 GoogleTest 测试。
 - Step 2 使用 `tests/base/*_test.cpp` 覆盖默认配置、配置文件覆盖、缺失配置保留默认值、缺失文件、未知 key、非法端口、错误码字符串、`Status` 成功/失败状态、日志级别解析、logger 初始化和时间戳格式。
 - Step 3 使用 `tests/protocol/*_test.cpp` 覆盖消息类型字符串、未知类型回退、请求/响应/Push 分类、群列表消息类型和 TLV 字段字符串。
+- Step 4 使用 `tests/protocol/packet_test.cpp` 覆盖普通 Packet 编解码、空 body、UTF-8 body、网络字节序、错误 magic、错误 version、body_len 超限、encode 超大 body、不完整 header 和空指针输入。
 - 协议、Buffer、FrameDecoder 等底层模块优先写确定性的 GoogleTest 单元测试。
 - 后续业务层测试优先使用 gMock mock `IStorage` / `ICache`，避免单元测试依赖真实 MySQL / Redis。
 - 网络行为先写 smoke test，等 CLI / Python 客户端出现后再补 E2E。

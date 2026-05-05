@@ -42,6 +42,11 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 3 tests | done | Added protocol GoogleTest coverage; CTest passed with 23 total tests after push classification fix. |
 | Step 3 docs | done | README, docs, findings, progress, and tutorials were updated for the Step 3 route. |
 | Step 3 commit | done | Commit message: `feat(protocol): define message and tlv types`. |
+| Step 4 concept | done | Step 4 defines a fixed 20-byte Packet header and keeps TLV body parsing for Step 5. |
+| Step 4 code | done | Added `PacketHeader`, `Packet`, `validateHeader()`, `encodePacket()`, and `parseHeader()`. |
+| Step 4 tests | done | Added Packet GoogleTest coverage; CTest passes with 33 total tests. |
+| Step 4 docs | done | README, docs, findings, progress, and tutorials were updated for the Step 4 route. |
+| Step 4 commit | done | Commit message: `feat(protocol): add packet encoding and header validation`. |
 
 ## Current Decision
 
@@ -213,7 +218,52 @@ Expected new tests:
 - `TEST(TlvTypeTest, CoreTypesReturnReadableNames)`
 - `TEST(TlvTypeTest, UnknownTypeReturnsUnknown)`
 
-Next Step: `Step 4: implement Packet encode/decode`.
+## Step 4 Target
+
+Step 4 extends the protocol module with Packet header encoding and validation:
+
+```text
+LiteIM/
+├── include/liteim/protocol/
+│   ├── MessageType.hpp
+│   ├── Packet.hpp
+│   └── Tlv.hpp
+├── src/protocol/
+│   ├── CMakeLists.txt
+│   ├── MessageType.cpp
+│   ├── Packet.cpp
+│   └── Tlv.cpp
+└── tests/protocol/
+    ├── message_type_test.cpp
+    ├── packet_test.cpp
+    └── tlv_type_test.cpp
+```
+
+Step 4 intentionally implements only fixed Packet header handling. It does not encode TLV fields, decode TCP streams, create Buffer, create FrameDecoder, or enter socket / epoll / Reactor code.
+
+Step 4 verification:
+
+```bash
+cmake -S . -B build
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+```
+
+Expected new tests:
+
+- `TEST(PacketTest, EncodePacketThenParseHeader)`
+- `TEST(PacketTest, EmptyBodyCanBeEncoded)`
+- `TEST(PacketTest, Utf8BodyCanBeEncoded)`
+- `TEST(PacketTest, HeaderUsesNetworkByteOrder)`
+- `TEST(PacketTest, InvalidMagicReturnsError)`
+- `TEST(PacketTest, InvalidVersionReturnsError)`
+- `TEST(PacketTest, OversizedBodyLengthReturnsError)`
+- `TEST(PacketTest, EncodingOversizedBodyReturnsError)`
+- `TEST(PacketTest, IncompleteHeaderReturnsError)`
+- `TEST(PacketTest, NullHeaderDataReturnsError)`
+
+Next Step: `Step 5: implement TlvCodec`.
 
 ## Persistent Requirements
 

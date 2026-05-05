@@ -1,6 +1,6 @@
 # LiteIM Architecture
 
-本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 3，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base` 和 `liteim_protocol` 协议类型模块，还没有真正的网络层实现。
+本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 4，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base` 和 `liteim_protocol` 协议类型与 Packet 编解码模块，还没有真正的网络层实现。
 
 ## Target Data Flow
 
@@ -78,7 +78,7 @@ liteim_base
 
 ## Current Protocol Layer
 
-当前 Step 3 已经实现协议层最底层的类型定义：
+当前 Step 4 已经实现协议层最底层的类型定义和 Packet header 编解码：
 
 ```text
 liteim_protocol
@@ -89,6 +89,11 @@ liteim_protocol
        -> isPushType(MessageType)
   -> TlvType
        -> toString(TlvType)
+  -> PacketHeader
+  -> Packet
+       -> validateHeader(PacketHeader)
+       -> encodePacket(Packet)
+       -> parseHeader(bytes)
 ```
 
 职责边界：
@@ -97,8 +102,13 @@ liteim_protocol
 - `TlvType` 只定义 body 里的字段类型编号，例如用户名、密码、消息文本、群组 ID、错误信息和 Persona ID。
 - `toString()` 只用于日志、测试和调试，不参与网络字节序转换。
 - `isRequestType()` / `isResponseType()` / `isPushType()` 只做类型分类，后续 `MessageRouter`、Qt 客户端和 Python BotClient 会基于这个分类处理请求、响应和服务端推送。
-- Step 3 不定义 `PacketHeader`，不编码 TLV body，也不处理 TCP 半包 / 粘包；这些分别属于 Step 4、Step 5 和 Step 6。
+- `PacketHeader` 固定为 20 字节：`magic` 4 字节、`version` 1 字节、`flags` 1 字节、`msg_type` 2 字节、`seq_id` 8 字节、`body_len` 4 字节。
+- Header 多字节字段使用网络字节序，保证不同 CPU 字节序上协议结果一致。
+- `validateHeader()` 只校验 header 级别约束：`magic`、`version` 和 `body_len <= 1MB`。
+- `encodePacket()` 会根据 `body.size()` 写入真实 `body_len`，避免调用方传入不一致的 header 长度。
+- `parseHeader()` 只解析 fixed header，不解析完整 body。
+- Step 4 不编码 TLV body，也不处理 TCP 半包 / 粘包；这些分别属于 Step 5 和 Step 6。
 
 ## Current Step
 
-Step 3 adds protocol type definitions. Packet encoding and stream decoding start in later steps.
+Step 4 adds Packet header encoding, parsing, validation, and network-byte-order tests. TLV body encoding starts in Step 5, and stream decoding starts in Step 6.

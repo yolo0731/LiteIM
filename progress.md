@@ -194,3 +194,42 @@ init: create LiteIM project structure with googletest
 - 已更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Step 3 测试清单。
 - 已删除临时 `build/` 产物。
 - 提交完成：`feat(protocol): define message and tlv types`。
+
+## 2026-05-05 Step 4 Packet Encoding
+
+本次进入 `Step 4: implement Packet encode/decode`。
+
+概念完成：
+
+- 明确 Step 4 只实现 fixed Packet header 编解码，不实现 TLV body 字段编解码。
+- `PacketHeader` 固定 20 字节，字段为 `magic`、`version`、`flags`、`msg_type`、`seq_id`、`body_len`。
+- Header 多字节字段使用网络字节序，避免结构体 padding、CPU 字节序和内存对齐影响 wire format。
+- `body_len` 最大 1MB，异常 header 直接返回错误。
+- TCP 半包 / 粘包处理留给 Step 6 `FrameDecoder`。
+
+代码完成：
+
+- 新增 `include/liteim/protocol/Packet.hpp`。
+- 新增 `src/protocol/Packet.cpp`。
+- 更新 `src/protocol/CMakeLists.txt`，把 `Packet.cpp` 加入 `liteim_protocol`，并链接 `liteim_base`。
+- 更新 `tests/CMakeLists.txt`，加入 `tests/protocol/packet_test.cpp`。
+- 新增 `PacketHeader`、`Packet`、`validateHeader()`、`encodePacket()` 和 `parseHeader()`。
+
+测试完成：
+
+- 新增 `tests/protocol/packet_test.cpp`，覆盖普通 Packet 编解码、空 body、UTF-8 body、网络字节序、错误 magic、错误 version、body_len 超限、encode 超大 body、不完整 header 和空指针输入。
+
+验证结果：
+
+- `cmake -S . -B build`：通过。
+- `cmake --build build`：通过。
+- `./build/server/liteim_server`：通过，输出 `LiteIM server scaffold is running on 0.0.0.0:9000`。
+- `ctest --test-dir build --output-on-failure`：通过，33/33 tests passed。
+
+收尾完成：
+
+- 已更新 README、docs、findings、task_plan、progress 和 tutorials。
+- 已新增 `tutorials/step04_packet.md`。
+- 已更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Step 4 测试清单。
+- 已删除临时 `build/` 产物。
+- 提交完成：`feat(protocol): add packet encoding and header validation`。
