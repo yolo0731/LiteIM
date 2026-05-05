@@ -47,6 +47,11 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 4 tests | done | Added Packet GoogleTest coverage; CTest passes with 33 total tests. |
 | Step 4 docs | done | README, docs, findings, progress, and tutorials were updated for the Step 4 route. |
 | Step 4 commit | done | Commit message: `feat(protocol): add packet encoding and header validation`. |
+| Step 5 concept | done | Step 5 defines TLV body format as `type(2) + len(4) + value`. |
+| Step 5 code | done | Added `TlvCodec` append, parse, getter helpers, and repeated-field storage. |
+| Step 5 tests | done | Added TLV codec GoogleTest coverage; CTest passes with 45 total tests. |
+| Step 5 docs | done | README, docs, findings, progress, and tutorials were updated for the Step 5 route. |
+| Step 5 commit | done | Commit message: `feat(protocol): implement tlv codec`. |
 
 ## Current Decision
 
@@ -263,7 +268,57 @@ Expected new tests:
 - `TEST(PacketTest, IncompleteHeaderReturnsError)`
 - `TEST(PacketTest, NullHeaderDataReturnsError)`
 
-Next Step: `Step 5: implement TlvCodec`.
+## Step 5 Target
+
+Step 5 extends the protocol module with TLV body encoding and parsing:
+
+```text
+LiteIM/
+├── include/liteim/protocol/
+│   ├── MessageType.hpp
+│   ├── Packet.hpp
+│   ├── Tlv.hpp
+│   └── TlvCodec.hpp
+├── src/protocol/
+│   ├── CMakeLists.txt
+│   ├── MessageType.cpp
+│   ├── Packet.cpp
+│   ├── Tlv.cpp
+│   └── TlvCodec.cpp
+└── tests/protocol/
+    ├── message_type_test.cpp
+    ├── packet_test.cpp
+    ├── tlv_type_test.cpp
+    └── tlv_codec_test.cpp
+```
+
+Step 5 intentionally implements only TLV body field encoding and parsing. It does not decode TCP streams, create Buffer, create FrameDecoder, or enter socket / epoll / Reactor code.
+
+Step 5 verification:
+
+```bash
+cmake -S . -B build
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+```
+
+Expected new tests:
+
+- `TEST(TlvCodecTest, StringFieldCanBeEncodedAndDecoded)`
+- `TEST(TlvCodecTest, MultipleFieldsCanBeEncodedAndDecoded)`
+- `TEST(TlvCodecTest, Utf8StringCanBeEncodedAndDecoded)`
+- `TEST(TlvCodecTest, RepeatedStringFieldsArePreserved)`
+- `TEST(TlvCodecTest, Uint64UsesNetworkByteOrder)`
+- `TEST(TlvCodecTest, Int64PreservesTwoComplementBytes)`
+- `TEST(TlvCodecTest, TlvLengthOutOfBoundsReturnsError)`
+- `TEST(TlvCodecTest, IncompleteTlvHeaderReturnsError)`
+- `TEST(TlvCodecTest, MissingStringFieldReturnsError)`
+- `TEST(TlvCodecTest, MissingUint64FieldReturnsError)`
+- `TEST(TlvCodecTest, WrongUint64LengthReturnsError)`
+- `TEST(TlvCodecTest, UnknownTypeCannotBeEncoded)`
+
+Next Step: `Step 6: implement FrameDecoder`.
 
 ## Persistent Requirements
 

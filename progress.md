@@ -233,3 +233,48 @@ init: create LiteIM project structure with googletest
 - 已更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Step 4 测试清单。
 - 已删除临时 `build/` 产物。
 - 提交完成：`feat(protocol): add packet encoding and header validation`。
+
+## 2026-05-05 Step 5 TlvCodec
+
+本次进入 `Step 5: implement TlvCodec`。
+
+开始状态：
+
+- 工作区已有用户未提交改动：`src/base/Config.cpp` 和 `src/protocol/Packet.cpp`。
+- 这些改动主要是格式和注释调整，不属于 Step 5 范围；本 Step 保留它们，不纳入 Step 5 commit。
+
+概念完成：
+
+- 明确 Step 5 只实现 TLV body 字段编解码。
+- TLV 格式固定为 `type(2 bytes) + len(4 bytes) + value(len bytes)`。
+- `type` 和 `len` 使用网络字节序。
+- 重复字段通过 `TlvMap` 保存为一个 type 对应多个 value。
+- 缺失必需字段由 getter 返回 `NotFound`，不在通用 parser 中判断。
+- TCP 半包 / 粘包处理留给 Step 6 `FrameDecoder`。
+
+代码完成：
+
+- 新增 `include/liteim/protocol/TlvCodec.hpp`。
+- 新增 `src/protocol/TlvCodec.cpp`。
+- 更新 `src/protocol/CMakeLists.txt`，把 `TlvCodec.cpp` 加入 `liteim_protocol`。
+- 更新 `tests/CMakeLists.txt`，加入 `tests/protocol/tlv_codec_test.cpp`。
+- 新增 `appendString()`、`appendUint64()`、`appendInt64()`、`parseTlvMap()`、`getString()`、`getUint64()` 和 `getRepeatedString()`。
+
+测试完成：
+
+- 新增 `tests/protocol/tlv_codec_test.cpp`，覆盖单字段、多字段、UTF-8 字符串、重复字段、`uint64` 网络字节序、`int64` 补码字节、TLV len 越界、不完整 TLV header、缺失字段、错误 `uint64` 长度和 Unknown 类型编码。
+
+验证结果：
+
+- `cmake -S . -B build`：通过。
+- `cmake --build build`：通过。
+- `./build/server/liteim_server`：通过，输出 `LiteIM server scaffold is running on 0.0.0.0:9000`。
+- `ctest --test-dir build --output-on-failure`：通过，45/45 tests passed。
+
+收尾完成：
+
+- 已更新 README、docs、findings、task_plan、progress 和 tutorials。
+- 已新增 `tutorials/step05_tlv_codec.md`。
+- 已更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Step 5 测试清单。
+- 本次按用户要求保留本地 `build/` 目录。
+- 提交完成：`feat(protocol): implement tlv codec`。

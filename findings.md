@@ -182,6 +182,34 @@ Step 4 只实现 fixed Packet header 编解码和校验，不进入 TLV body 字
 - `parseHeader()` 只解析 fixed header，不解析 body；完整包拼接和半包/粘包处理属于后续 `FrameDecoder`。
 - `liteim_protocol` 因为使用 `Status` / `ErrorCode`，需要链接 `liteim_base`。
 
+## Step 5 约束
+
+Step 5 只实现 TLV body 字段编解码，不进入 TCP 流式解码或网络层。
+
+本 Step 允许新增：
+
+- `include/liteim/protocol/TlvCodec.hpp`
+- `src/protocol/TlvCodec.cpp`
+- `tests/protocol/tlv_codec_test.cpp`
+
+本 Step 不允许提前新增：
+
+- `FrameDecoder`
+- `Buffer`
+- socket / epoll / Reactor 相关代码
+
+## Step 5 实现结论
+
+- TLV wire format 固定为 `type(2 bytes) + len(4 bytes) + value(len bytes)`。
+- `type` 使用 `TlvType` 的 `std::uint16_t` 编号，`len` 使用 `std::uint32_t`。
+- TLV header 和整数 value 都按网络字节序编码。
+- `TlvMap` 使用 `std::unordered_map<TlvType, std::vector<std::vector<std::uint8_t>>>`，支持重复字段。
+- `parseTlvMap()` 负责通用格式校验和边界检查，不判断业务必需字段。
+- `getString()`、`getUint64()` 和 `getRepeatedString()` 表达必需字段读取；缺失字段返回 `ErrorCode::NotFound`。
+- `getUint64()` 要求 value 长度必须是 8 字节，否则返回 `ErrorCode::ParseError`。
+- 主动编码 `TlvType::Unknown` 返回 `ErrorCode::InvalidArgument`，避免本端生成无意义字段。
+- `appendInt64()` 当前只保证有符号整数补码字节稳定写入；未来如果业务需要读取 signed value，再补对称 `getInt64()`。
+
 ## PersonaAgent 最新路线结论
 
 - PersonaAgent 作为项目二独立推进，不嵌入 C++ LiteIM 服务端。
@@ -201,6 +229,7 @@ Step 4 只实现 fixed Packet header 编解码和校验，不进入 TLV body 字
 - Step 2 使用 `tests/base/*_test.cpp` 覆盖默认配置、配置文件覆盖、缺失配置保留默认值、缺失文件、未知 key、非法端口、错误码字符串、`Status` 成功/失败状态、日志级别解析、logger 初始化和时间戳格式。
 - Step 3 使用 `tests/protocol/*_test.cpp` 覆盖消息类型字符串、未知类型回退、请求/响应/Push 分类、群列表消息类型和 TLV 字段字符串。
 - Step 4 使用 `tests/protocol/packet_test.cpp` 覆盖普通 Packet 编解码、空 body、UTF-8 body、网络字节序、错误 magic、错误 version、body_len 超限、encode 超大 body、不完整 header 和空指针输入。
+- Step 5 使用 `tests/protocol/tlv_codec_test.cpp` 覆盖单字段、多字段、UTF-8 字符串、重复字段、`uint64` 网络字节序、`int64` 补码字节、TLV len 越界、不完整 TLV header、缺失字段、错误 `uint64` 长度和 Unknown 类型编码。
 - 协议、Buffer、FrameDecoder 等底层模块优先写确定性的 GoogleTest 单元测试。
 - 后续业务层测试优先使用 gMock mock `IStorage` / `ICache`，避免单元测试依赖真实 MySQL / Redis。
 - 网络行为先写 smoke test，等 CLI / Python 客户端出现后再补 E2E。

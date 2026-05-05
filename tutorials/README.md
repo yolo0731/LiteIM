@@ -15,5 +15,6 @@ concept -> handwritten code -> tests -> commit
 | Step 2 | [`step02_base.md`](step02_base.md) | done |
 | Step 3 | [`step03_protocol_types.md`](step03_protocol_types.md) | done |
 | Step 4 | [`step04_packet.md`](step04_packet.md) | done |
+| Step 5 | [`step05_tlv_codec.md`](step05_tlv_codec.md) | done |
 
 旧 Step 1-15 教程已删除，后续会按新的高性能路线逐步重写。目录也会按 Step 的实际需求逐步创建。

@@ -2,6 +2,7 @@ add_library(liteim_protocol
     MessageType.cpp
     Packet.cpp
     Tlv.cpp
+    TlvCodec.cpp
 )
 
 target_compile_features(liteim_protocol PUBLIC cxx_std_17)

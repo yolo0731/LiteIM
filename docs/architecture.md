@@ -1,6 +1,6 @@
 # LiteIM Architecture
 
-本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 4，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base` 和 `liteim_protocol` 协议类型与 Packet 编解码模块，还没有真正的网络层实现。
+本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 5，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base` 和 `liteim_protocol` 协议类型、Packet 编解码与 TLV body 编解码模块，还没有真正的网络层实现。
 
 ## Target Data Flow
 
@@ -78,7 +78,7 @@ liteim_base
 
 ## Current Protocol Layer
 
-当前 Step 4 已经实现协议层最底层的类型定义和 Packet header 编解码：
+当前 Step 5 已经实现协议层最底层的类型定义、Packet header 编解码和 TLV body 编解码：
 
 ```text
 liteim_protocol
@@ -94,6 +94,14 @@ liteim_protocol
        -> validateHeader(PacketHeader)
        -> encodePacket(Packet)
        -> parseHeader(bytes)
+  -> TlvCodec
+       -> appendString(type, value, body)
+       -> appendUint64(type, value, body)
+       -> appendInt64(type, value, body)
+       -> parseTlvMap(body)
+       -> getString(map, type)
+       -> getUint64(map, type)
+       -> getRepeatedString(map, type)
 ```
 
 职责边界：
@@ -107,8 +115,11 @@ liteim_protocol
 - `validateHeader()` 只校验 header 级别约束：`magic`、`version` 和 `body_len <= 1MB`。
 - `encodePacket()` 会根据 `body.size()` 写入真实 `body_len`，避免调用方传入不一致的 header 长度。
 - `parseHeader()` 只解析 fixed header，不解析完整 body。
-- Step 4 不编码 TLV body，也不处理 TCP 半包 / 粘包；这些分别属于 Step 5 和 Step 6。
+- TLV wire format 固定为 `type(2 bytes) + len(4 bytes) + value(len bytes)`。
+- `parseTlvMap()` 支持重复字段，同一个 `TlvType` 可以保存多个 value。
+- `getString()` / `getUint64()` / `getRepeatedString()` 负责表达“业务必需字段”，缺失时返回 `NotFound`。
+- Step 5 不处理 TCP 半包 / 粘包；这属于 Step 6 `FrameDecoder`。
 
 ## Current Step
 
-Step 4 adds Packet header encoding, parsing, validation, and network-byte-order tests. TLV body encoding starts in Step 5, and stream decoding starts in Step 6.
+Step 5 adds TLV body encoding, parsing, repeated-field support, and missing-field checks. TCP stream decoding starts in Step 6.
