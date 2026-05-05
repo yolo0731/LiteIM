@@ -4,21 +4,28 @@
 #include <cstdint>
 #include <string>
 
-namespace liteim {
+/*封装成 Timestamp，统一规则：
 
-class Timestamp {
-public:
-    using Clock = std::chrono::system_clock;
+内部用 std::chrono::system_clock::time_point
+数字输出用毫秒
+字符串输出用 UTC ISO8601 */
+namespace liteim
+{
 
-    Timestamp();
-    explicit Timestamp(Clock::time_point time_point);
+    class Timestamp
+    {
+    public:
+        using Clock = std::chrono::system_clock; // 是 C++ 标准库里的一个时钟类型，表示“系统真实时间”
 
-    static Timestamp now();
-    std::int64_t millisecondsSinceEpoch() const;
-    std::string toIso8601String() const;
+        Timestamp();
+        explicit Timestamp(Clock::time_point time_point);
 
-private:
-    Clock::time_point time_point_;
-};
+        static Timestamp now();
+        std::int64_t millisecondsSinceEpoch() const;
+        std::string toIso8601String() const;
 
-}  // namespace liteim
+    private:
+        Clock::time_point time_point_;
+    };
+
+} // namespace liteim
