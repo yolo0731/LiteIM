@@ -92,3 +92,15 @@ ctest --test-dir build --output-on-failure
 ```text
 init: create LiteIM project structure with googletest
 ```
+
+
+## 2026-05-05 PROJECT_MEMORY PersonaAgent Sync
+
+用户更新了 `/home/yolo/jianli/PROJECT_MEMORY.md`，主要变化集中在项目二 PersonaAgent。
+
+已同步到 LiteIM 文档的结论：
+
+- PersonaAgent 新路线是 Authorized Style RAG Edition。
+- PersonaAgent 保持 20 Step，但 Step 7-20 改为 6 节点 LangGraph + Knowledge/Memory/Authorized Style RAG + Persona + Safety + Tool Calling + Checkpoint + Trace + Evaluation。
+- LiteIM 不嵌入 Python、LangGraph、LLM、embedding 或 vector DB，只提供 Python BotClient 可以复用的 TLV 协议和 BotGateway 接入点。
+- Authorized Style RAG 样本必须有 consent manifest、来源、用途、脱敏、撤回和 SafetyGuard 边界。

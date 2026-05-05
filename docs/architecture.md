@@ -18,6 +18,28 @@ PersonaAgent 接入链路：
 User Client -> LiteIM -> Python BotClient -> AgentService -> Python BotClient -> LiteIM -> User Client
 ```
 
+AgentService 内部目标结构：
+
+```text
+/chat API
+  -> dialogue_policy
+  -> retrieve
+       -> Knowledge RAG
+       -> Memory RAG
+       -> Authorized Style RAG
+  -> tool_router
+  -> generate_reply
+  -> safety_check
+  -> send_message
+```
+
+边界：
+
+- LiteIM 不依赖 LangGraph、LLM SDK、embedding 或 vector DB。
+- Python BotClient 复用 LiteIM TLV 协议，证明 LiteIM 协议能扩展到 Bot 用户。
+- Authorized Style RAG 的原始授权聊天记录不提交到 Git；PersonaAgent 只提交示例 manifest、脱敏样本和处理逻辑。
+- SafetyGuard 必须阻止 bot 声称自己是授权对象本人，或代表真人做现实承诺。
+
 ## Thread Model
 
 最终服务端采用：

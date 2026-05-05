@@ -16,7 +16,7 @@ LiteIM is planned as a C++17 high-performance IM system:
 - MySQL persistence and Redis online/unread/rate-limit state.
 - CLI, Python E2E, benchmark, GoogleTest/gMock, ASan/UBSan, CI.
 - Qt Widgets demo client with a familiar IM three-column chat layout.
-- PersonaAgent integration through a Python BotClient.
+- PersonaAgent integration through a Python BotClient and a separate six-node LangGraph AgentService.
 
 ## Current Phase
 
@@ -43,9 +43,11 @@ LiteIM phases:
 2. Step 1-20: high-performance network base and multi-Reactor echo server.
 3. Step 21-30: MySQL / Redis storage and cache layer.
 4. Step 31-40: async IM business services and BotGateway.
-5. Step 41-45: CLI, Python E2E, benchmark, GoogleTest, ASan, CI.
+5. Step 41-45: CLI, Python E2E, benchmark, GoogleTest/gMock, ASan/UBSan, CI.
 6. Step 46-53: Qt Widgets demo client.
 7. Step 54: README, architecture diagrams, Qt screenshots, benchmark report, and interview docs.
+8. PersonaAgent Step 1-6: Python BotClient, protocol compatibility, FastAPI `/chat`, login/heartbeat/reconnect, Echo Bot.
+9. PersonaAgent Step 7-20: six-node LangGraph + Knowledge/Memory/Authorized Style RAG + Persona + Safety + Tool Calling + Checkpoint + Trace + Evaluation.
 
 ## Important Boundaries
 
@@ -56,6 +58,9 @@ LiteIM phases:
 - Do not run MySQL / Redis calls in I/O threads.
 - Do not let business threads directly mutate `Session`; responses must go through `EventLoop::queueInLoop()` or `runInLoop()`.
 - Do not embed Python/LangGraph into the C++ server; PersonaAgent connects as a BotClient.
+- PersonaAgent uses six core LangGraph nodes: `dialogue_policy`, `retrieve`, `tool_router`, `generate_reply`, `safety_check`, and `send_message`.
+- Authorized Style RAG data must have consent manifest, source metadata, allowed usage, PII redaction, revocation support, and SafetyGuard protection.
+- LiteIM should only expose BotGateway/protocol integration points; Knowledge/Memory/Style RAG, Tool Calling, Trace, Checkpoint, and Evaluation belong to PersonaAgent.
 - Do not use WeChat logo, name, icons, or assets in the Qt client.
 - Qt is a demo layer; service logic stays in the server.
 
