@@ -1,40 +1,29 @@
 # LiteIM Project Layout
 
-Step 0 后的目录结构是新路线的空骨架。
+Step 0 后只保留当前步骤真正需要的最小文件，不提前提交未来目录。
+
+当前结构：
 
 ```text
 LiteIM/
-├── include/liteim/
-│   ├── base/
-│   ├── net/
-│   ├── protocol/
-│   ├── concurrency/
-│   ├── timer/
-│   ├── storage/
-│   ├── cache/
-│   └── service/
-├── src/
-│   ├── base/
-│   ├── net/
-│   ├── protocol/
-│   ├── concurrency/
-│   ├── timer/
-│   ├── storage/
-│   ├── cache/
-│   └── service/
-├── server/
-├── client_cli/
-├── client_qt/
-├── bench/
-├── tests/
-├── scripts/
-├── docker/
+├── .gitignore
+├── CMakeLists.txt
+├── LICENSE
+├── README.md
+├── task_plan.md
+├── findings.md
+├── progress.md
 ├── docs/
-├── tutorials/
-└── .github/workflows/
+│   ├── architecture.md
+│   └── project_layout.md
+└── tutorials/
+    ├── README.md
+    └── step00_reset.md
 ```
 
-规则：
+目标结构会按 Step 逐步创建，而不是在 Step 0 一次性建立。
+
+最终约定：
 
 - 头文件放在 `include/liteim/<module>/`。
 - 库实现放在 `src/<module>/`。
@@ -43,3 +32,5 @@ LiteIM/
 - Qt 客户端放在 `client_qt/`。
 - 压测工具放在 `bench/`。
 - 不向 `server/net` 或 `server/protocol` 增加头文件。
+
+这些目录将在真正需要它们的 Step 中创建。

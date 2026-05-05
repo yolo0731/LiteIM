@@ -9,13 +9,11 @@
 
 ## Step 0 清理结论
 
-本次 Step 0 的目的不是实现功能，而是清掉旧路线，留下干净起点。
+本次 Step 0 的目的不是实现功能，而是清掉旧路线，留下最小起点。
 
 已经删除的旧内容类型：
 
-- 旧 `include/liteim/net`、`protocol`、`service`、`storage` 实现。
-- 旧 `src/` 实现。
-- 旧 `server/` 入口。
+- 旧 `include/`、`src/`、`server/` 实现。
 - 旧 `tests/` 单元测试。
 - 旧 `tutorials/step01-step15` 教程。
 - 旧 `docs/` 文档。
@@ -23,8 +21,9 @@
 - 旧 `client_qt/` 临时结构。
 - 旧 `build/` 构建产物。
 - 空的 `.codex` 临时文件。
+- 未来 Step 才会用到的空目录和 `.gitkeep`。
 
-保留和重建的内容：
+当前保留内容：
 
 - `.gitignore`。
 - `LICENSE`。
@@ -32,7 +31,16 @@
 - README / task_plan / findings / progress。
 - `docs/architecture.md` 和 `docs/project_layout.md`。
 - `tutorials/README.md` 和 `tutorials/step00_reset.md`。
-- 新路线目标目录，并用 `.gitkeep` 保留。
+
+## 关于 .gitkeep
+
+`.gitkeep` 不是 Git 必需文件。Git 不跟踪空目录，所以 `.gitkeep` 只是社区常用占位文件。
+
+本项目不保留 `.gitkeep`，原因是：
+
+- 用户希望项目从 Step 0 开始逐步建立。
+- 空目录提前出现会让教程边界不清楚。
+- 每个目录应该在真正需要它的 Step 中创建，并在教程里解释为什么需要。
 
 ## 核心架构结论
 
@@ -52,6 +60,7 @@
 
 Step 1 只做第一层工程初始化：
 
+- 创建 Step 1 真正需要的最小目录。
 - 添加真正的 CMake target。
 - 添加 `server/main.cpp`。
 - 添加最小 `tests/test_main.cpp`。

@@ -24,10 +24,10 @@ LiteIM is planned as a C++17 high-performance IM system:
 | --- | --- | --- |
 | Step 0 concept | done | Step 0 is a cleanup/reset step, not feature implementation. |
 | Step 0 delete old route files | done | Removed old source, tests, docs/tutorials, SQLite/InMemoryStorage route files, and build output. |
-| Step 0 rebuild clean folders | done | Recreated target high-performance layout with `.gitkeep` placeholders. |
-| Step 0 docs | done | Rewrote README, findings, progress, task plan, docs, and tutorial index for the new route. |
-| Step 0 verification | done | CMake configure/build and CTest passed; stale-route filename check returned no matches. |
-| Step 0 commit | pending | Commit message: `chore: reset LiteIM workspace for high performance roadmap`. |
+| Step 0 keep minimal root | done | Removed premature empty folders and `.gitkeep`; future directories will be created by the Step that needs them. |
+| Step 0 docs | done | Rewrote README, findings, progress, task plan, docs, and tutorial index for the minimal Step 0 route. |
+| Step 0 verification | done | CMake configure/build and CTest passed; `.gitkeep` and stale-route filename checks returned no matches. |
+| Step 0 commit | pending | Commit message: `chore: keep LiteIM step0 minimal`. |
 | Step 1 concept | pending | Explain high-performance project structure and why it differs from the old route. |
 | Step 1 code | pending | Add real CMake targets, minimal server entry, and minimal test target. |
 | Step 1 tests | pending | Verify configure, build, server smoke run, and CTest. |
@@ -39,18 +39,13 @@ Use `/home/yolo/jianli/PROJECT_MEMORY.md` as the source of truth.
 
 LiteIM phases:
 
-1. Step 0: reset workspace and remove stale route files.
+1. Step 0: reset workspace and keep only the minimal current-step files.
 2. Step 1-20: high-performance network base and multi-Reactor echo server.
 3. Step 21-30: MySQL / Redis storage and cache layer.
 4. Step 31-40: async IM business services and BotGateway.
 5. Step 41-45: CLI, Python E2E, benchmark, GoogleTest, ASan, CI.
 6. Step 46-53: Qt Widgets demo client.
 7. Step 54: README, architecture diagrams, Qt screenshots, benchmark report, and interview docs.
-
-PersonaAgent phases:
-
-1. Step 1-6: Python BotClient, protocol compatibility, login/heartbeat, Echo Bot.
-2. Step 7-20: FastAPI + LangGraph + RAG + Persona + Safety + Tool Calling + Checkpoint + Trace + Evaluation.
 
 ## Important Boundaries
 
@@ -77,7 +72,8 @@ PersonaAgent phases:
 - `docs/project_layout.md`
 - `tutorials/README.md`
 - `tutorials/step00_reset.md`
-- target empty directories with `.gitkeep`
+
+Step 0 intentionally does not keep empty future directories or `.gitkeep` files.
 
 ## Step 1 Target
 
@@ -85,8 +81,8 @@ Step 1 should add the first real buildable project structure:
 
 ```text
 LiteIM/
-├── include/liteim/{base,net,protocol,concurrency,timer,storage,cache,service}/
-├── src/{base,net,protocol,concurrency,timer,storage,cache,service}/
+├── include/liteim/base/
+├── src/base/
 ├── server/main.cpp
 ├── tests/test_main.cpp
 └── CMakeLists.txt + target CMake files
@@ -113,5 +109,6 @@ ctest --test-dir build --output-on-failure
 
 | Error | Attempt | Resolution |
 | --- | --- | --- |
-| Existing worktree contained old SQLite/InMemoryStorage route files | Step 0 cleanup | Deleted old implementation files and recreated the new target layout. |
+| Existing worktree contained old SQLite/InMemoryStorage route files | Step 0 cleanup | Deleted old implementation files. |
+| Step 0 initially created all future directories with `.gitkeep` | User review | Removed them; future directories will be created only when each Step needs them. |
 | Sandbox `bwrap` uid map failure | Running shell commands | Used approved escalated execution for repository inspection and cleanup. |

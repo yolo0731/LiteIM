@@ -2,7 +2,7 @@
 
 ## 2026-05-05 Step 0 Reset
 
-本次进度是 `Step 0: reset workspace`，目标是把 LiteIM 文件夹清理成可以从零教学推进的起点。
+本次进度是 `Step 0: reset workspace`，目标是把 LiteIM 文件夹清理成可以从零教学推进的最小起点。
 
 ## 已完成
 
@@ -14,8 +14,7 @@
 - 删除旧 SQL 目录：`sql/`。
 - 删除旧构建产物：`build/`。
 - 删除空的 `.codex` 临时文件。
-- 重建新路线目标目录：`include/liteim/*`、`src/*`、`server`、`client_cli`、`client_qt`、`bench`、`tests`、`scripts`、`docker`、`docs`、`tutorials`、`.github/workflows`。
-- 为当前空目录添加 `.gitkeep`，方便 Git 记录 Step 0 骨架。
+- 删除未来 Step 才会使用的空目录和 `.gitkeep`。
 - 将根 `CMakeLists.txt` 改成 Step 0 空 CMake 骨架。
 - 重写 README、task_plan、findings、progress。
 - 新增 `docs/architecture.md`、`docs/project_layout.md`、`tutorials/README.md`、`tutorials/step00_reset.md`。
@@ -26,10 +25,10 @@
 | 项目 | 状态 | 说明 |
 | --- | --- | --- |
 | Step 0 清理 | done | 旧路线代码、测试、教程和 build 产物已删除。 |
-| Step 0 骨架 | done | 新路线目录已重建。 |
+| Step 0 最小起点 | done | 不提前保留未来目录，也不保留 `.gitkeep`。 |
 | Step 0 文档 | done | README、计划文件、docs 和 tutorial 已更新。 |
-| Step 0 验证 | done | CMake configure/build、CTest 和旧文件名检查已完成。 |
-| Step 0 commit | pending | 提交信息：`chore: reset LiteIM workspace for high performance roadmap`。 |
+| Step 0 验证 | done | CMake、CTest、`.gitkeep` 检查和旧文件名检查已通过。 |
+| Step 0 commit | pending | 提交信息：`chore: keep LiteIM step0 minimal`。 |
 | Step 1 | pending | 下一步创建真正可构建的 server/test target。 |
 
 ## 下一步
@@ -40,15 +39,16 @@
 cmake -S . -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
+find . -name .gitkeep
 rg -n "SQLiteStorage|step15_sqlite|InMemoryStorage|server/net|server/protocol" .
 ```
 
 然后进入 Step 1：`init: create LiteIM high performance project structure`。
 
-## Step 0 验证结果
+## Step 0 最小起点验证结果
 
 - `cmake -S . -B build`：通过。
 - `cmake --build build`：通过。
 - `ctest --test-dir build --output-on-failure`：通过，当前没有测试用例，符合 Step 0 预期。
+- `find . -name .gitkeep`：无输出，说明没有 `.gitkeep` 残留。
 - 旧路线文件名检查：无 `SQLite`、`InMemory`、`step15`、`server/net`、`server/protocol` 文件路径残留。
-- 内容检查只剩文档里的禁止旧路线说明和检查命令，不是主线实现。
