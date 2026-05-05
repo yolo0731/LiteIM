@@ -13,9 +13,9 @@ Step 5 的目标是在 Step 4 Packet 外层结构之后，实现 body 内部 TLV
 本 Step 已完成：
 
 - 新增 `TlvCodec`，TLV wire format 固定为 `type(2 bytes) + len(4 bytes) + value(len bytes)`。
-- 新增 `appendString()`、`appendUint64()`、`appendInt64()`，用于构造 Packet body。
+- 新增 `appendString()`、`appendUint64()`，用于构造 Packet body。
 - 新增 `parseTlvMap()`，把 body 解析成支持重复字段的 `TlvMap`。
-- 新增 `getString()`、`getUint64()`、`getRepeatedString()`，用于读取业务层必需字段。
+- 新增 `getString()`、`getUint64()`、`getRepeatedString()`、`getRepeatedUint64()`，用于读取业务层必需字段。
 - TLV 多字节字段使用网络字节序，`len` 做边界检查，缺失字段通过 getter 返回 `NotFound`。
 - `tests/protocol/` 新增 12 个 `TlvCodecTest` GoogleTest case；当前 CTest 共 45 个测试。
 
@@ -263,8 +263,8 @@ CTest 应发现并通过 45 个测试。Step 5 新增测试：
 - `TlvCodecTest.MultipleFieldsCanBeEncodedAndDecoded`
 - `TlvCodecTest.Utf8StringCanBeEncodedAndDecoded`
 - `TlvCodecTest.RepeatedStringFieldsArePreserved`
+- `TlvCodecTest.RepeatedUint64FieldsArePreserved`
 - `TlvCodecTest.Uint64UsesNetworkByteOrder`
-- `TlvCodecTest.Int64PreservesTwoComplementBytes`
 - `TlvCodecTest.TlvLengthOutOfBoundsReturnsError`
 - `TlvCodecTest.IncompleteTlvHeaderReturnsError`
 - `TlvCodecTest.MissingStringFieldReturnsError`

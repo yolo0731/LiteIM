@@ -87,6 +87,24 @@ TEST(TlvCodecTest, RepeatedStringFieldsArePreserved) {
     EXPECT_EQ(names[1], "study");
 }
 
+TEST(TlvCodecTest, RepeatedUint64FieldsArePreserved) {
+    std::vector<std::uint8_t> body;
+
+    ASSERT_TRUE(liteim::appendUint64(liteim::TlvType::FriendId, 1001, body).isOk());
+    ASSERT_TRUE(liteim::appendUint64(liteim::TlvType::FriendId, 1002, body).isOk());
+    ASSERT_TRUE(liteim::appendUint64(liteim::TlvType::FriendId, 1003, body).isOk());
+
+    const auto map = parseBody(body);
+    std::vector<std::uint64_t> friend_ids;
+    const auto get_status = liteim::getRepeatedUint64(map, liteim::TlvType::FriendId, friend_ids);
+
+    ASSERT_TRUE(get_status.isOk()) << get_status.message();
+    ASSERT_EQ(friend_ids.size(), 3U);
+    EXPECT_EQ(friend_ids[0], 1001U);
+    EXPECT_EQ(friend_ids[1], 1002U);
+    EXPECT_EQ(friend_ids[2], 1003U);
+}
+
 TEST(TlvCodecTest, Uint64UsesNetworkByteOrder) {
     std::vector<std::uint8_t> body;
 
@@ -115,23 +133,6 @@ TEST(TlvCodecTest, Uint64UsesNetworkByteOrder) {
     std::uint64_t message_id = 0;
     ASSERT_TRUE(liteim::getUint64(map, liteim::TlvType::MessageId, message_id).isOk());
     EXPECT_EQ(message_id, 0x0102030405060708ULL);
-}
-
-TEST(TlvCodecTest, Int64PreservesTwoComplementBytes) {
-    std::vector<std::uint8_t> body;
-
-    const auto append_status = liteim::appendInt64(liteim::TlvType::Offset, -2, body);
-
-    ASSERT_TRUE(append_status.isOk()) << append_status.message();
-    ASSERT_EQ(body.size(), liteim::kTlvHeaderSize + 8U);
-    EXPECT_EQ(body[6], 0xFF);
-    EXPECT_EQ(body[7], 0xFF);
-    EXPECT_EQ(body[8], 0xFF);
-    EXPECT_EQ(body[9], 0xFF);
-    EXPECT_EQ(body[10], 0xFF);
-    EXPECT_EQ(body[11], 0xFF);
-    EXPECT_EQ(body[12], 0xFF);
-    EXPECT_EQ(body[13], 0xFE);
 }
 
 TEST(TlvCodecTest, TlvLengthOutOfBoundsReturnsError) {

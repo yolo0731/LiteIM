@@ -21,7 +21,6 @@ using TlvMap = std::unordered_map<TlvType, TlvValues>;
 
 Status appendString(TlvType type, std::string_view value, std::vector<std::uint8_t>& output);
 Status appendUint64(TlvType type, std::uint64_t value, std::vector<std::uint8_t>& output);
-Status appendInt64(TlvType type, std::int64_t value, std::vector<std::uint8_t>& output);
 
 Status parseTlvMap(const std::uint8_t* data, std::size_t len, TlvMap& output);
 Status parseTlvMap(const std::vector<std::uint8_t>& body, TlvMap& output);
@@ -29,5 +28,6 @@ Status parseTlvMap(const std::vector<std::uint8_t>& body, TlvMap& output);
 Status getString(const TlvMap& map, TlvType type, std::string& output);
 Status getUint64(const TlvMap& map, TlvType type, std::uint64_t& output);
 Status getRepeatedString(const TlvMap& map, TlvType type, std::vector<std::string>& output);
+Status getRepeatedUint64(const TlvMap& map, TlvType type, std::vector<std::uint64_t>& output);
 
 }  // namespace liteim

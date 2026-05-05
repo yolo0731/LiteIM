@@ -97,11 +97,11 @@ liteim_protocol
   -> TlvCodec
        -> appendString(type, value, body)
        -> appendUint64(type, value, body)
-       -> appendInt64(type, value, body)
        -> parseTlvMap(body)
        -> getString(map, type)
        -> getUint64(map, type)
        -> getRepeatedString(map, type)
+       -> getRepeatedUint64(map, type)
 ```
 
 职责边界：
@@ -117,7 +117,7 @@ liteim_protocol
 - `parseHeader()` 只解析 fixed header，不解析完整 body。
 - TLV wire format 固定为 `type(2 bytes) + len(4 bytes) + value(len bytes)`。
 - `parseTlvMap()` 支持重复字段，同一个 `TlvType` 可以保存多个 value。
-- `getString()` / `getUint64()` / `getRepeatedString()` 负责表达“业务必需字段”，缺失时返回 `NotFound`。
+- `getString()` / `getUint64()` / `getRepeatedString()` / `getRepeatedUint64()` 负责表达“业务必需字段”，缺失时返回 `NotFound`。
 - Step 5 不处理 TCP 半包 / 粘包；这属于 Step 6 `FrameDecoder`。
 
 ## Current Step

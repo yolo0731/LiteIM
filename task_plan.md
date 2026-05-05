@@ -309,8 +309,8 @@ Expected new tests:
 - `TEST(TlvCodecTest, MultipleFieldsCanBeEncodedAndDecoded)`
 - `TEST(TlvCodecTest, Utf8StringCanBeEncodedAndDecoded)`
 - `TEST(TlvCodecTest, RepeatedStringFieldsArePreserved)`
+- `TEST(TlvCodecTest, RepeatedUint64FieldsArePreserved)`
 - `TEST(TlvCodecTest, Uint64UsesNetworkByteOrder)`
-- `TEST(TlvCodecTest, Int64PreservesTwoComplementBytes)`
 - `TEST(TlvCodecTest, TlvLengthOutOfBoundsReturnsError)`
 - `TEST(TlvCodecTest, IncompleteTlvHeaderReturnsError)`
 - `TEST(TlvCodecTest, MissingStringFieldReturnsError)`

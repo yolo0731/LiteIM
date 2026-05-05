@@ -30,11 +30,11 @@ Type-Length-Value
 
 - `appendString()`
 - `appendUint64()`
-- `appendInt64()`
 - `parseTlvMap()`
 - `getString()`
 - `getUint64()`
 - `getRepeatedString()`
+- `getRepeatedUint64()`
 
 本 Step 不实现：
 
@@ -160,14 +160,6 @@ Status appendUint64(TlvType type, std::uint64_t value, std::vector<std::uint8_t>
 
 后续 `UserId`、`MessageId`、`TimestampMs` 这类字段都可以用它。
 
-### `appendInt64()`
-
-```cpp
-Status appendInt64(TlvType type, std::int64_t value, std::vector<std::uint8_t>& output);
-```
-
-把有符号整数按补码字节写入。当前 Step 只需要保证 wire bytes 稳定，业务层如果需要专门读取有符号整数，可以在后续按真实使用场景补 `getInt64()`。
-
 ## 7. parse 和 get 的职责边界
 
 ### `parseTlvMap()`
@@ -217,6 +209,14 @@ Status getRepeatedString(const TlvMap& map, TlvType type, std::vector<std::strin
 
 读取同一个 `TlvType` 下的多个字符串字段。
 
+### `getRepeatedUint64()`
+
+```cpp
+Status getRepeatedUint64(const TlvMap& map, TlvType type, std::vector<std::uint64_t>& output);
+```
+
+读取同一个 `TlvType` 下的多个 `uint64` 字段。后续好友列表、群成员列表、我的群列表和离线消息 ID 列表会更常用这一类重复 ID 字段。
+
 ## 8. 测试说明
 
 Step 5 新增：
@@ -235,10 +235,10 @@ tests/protocol/tlv_codec_test.cpp
   - 中文和 emoji 作为 UTF-8 字节不丢失。
 - `TlvCodecTest.RepeatedStringFieldsArePreserved`
   - 重复字段不会被后一个覆盖。
+- `TlvCodecTest.RepeatedUint64FieldsArePreserved`
+  - 重复的 `FriendId` 这类 ID 字段可以按出现顺序读取。
 - `TlvCodecTest.Uint64UsesNetworkByteOrder`
   - `uint64` value 按大端序写入。
-- `TlvCodecTest.Int64PreservesTwoComplementBytes`
-  - `int64` 负数按补码字节稳定写入。
 - `TlvCodecTest.TlvLengthOutOfBoundsReturnsError`
   - `len` 超过剩余 body 时返回错误。
 - `TlvCodecTest.IncompleteTlvHeaderReturnsError`

@@ -258,11 +258,11 @@ init: create LiteIM project structure with googletest
 - 新增 `src/protocol/TlvCodec.cpp`。
 - 更新 `src/protocol/CMakeLists.txt`，把 `TlvCodec.cpp` 加入 `liteim_protocol`。
 - 更新 `tests/CMakeLists.txt`，加入 `tests/protocol/tlv_codec_test.cpp`。
-- 新增 `appendString()`、`appendUint64()`、`appendInt64()`、`parseTlvMap()`、`getString()`、`getUint64()` 和 `getRepeatedString()`。
+- 新增 `appendString()`、`appendUint64()`、`parseTlvMap()`、`getString()`、`getUint64()`、`getRepeatedString()` 和 `getRepeatedUint64()`。
 
 测试完成：
 
-- 新增 `tests/protocol/tlv_codec_test.cpp`，覆盖单字段、多字段、UTF-8 字符串、重复字段、`uint64` 网络字节序、`int64` 补码字节、TLV len 越界、不完整 TLV header、缺失字段、错误 `uint64` 长度和 Unknown 类型编码。
+- 新增 `tests/protocol/tlv_codec_test.cpp`，覆盖单字段、多字段、UTF-8 字符串、重复字符串字段、重复 `uint64` 字段、`uint64` 网络字节序、TLV len 越界、不完整 TLV header、缺失字段、错误 `uint64` 长度和 Unknown 类型编码。
 
 验证结果：
 
@@ -278,3 +278,11 @@ init: create LiteIM project structure with googletest
 - 已更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Step 5 测试清单。
 - 本次按用户要求保留本地 `build/` 目录。
 - 提交完成：`feat(protocol): implement tlv codec`。
+
+## 2026-05-06 Step 5 TlvCodec API Correction
+
+根据 Step 34 / Step 37 后续好友列表、群列表等真实用例，修正 Step 5 API：
+
+- 删除暂时没有真实字段需求的 `appendInt64()`。
+- 新增 `getRepeatedUint64()`，用于读取重复 `FriendId`、`UserId`、`GroupId`、`MessageId` 等 ID 列表。
+- 保持 C++17 和当前项目 `Status + output parameter` 风格，不改成 C++20 `std::span` 或 `std::byte`。
