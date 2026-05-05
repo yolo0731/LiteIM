@@ -329,3 +329,58 @@ init: create LiteIM project structure with googletest
 - 已更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Step 6 测试清单。
 - 本次按用户要求保留本地 `build/` 目录。
 - 提交完成：`feat(protocol): implement tcp frame decoder`。
+
+## 2026-05-06 Step 7 Buffer
+
+本次进入 `Step 7: add buffer abstraction`。
+
+概念完成：
+
+- 明确 `Buffer` 是网络层通用字节缓冲区，不读 socket、不调用 epoll、不管理连接生命周期。
+- `Buffer` 后续会作为 `Session` 的输入缓冲区和输出缓冲区底座。
+- `read_index_` 和 `write_index_` 用来区分已读区域、可读区域和可写区域。
+- `ensureWritableBytes()` 优先复用已读空间，空间仍不足时再扩容。
+- `retrieve()` 越界返回 `InvalidArgument`，不使用进程级断言处理线上输入错误。
+
+代码完成：
+
+- 新增 `include/liteim/net/Buffer.hpp`。
+- 新增 `src/net/CMakeLists.txt`。
+- 新增 `src/net/Buffer.cpp`。
+- 更新 `src/CMakeLists.txt`，接入 `net` 子目录。
+- 新增 `tests/net/buffer_test.cpp`。
+- 更新 `tests/CMakeLists.txt`，让 `liteim_tests` 链接 `liteim_net`。
+
+测试完成：
+
+- 新增 `BufferTest.DefaultBufferHasNoReadableBytes`。
+- 新增 `BufferTest.AppendIncreasesReadableBytes`。
+- 新增 `BufferTest.AppendStringStoresReadableData`。
+- 新增 `BufferTest.AppendUint8PointerStoresBytes`。
+- 新增 `BufferTest.RetrieveAdvancesReadIndex`。
+- 新增 `BufferTest.RetrieveAllResetsBuffer`。
+- 新增 `BufferTest.RetrieveAllAsStringReturnsReadableDataAndClearsBuffer`。
+- 新增 `BufferTest.EnsureWritableBytesExpandsWhenNeeded`。
+- 新增 `BufferTest.EnsureWritableBytesCompactsReadableDataBeforeExpanding`。
+- 新增 `BufferTest.AppendExpandsAndPreservesExistingData`。
+- 新增 `BufferTest.RetrievePastReadableBytesReturnsError`。
+- 新增 `BufferTest.NullAppendWithNonzeroLengthReturnsError`。
+- 新增 `BufferTest.NullAppendWithZeroLengthIsOk`。
+
+验证结果：
+
+- `cmake -S . -B build`：通过。
+- `cmake --build build`：通过。
+- `./build/server/liteim_server`：通过，输出 `LiteIM server scaffold is running on 0.0.0.0:9000`。
+- `ctest --test-dir build --output-on-failure`：通过，67/67 tests passed。
+- `git diff --check`：通过。
+- `find . -name .gitkeep`：无输出。
+- 旧路线文件名检查：没有恢复旧 `SQLiteStorage`、`step15_sqlite`、真实 `server/net` 或 `server/protocol` 文件路径。
+
+收尾完成：
+
+- 已更新 README、docs、findings、task_plan、progress 和 tutorials。
+- 已新增 `tutorials/step07_buffer.md`。
+- 已更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Step 7 测试清单。
+- 本次按用户要求保留本地 `build/` 目录。
+- 提交完成：`feat(net): add buffer abstraction`。

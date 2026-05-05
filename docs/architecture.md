@@ -1,6 +1,6 @@
 # LiteIM Architecture
 
-本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 6，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base` 和 `liteim_protocol` 协议类型、Packet 编解码、TLV body 编解码与 TCP 字节流解包器，还没有真正的 socket / epoll 网络层实现。
+本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 7，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer`。当前还没有真正的 socket / epoll / Reactor 实现。
 
 ## Target Data Flow
 
@@ -78,7 +78,7 @@ liteim_base
 
 ## Current Protocol Layer
 
-当前 Step 6 已经实现协议层最底层的类型定义、Packet header 编解码、TLV body 编解码和 TCP 字节流解包器：
+当前协议层已经实现最底层的类型定义、Packet header 编解码、TLV body 编解码和 TCP 字节流解包器：
 
 ```text
 liteim_protocol
@@ -126,8 +126,35 @@ liteim_protocol
 - `FrameDecoder` 不操作 socket，只接收上层传入的字节片段，内部缓存不足一个完整包的半包数据。
 - `FrameDecoder` 支持一次输入 0 个、1 个或多个完整 `Packet`。
 - 错误 header 会让 `FrameDecoder` 进入 error 状态；后续输入会被拒绝，直到上层关闭连接或调用 `reset()`。
-- Step 6 不创建网络 `Buffer`、socket、epoll 或 Reactor；这些从 Step 7 开始进入网络层。
+- `FrameDecoder` 不拥有 socket，也不负责连接生命周期；它只处理已经读入内存的字节流。
+
+## Current Network Layer
+
+当前 Step 7 开始进入网络模块，但只实现 socket-agnostic `Buffer`：
+
+```text
+liteim_net
+  -> Buffer
+       -> append()
+       -> appendString()
+       -> readableBytes()
+       -> writableBytes()
+       -> peek()
+       -> retrieve()
+       -> retrieveAll()
+       -> retrieveAllAsString()
+       -> ensureWritableBytes()
+```
+
+职责边界：
+
+- `Buffer` 只管理内存中的字节，不调用 `read()`、`write()`、`recv()` 或 `send()`。
+- `Buffer` 不知道 Packet、TLV、MessageType，也不解析业务数据。
+- `Buffer` 不依赖 epoll，不管理 fd，也不做线程同步。
+- 后续 `Session` 会持有输入 `Buffer` 和输出 `Buffer`，I/O 线程负责把 socket 字节读入输入缓冲区，再交给 `FrameDecoder`。
+- 输出缓冲区高水位回压会在后续慢客户端保护 Step 中实现；当前只提供可复用的缓冲区底座。
+- `retrieve()` 越界返回 `InvalidArgument`，避免网络异常输入触发进程级崩溃。
 
 ## Current Step
 
-Step 6 adds TCP byte-stream frame decoding for Packet. Network Buffer, socket helpers, epoll, and Reactor start in later steps.
+Step 7 adds the first `liteim_net` module with `Buffer`. Socket helpers, epoll, Reactor, `Session`, and backpressure policy start in later steps.

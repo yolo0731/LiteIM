@@ -57,6 +57,12 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 6 tests | done | Added FrameDecoder GoogleTest coverage; CTest passes with 54 total tests. |
 | Step 6 docs | done | README, docs, findings, progress, and tutorials were updated for the Step 6 route. |
 | Step 6 commit | done | Commit message: `feat(protocol): implement tcp frame decoder`. |
+| Step 7 concept | done | Step 7 introduces the socket-agnostic network `Buffer` used later by `Session` input/output buffers. |
+| Step 7 code | done | Added `liteim_net` with `Buffer` append/retrieve/readable/writable/auto-grow behavior. |
+| Step 7 tests | done | Added Buffer GoogleTest coverage; pre-check CTest passes with 67 total tests. |
+| Step 7 docs | done | README, docs, findings, progress, tutorials, and PROJECT_MEMORY were updated. |
+| Step 7 verification | done | CMake configure/build, server smoke, CTest, diff check, `.gitkeep`, and stale-route checks passed. |
+| Step 7 commit | done | Commit message: `feat(net): add buffer abstraction`. |
 
 ## Current Decision
 
@@ -373,7 +379,49 @@ Expected new tests:
 - `TEST(FrameDecoderTest, ErrorStateRejectsFurtherFeedUntilReset)`
 - `TEST(FrameDecoderTest, NullInputWithNonzeroLengthReturnsError)`
 
-Next Step: `Step 7: implement Buffer`.
+## Step 7 Target
+
+Step 7 creates the first network utility module:
+
+```text
+LiteIM/
+├── include/liteim/net/
+│   └── Buffer.hpp
+├── src/net/
+│   ├── Buffer.cpp
+│   └── CMakeLists.txt
+└── tests/net/
+    └── buffer_test.cpp
+```
+
+Step 7 intentionally implements only a socket-agnostic byte buffer. It does not create socket helpers, epoll, Reactor, `Session`, or cross-thread sending.
+
+Step 7 verification:
+
+```bash
+cmake -S . -B build
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+```
+
+Expected new tests:
+
+- `TEST(BufferTest, DefaultBufferHasNoReadableBytes)`
+- `TEST(BufferTest, AppendIncreasesReadableBytes)`
+- `TEST(BufferTest, AppendStringStoresReadableData)`
+- `TEST(BufferTest, AppendUint8PointerStoresBytes)`
+- `TEST(BufferTest, RetrieveAdvancesReadIndex)`
+- `TEST(BufferTest, RetrieveAllResetsBuffer)`
+- `TEST(BufferTest, RetrieveAllAsStringReturnsReadableDataAndClearsBuffer)`
+- `TEST(BufferTest, EnsureWritableBytesExpandsWhenNeeded)`
+- `TEST(BufferTest, EnsureWritableBytesCompactsReadableDataBeforeExpanding)`
+- `TEST(BufferTest, AppendExpandsAndPreservesExistingData)`
+- `TEST(BufferTest, RetrievePastReadableBytesReturnsError)`
+- `TEST(BufferTest, NullAppendWithNonzeroLengthReturnsError)`
+- `TEST(BufferTest, NullAppendWithZeroLengthIsOk)`
+
+Next Step: `Step 8: implement SocketUtil`.
 
 ## Persistent Requirements
 
