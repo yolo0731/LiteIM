@@ -1,0 +1,108 @@
+#include "liteim/net/Channel.hpp"
+
+#include <sys/epoll.h>
+
+#include <string>
+#include <vector>
+
+#include <gtest/gtest.h>
+
+TEST(ChannelTest, EnableAndDisableEventsUpdateInterestMask) {
+    liteim::Channel channel(nullptr, 10);
+
+    EXPECT_TRUE(channel.isNoneEvent());
+    EXPECT_FALSE(channel.isReading());
+    EXPECT_FALSE(channel.isWriting());
+
+    channel.enableReading();
+    EXPECT_FALSE(channel.isNoneEvent());
+    EXPECT_TRUE(channel.isReading());
+    EXPECT_FALSE(channel.isWriting());
+
+    channel.enableWriting();
+    EXPECT_TRUE(channel.isReading());
+    EXPECT_TRUE(channel.isWriting());
+
+    channel.disableWriting();
+    EXPECT_TRUE(channel.isReading());
+    EXPECT_FALSE(channel.isWriting());
+
+    channel.disableReading();
+    EXPECT_TRUE(channel.isNoneEvent());
+
+    channel.enableWriting();
+    EXPECT_FALSE(channel.isReading());
+    EXPECT_TRUE(channel.isWriting());
+
+    channel.disableAll();
+    EXPECT_TRUE(channel.isNoneEvent());
+}
+
+TEST(ChannelTest, ReadableEventInvokesReadCallback) {
+    liteim::Channel channel(nullptr, 10);
+    int read_count = 0;
+    channel.setReadCallback([&read_count]() { ++read_count; });
+
+    channel.setRevents(EPOLLIN);
+    channel.handleEvent();
+
+    EXPECT_EQ(read_count, 1);
+}
+
+TEST(ChannelTest, WritableEventInvokesWriteCallback) {
+    liteim::Channel channel(nullptr, 10);
+    int write_count = 0;
+    channel.setWriteCallback([&write_count]() { ++write_count; });
+
+    channel.setRevents(EPOLLOUT);
+    channel.handleEvent();
+
+    EXPECT_EQ(write_count, 1);
+}
+
+TEST(ChannelTest, ReadWriteEventInvokesCallbacksInStableOrder) {
+    liteim::Channel channel(nullptr, 10);
+    std::vector<std::string> calls;
+    channel.setReadCallback([&calls]() { calls.push_back("read"); });
+    channel.setWriteCallback([&calls]() { calls.push_back("write"); });
+
+    channel.setRevents(EPOLLIN | EPOLLOUT);
+    channel.handleEvent();
+
+    ASSERT_EQ(calls.size(), 2U);
+    EXPECT_EQ(calls[0], "read");
+    EXPECT_EQ(calls[1], "write");
+}
+
+TEST(ChannelTest, HangupWithoutReadableEventInvokesCloseOnly) {
+    liteim::Channel channel(nullptr, 10);
+    int close_count = 0;
+    int read_count = 0;
+    channel.setCloseCallback([&close_count]() { ++close_count; });
+    channel.setReadCallback([&read_count]() { ++read_count; });
+
+    channel.setRevents(EPOLLHUP);
+    channel.handleEvent();
+
+    EXPECT_EQ(close_count, 1);
+    EXPECT_EQ(read_count, 0);
+}
+
+TEST(ChannelTest, ErrorEventInvokesErrorCallback) {
+    liteim::Channel channel(nullptr, 10);
+    int error_count = 0;
+    channel.setErrorCallback([&error_count]() { ++error_count; });
+
+    channel.setRevents(EPOLLERR);
+    channel.handleEvent();
+
+    EXPECT_EQ(error_count, 1);
+}
+
+TEST(ChannelTest, HandleEventToleratesMissingCallbacks) {
+    liteim::Channel channel(nullptr, 10);
+
+    channel.setRevents(EPOLLIN | EPOLLOUT);
+
+    EXPECT_NO_THROW(channel.handleEvent());
+}

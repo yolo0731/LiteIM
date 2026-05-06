@@ -369,6 +369,39 @@ Step 10 只实现 `Epoller` 系统调用封装。
 - 无效 `Channel*`、负 fd、重复删除等无效操作返回 `Status::error(...)`，不直接退出进程。
 - `Channel.cpp` 在本 Step 只实现构造、fd/event/revent 访问、事件 mask 修改和回调 setter；`handleEvent()` 与自动 `update()` 留给后续 Step。
 
+## Step 11 约束
+
+Step 11 只实现 `Channel` 事件分发和关注事件更新链路。
+
+本 Step 允许新增：
+
+- `tests/net/channel_test.cpp`
+- `src/net/EventLoop.cpp`
+- `tutorials/step11_channel.md`
+
+本 Step 允许调整：
+
+- `src/net/Channel.cpp`
+- `src/net/CMakeLists.txt`
+- `tests/CMakeLists.txt`
+
+本 Step 不允许提前新增：
+
+- `EventLoop::loop()` 阻塞循环
+- `eventfd` 跨线程唤醒
+- `runInLoop()` / `queueInLoop()`
+- `Acceptor`、`Session`、`TcpServer`
+
+## Step 11 设计结论
+
+- `Channel` 仍然不拥有 fd，不关闭 fd，只保存 fd 值、关注事件、实际事件和回调入口。
+- `enableReading()`、`disableReading()`、`enableWriting()`、`disableWriting()` 和 `disableAll()` 修改 `events_` 后会调用私有 `update()`。
+- `Channel::update()` 在 `owner_loop_ != nullptr` 时调用 `EventLoop::updateChannel(this)`；`owner_loop_ == nullptr` 时不做 epoll 更新，方便纯状态测试和直接 `Epoller` 测试。
+- `handleEvent()` 根据 `revents_` 分发回调：`EPOLLIN` / `EPOLLPRI` / `EPOLLRDHUP` 触发 read callback，`EPOLLOUT` 触发 write callback，`EPOLLHUP` 触发 close callback，`EPOLLERR` 触发 error callback。
+- `EPOLLHUP` 且没有 `EPOLLIN` 时优先 close 并返回；`EPOLLERR` 优先 error 并返回，避免错误状态继续触发普通读写回调。
+- `handleEvent()` 先把 `revents_` 和 callbacks 拷贝到局部变量，降低回调中关闭连接或修改状态导致的成员访问风险。
+- `EventLoop.cpp` 当前只实现构造 `Epoller`、`quit()`、`updateChannel()`、`removeChannel()`、`isInLoopThread()` 和 `assertInLoopThread()`；完整事件循环和 `eventfd` 任务队列留给 Step 12。
+
 ## PersonaAgent 最新路线结论
 
 - PersonaAgent 作为项目二独立推进，不嵌入 C++ LiteIM 服务端。

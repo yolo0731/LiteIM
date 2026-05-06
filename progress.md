@@ -437,6 +437,10 @@ init: create LiteIM project structure with googletest
 
 收尾完成：
 
+- 提交完成：`1f9a365 feat(net): implement channel event dispatching`。
+
+收尾完成：
+
 - 提交完成：`feat(net): implement epoller wrapper`。
 
 收尾完成：
@@ -564,6 +568,68 @@ TDD GREEN：
 - `cmake --build build`：通过。
 - `./build/server/liteim_server`：通过，输出 `LiteIM server scaffold is running on 0.0.0.0:9000`。
 - `ctest --test-dir build --output-on-failure`：通过，76/76 tests passed。
+- `git diff --check`：通过。
+- `find . -path ./build -prune -o -path ./.git -prune -o -name .gitkeep -print`：无输出。
+- 旧路线路径检查：无 `server/net`、`server/protocol`、`SQLite`、`InMemory`、`step15_sqlite` 路径残留。
+
+## 2026-05-06 Step 11 Channel
+
+本次进入 `Step 11: implement Channel`。
+
+开始状态：
+
+- 当前新路线中 Step 10 `Epoller` 已完成并提交。
+- 工作区干净。
+- `session-catchup.py` 提示的未同步内容来自旧的纯概念问答，不对应当前 Step 11 代码改动。
+- 旧记忆里的 Step 11 `Session` 属于重启前路线；本次以 `/home/yolo/jianli/PROJECT_MEMORY.md` 当前 Step 11 `Channel` 为准。
+
+概念完成：
+
+- `Channel` 是 Reactor 中的 fd 事件分发器，不拥有 fd，不关闭 fd。
+- `events_` 表示希望监听的事件，`revents_` 表示本轮 epoll 实际返回的事件。
+- `handleEvent()` 根据 `revents_` 分发 read/write/close/error callback。
+- `enableReading()`、`enableWriting()` 等关注事件变化函数需要通过 `EventLoop` 更新 epoll 关注状态。
+- 本 Step 只补最小 `EventLoop` 更新桥接，不实现 `EventLoop::loop()`、`eventfd` 或跨线程任务队列。
+
+TDD RED：
+
+- 新增 `tests/net/channel_test.cpp`，覆盖事件 mask 修改和 read/write/close/error 回调分发。
+- 更新 `tests/CMakeLists.txt` 注册 `channel_test.cpp`。
+- 运行 `cmake --build build`，预期失败于 `undefined reference to liteim::Channel::handleEvent()`，证明新增测试能捕获当前缺失行为。
+
+代码完成：
+
+- 更新 `src/net/Channel.cpp`，实现 `handleEvent()` 和私有 `update()`。
+- `handleEvent()` 处理 `EPOLLHUP`、`EPOLLERR`、`EPOLLIN`、`EPOLLPRI`、`EPOLLRDHUP` 和 `EPOLLOUT`。
+- `handleEvent()` 先拷贝 active events 和 callbacks，降低回调中关闭连接或修改状态带来的成员访问风险。
+- `enableReading()`、`disableReading()`、`enableWriting()`、`disableWriting()` 和 `disableAll()` 修改 `events_` 后调用 `update()`。
+- 新增 `src/net/EventLoop.cpp`，只实现 `updateChannel()` / `removeChannel()` 到 `Epoller` 的桥接、`quit()` 和线程归属检查。
+- 更新 `src/net/CMakeLists.txt`，把 `EventLoop.cpp` 加入 `liteim_net`。
+
+TDD GREEN：
+
+- 运行 `cmake --build build`：通过。
+- 运行 `ctest --test-dir build -R ChannelTest --output-on-failure`：通过，7/7 tests passed。
+
+文档完成：
+
+- 更新 README，把当前状态切到 Step 11，并补充 `Channel::handleEvent()`、`Channel::update()`、`EventLoop.cpp` 最小桥接和 88 个测试总数。
+- 更新 `docs/architecture.md`，补充 `Channel` 事件分发和当前 `EventLoop` 边界。
+- 更新 `docs/project_layout.md`，补充 Step 11 新增源码、测试文件和教程。
+- 更新 `tutorials/README.md`，登记 Step 11 教程。
+- 新增 `tutorials/step11_channel.md`，按概念、接口、实现规则、测试和面试问答展开说明。
+- 更新 `findings.md`、`task_plan.md` 和 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Step 11 记录。
+
+错误记录：
+
+- 一次 stale 文案扫描命令又把包含反引号的 pattern 放进双引号，shell 将反引号内容当成命令替换，出现 `Step: command not found`、`Channel::handleEvent: command not found` 等输出。已改用单引号重新执行，确认命中项只是 Step 10 历史进度和 Step 10 计划段落，不是当前状态文案。
+
+阶段验证结果：
+
+- `cmake -S . -B build`：通过。
+- `cmake --build build`：通过。
+- `./build/server/liteim_server`：通过，输出 `LiteIM server scaffold is running on 0.0.0.0:9000`。
+- `ctest --test-dir build --output-on-failure`：通过，88/88 tests passed。
 - `git diff --check`：通过。
 - `find . -path ./build -prune -o -path ./.git -prune -o -name .gitkeep -print`：无输出。
 - 旧路线路径检查：无 `server/net`、`server/protocol`、`SQLite`、`InMemory`、`step15_sqlite` 路径残留。

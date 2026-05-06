@@ -1,5 +1,9 @@
 #include "liteim/net/Channel.hpp"
 
+#include "liteim/net/EventLoop.hpp"
+
+#include <sys/epoll.h>
+
 #include <utility>
 
 namespace liteim {
@@ -36,22 +40,27 @@ bool Channel::isWriting() const noexcept {
 
 void Channel::enableReading() {
     events_ |= kReadEvent;
+    update();
 }
 
 void Channel::disableReading() {
     events_ &= ~kReadEvent;
+    update();
 }
 
 void Channel::enableWriting() {
     events_ |= kWriteEvent;
+    update();
 }
 
 void Channel::disableWriting() {
     events_ &= ~kWriteEvent;
+    update();
 }
 
 void Channel::disableAll() {
     events_ = kNoneEvent;
+    update();
 }
 
 EventLoop* Channel::ownerLoop() const noexcept {
@@ -72,6 +81,46 @@ void Channel::setCloseCallback(EventCallback callback) {
 
 void Channel::setErrorCallback(EventCallback callback) {
     error_callback_ = std::move(callback);
+}
+
+void Channel::handleEvent() {
+    const auto active_events = revents_;
+    auto read_callback = read_callback_;
+    auto write_callback = write_callback_;
+    auto close_callback = close_callback_;
+    auto error_callback = error_callback_;
+
+    if ((active_events & EPOLLHUP) != 0 && (active_events & EPOLLIN) == 0) {
+        if (close_callback) {
+            close_callback();
+        }
+        return;
+    }
+
+    if ((active_events & EPOLLERR) != 0) {
+        if (error_callback) {
+            error_callback();
+        }
+        return;
+    }
+
+    if ((active_events & (EPOLLIN | EPOLLPRI | EPOLLRDHUP)) != 0) {
+        if (read_callback) {
+            read_callback();
+        }
+    }
+
+    if ((active_events & EPOLLOUT) != 0) {
+        if (write_callback) {
+            write_callback();
+        }
+    }
+}
+
+void Channel::update() {
+    if (owner_loop_ != nullptr) {
+        owner_loop_->updateChannel(this);
+    }
 }
 
 }  // namespace liteim

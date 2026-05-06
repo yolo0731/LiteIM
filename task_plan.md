@@ -81,6 +81,12 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 10 docs | done | Synced README, docs, findings, progress, tutorials, and PROJECT_MEMORY for Epoller behavior. |
 | Step 10 verification | done | CMake configure/build, server smoke, CTest 81/81, diff check, `.gitkeep`, and stale-route path checks passed. |
 | Step 10 commit | done | Commit message: `feat(net): implement epoller wrapper`. |
+| Step 11 concept | done | Step 11 implements `Channel` event dispatching and keeps fd ownership outside `Channel`. |
+| Step 11 tests | done | Added `ChannelTest` coverage for event mask changes and read/write/close/error callback dispatch. |
+| Step 11 code | done | Implemented `Channel::handleEvent()`, automatic `Channel::update()`, and minimal `EventLoop` update/remove bridge to `Epoller`. |
+| Step 11 docs | done | Synced README, docs, findings, progress, tutorials, and PROJECT_MEMORY for Channel behavior. |
+| Step 11 verification | done | CMake configure/build, server smoke, CTest 88/88, diff check, `.gitkeep`, and stale-route path checks passed. |
+| Step 11 commit | done | Commit message: `feat(net): implement channel event dispatching`. |
 
 ## Current Decision
 
@@ -561,6 +567,54 @@ Expected new tests:
 - `TEST(EpollerTest, InvalidChannelOperationsReturnError)`
 
 Next Step: `Step 11: implement Channel`.
+
+## Step 11 Target
+
+Step 11 implements the real `Channel` event dispatching behind the Step 9 interface:
+
+```text
+LiteIM/
+├── include/liteim/net/
+│   ├── Channel.hpp
+│   ├── Epoller.hpp
+│   └── EventLoop.hpp
+├── src/net/
+│   ├── Channel.cpp
+│   ├── EventLoop.cpp
+│   ├── Epoller.cpp
+│   ├── Buffer.cpp
+│   ├── SocketUtil.cpp
+│   └── CMakeLists.txt
+└── tests/net/
+    ├── channel_test.cpp
+    ├── channel_header_test.cpp
+    ├── epoller_header_test.cpp
+    ├── epoller_test.cpp
+    └── event_loop_header_test.cpp
+```
+
+Step 11 intentionally implements only `Channel::handleEvent()` callback dispatch, event mask changes, and the minimal `EventLoop` bridge needed for `Channel::update()` to reach `Epoller`. It does not implement `EventLoop::loop()`, `eventfd`, task queues, `Acceptor`, `Session`, or `TcpServer`.
+
+Step 11 verification:
+
+```bash
+cmake -S . -B build
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+```
+
+Expected new tests:
+
+- `TEST(ChannelTest, EnableAndDisableEventsUpdateInterestMask)`
+- `TEST(ChannelTest, ReadableEventInvokesReadCallback)`
+- `TEST(ChannelTest, WritableEventInvokesWriteCallback)`
+- `TEST(ChannelTest, ReadWriteEventInvokesCallbacksInStableOrder)`
+- `TEST(ChannelTest, HangupWithoutReadableEventInvokesCloseOnly)`
+- `TEST(ChannelTest, ErrorEventInvokesErrorCallback)`
+- `TEST(ChannelTest, HandleEventToleratesMissingCallbacks)`
+
+Next Step: `Step 12: implement EventLoop + eventfd task dispatch`.
 
 ## Persistent Requirements
 

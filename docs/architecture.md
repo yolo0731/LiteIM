@@ -1,6 +1,6 @@
 # LiteIM Architecture
 
-本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 9，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil` 和 Reactor 核心接口 `Channel` / `Epoller` / `EventLoop`。当前还没有真实 epoll 系统调用实现、事件循环实现或 `Session` 实现。
+本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 11，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil`、`Epoller` 系统调用封装和 `Channel` 事件分发。当前还没有 `EventLoop::loop()` 阻塞循环、`eventfd` 任务投递或 `Session` 实现。
 
 ## Target Data Flow
 
@@ -130,7 +130,7 @@ liteim_protocol
 
 ## Current Network Layer
 
-当前 Step 10 已经实现 `Epoller` 系统调用层，但 `Channel` 回调分发和 `EventLoop` 阻塞循环仍留给后续步骤：
+当前 Step 11 已经实现 `Epoller` 系统调用层和 `Channel` 回调分发，但 `EventLoop` 阻塞循环和 `eventfd` 任务投递仍留给后续步骤：
 
 ```text
 liteim_net
@@ -158,9 +158,14 @@ liteim_net
        -> events()
        -> revents()
        -> enableReading()
+       -> disableReading()
        -> enableWriting()
+       -> disableWriting()
+       -> disableAll()
        -> setReadCallback()
        -> setWriteCallback()
+       -> setCloseCallback()
+       -> setErrorCallback()
        -> handleEvent()
   -> Epoller
        -> poll()
@@ -186,14 +191,16 @@ liteim_net
 - `getSocketError()` 读取 `SO_ERROR`，后续非阻塞连接、写事件和连接异常处理会复用。
 - `Channel` 只代表一个 fd 的事件代理，不拥有 fd，不关闭 fd。
 - `Channel::events()` 表示想监听的事件，`Channel::revents()` 表示本轮 epoll 实际返回的事件。
+- `Channel::handleEvent()` 把 `EPOLLIN` / `EPOLLPRI` / `EPOLLRDHUP` 分发给 read callback，把 `EPOLLOUT` 分发给 write callback，把 `EPOLLHUP` 和 `EPOLLERR` 分发给 close/error callback。
+- `Channel` 修改关注事件后通过所属 `EventLoop::updateChannel()` 交给 `Epoller` 更新 epoll 注册状态。
 - `Epoller` 是 epoll 系统调用封装边界，负责 `epoll_create1(EPOLL_CLOEXEC)`、`epoll_ctl(ADD/MOD/DEL)` 和 `epoll_wait()`。
 - `Epoller` 当前使用 LT 模式，不设置 `EPOLLET`。
 - `Epoller` 用 `fd -> Channel*` 映射判断 add/mod/del，并通过 `epoll_event.data.ptr` 在 `poll()` 返回时找回活跃 `Channel`。
-- `EventLoop` 是 Reactor 调度层接口，本阶段只表达“一个 loop 拥有一个 epoller 并管理 channel”，不实现阻塞循环、任务队列或 `eventfd` 唤醒。
+- `EventLoop` 当前只提供 `updateChannel()` / `removeChannel()` 到 `Epoller` 的桥接和线程归属检查；阻塞循环、任务队列和 `eventfd` 唤醒在 Step 12 实现。
 - 后续 `Session` 会持有输入 `Buffer` 和输出 `Buffer`，I/O 线程负责把 socket 字节读入输入缓冲区，再交给 `FrameDecoder`。
 - 输出缓冲区高水位回压会在后续慢客户端保护 Step 中实现；当前只提供可复用的缓冲区底座。
 - `retrieve()` 越界返回 `InvalidArgument`，避免网络异常输入触发进程级崩溃。
 
 ## Current Step
 
-Step 10 implements the real `Epoller` wrapper in `liteim_net`. `Channel::handleEvent()`, automatic `Channel::update()` wiring, `EventLoop` event dispatch, `eventfd` wakeup, `Acceptor`, `Session`, `TcpServer`, and backpressure policy stay in later steps.
+Step 11 implements `Channel::handleEvent()` and automatic `Channel::update()` wiring in `liteim_net`. `EventLoop` event dispatch, `eventfd` wakeup, `Acceptor`, `Session`, `TcpServer`, and backpressure policy stay in later steps.

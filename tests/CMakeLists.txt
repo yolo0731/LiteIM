@@ -6,6 +6,7 @@ add_executable(liteim_tests
     base/timestamp_test.cpp
     net/buffer_test.cpp
     net/channel_header_test.cpp
+    net/channel_test.cpp
     net/epoller_header_test.cpp
     net/epoller_test.cpp
     net/event_loop_header_test.cpp
