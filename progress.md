@@ -435,6 +435,10 @@ init: create LiteIM project structure with googletest
 - `find . -path ./build -prune -o -path ./.git -prune -o -name .gitkeep -print`：无输出。
 - 旧路线路径检查：无 `server/net`、`server/protocol`、`SQLite`、`InMemory`、`step15_sqlite` 路径残留。
 
+收尾完成：
+
+- 提交完成：`feat(net): define reactor core interfaces`。
+
 文档完成：
 
 - 已更新 README、docs、findings、task_plan、progress 和 tutorials。
@@ -444,3 +448,61 @@ init: create LiteIM project structure with googletest
 收尾完成：
 
 - 提交完成：`feat(net): add socket utility functions`。
+
+## 2026-05-06 Step 9 Reactor Interfaces
+
+本次进入 `Step 9: define Epoller / Channel / EventLoop interface`。
+
+开始状态：
+
+- 工作区干净。
+- 当前新路线中 Step 8 `SocketUtil` 已完成，下一步是 Reactor 核心接口。
+- `session-catchup.py` 提示的未同步消息来自之前纯概念问答，没有项目文件改动，本次不把它当作待同步实现内容。
+
+概念进行中：
+
+- `Channel` 表示一个 fd 的事件代理，保存关注事件和回调接口，但本 Step 不实现回调分发。
+- `Epoller` 表示 epoll 系统调用封装边界，但本 Step 不调用 `epoll_create1()`、`epoll_ctl()` 或 `epoll_wait()`。
+- `EventLoop` 表示 Reactor 调度层接口，拥有 `Epoller` 并管理 `Channel`，但本 Step 不实现阻塞事件循环和 `eventfd` 唤醒。
+
+TDD RED：
+
+- 新增 `tests/net/channel_header_test.cpp`、`tests/net/epoller_header_test.cpp`、`tests/net/event_loop_header_test.cpp`。
+- 更新 `tests/CMakeLists.txt` 注册三个接口编译测试。
+- 运行 `cmake --build build`，预期失败于 `fatal error: liteim/net/Channel.hpp: No such file or directory`，证明测试能捕获 Step 9 头文件尚未定义的问题。
+
+代码完成：
+
+- 新增 `include/liteim/net/Channel.hpp`，声明 fd、关注事件、实际事件、事件开关、回调设置和 `handleEvent()` 接口。
+- 新增 `include/liteim/net/Epoller.hpp`，声明 `poll()`、`updateChannel()` 和 `removeChannel()` 接口。
+- 新增 `include/liteim/net/EventLoop.hpp`，声明 `loop()`、`quit()`、`updateChannel()`、`removeChannel()` 和线程归属检查接口。
+- 本 Step 没有新增 `src/net/Epoller.cpp`、`Channel.cpp` 或 `EventLoop.cpp`，也没有实现 epoll 系统调用。
+
+TDD GREEN：
+
+- 运行 `cmake --build build`：通过。
+- 运行 `ctest --test-dir build --output-on-failure -R ReactorInterfaceTest`：通过，3/3 tests passed。
+
+文档完成：
+
+- 更新 README，把当前状态切到 Step 9，并补充 `Channel` / `Epoller` / `EventLoop` 接口说明和 76 个测试总数。
+- 更新 `docs/architecture.md`，补充当前网络层中的 Reactor 接口边界。
+- 更新 `docs/project_layout.md`，补充 Step 9 新增头文件、测试文件和教程。
+- 更新 `tutorials/README.md`，登记 Step 9 教程。
+- 新增 `tutorials/step09_reactor_interfaces.md`，按概念、接口、边界、测试、面试讲法展开说明。
+- 更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Step 9 文件清单和测试清单。
+
+错误记录：
+
+- 一次 stale 文案扫描命令把包含反引号的 pattern 放在双引号里，shell 将反引号内容当作命令替换，出现 `Step: command not found`。已改用单引号重新执行，确认只有 Step 8 历史教程保留自身测试说明，不属于 stale 当前状态。
+- `/home/yolo/jianli` 不是 Git 仓库，`PROJECT_MEMORY.md` 是工作区级元数据，不能纳入 `LiteIM` 仓库 commit；LiteIM commit 只会包含仓库内 Step 9 文件。
+
+阶段验证结果：
+
+- `cmake -S . -B build`：通过。
+- `cmake --build build`：通过。
+- `./build/server/liteim_server`：通过，输出 `LiteIM server scaffold is running on 0.0.0.0:9000`。
+- `ctest --test-dir build --output-on-failure`：通过，76/76 tests passed。
+- `git diff --check`：通过。
+- `find . -path ./build -prune -o -path ./.git -prune -o -name .gitkeep -print`：无输出。
+- 旧路线路径检查：无 `server/net`、`server/protocol`、`SQLite`、`InMemory`、`step15_sqlite` 路径残留。

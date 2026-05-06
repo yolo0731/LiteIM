@@ -301,6 +301,41 @@ Step 8 只实现 Linux socket 常用工具函数，不进入 epoll、Reactor 或
 - `getSocketError()` 读取 `SO_ERROR`，后续非阻塞连接、写事件和连接异常处理会复用。
 - 负 fd 统一返回 `InvalidArgument`，系统调用失败返回 `IoError`。
 
+## Step 9 约束
+
+Step 9 只定义 Reactor 核心接口，不实现实际 `epoll` 行为和事件循环。
+
+本 Step 允许新增：
+
+- `include/liteim/net/Epoller.hpp`
+- `include/liteim/net/Channel.hpp`
+- `include/liteim/net/EventLoop.hpp`
+- `tests/net/channel_header_test.cpp`
+- `tests/net/epoller_header_test.cpp`
+- `tests/net/event_loop_header_test.cpp`
+
+本 Step 不允许提前新增：
+
+- `src/net/Epoller.cpp`
+- `src/net/Channel.cpp`
+- `src/net/EventLoop.cpp`
+- `epoll_create1()` / `epoll_ctl()` / `epoll_wait()` 的真实封装实现
+- `Channel::handleEvent()` 回调分发实现
+- `EventLoop::loop()` 的阻塞循环实现
+- `eventfd` 跨线程唤醒
+- `Acceptor`、`Session`、`TcpServer`
+
+## Step 9 实现结论
+
+- `Channel.hpp` 只声明 fd 事件代理接口，不拥有 fd，不关闭 fd。
+- `Channel` 保存 `owner_loop_`、`fd_`、关注事件 `events_`、本轮实际事件 `revents_` 和四类回调入口。
+- `Channel::kReadEvent` 对应 `EPOLLIN | EPOLLPRI`，`Channel::kWriteEvent` 对应 `EPOLLOUT`，本项目当前仍按 LT 模式推进，不在 Step 9 暴露 ET 策略。
+- `Channel::update()` 是私有接口，后续由 `enableReading()` / `disableWriting()` 等事件变更函数触发，再交给所属 `EventLoop` 更新 epoll。
+- `Epoller.hpp` 只声明 epoll 封装边界，保留 `ChannelList`、`poll()`、`updateChannel()` 和 `removeChannel()` 接口。
+- `Epoller` 私有状态预留 `epoll_fd_`、事件数组和 fd 到 `Channel*` 的映射，真实系统调用实现留给 Step 10。
+- `EventLoop.hpp` 只声明 Reactor 调度层接口，提供 `loop()`、`quit()`、`updateChannel()`、`removeChannel()` 和线程归属检查。
+- `EventLoop` 通过 `std::unique_ptr<Epoller>` 表达“一个 loop 拥有一个 epoller”，但不在 Step 9 实现阻塞循环、任务队列或 `eventfd` 唤醒。
+
 ## PersonaAgent 最新路线结论
 
 - PersonaAgent 作为项目二独立推进，不嵌入 C++ LiteIM 服务端。

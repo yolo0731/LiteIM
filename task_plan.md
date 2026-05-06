@@ -69,6 +69,12 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 8 docs | done | README, docs, findings, progress, tutorials, and PROJECT_MEMORY were updated for SocketUtil. |
 | Step 8 verification | done | CMake configure/build, server smoke, CTest, diff check, `.gitkeep`, and stale-route path checks passed. |
 | Step 8 commit | done | Commit message: `feat(net): add socket utility functions`. |
+| Step 9 concept | done | Step 9 defines Reactor core interfaces only: `Epoller`, `Channel`, and `EventLoop`. |
+| Step 9 code | done | Added headers under `include/liteim/net/` without implementing epoll behavior yet. |
+| Step 9 tests | done | Added compile/include tests; RED failed on missing `Channel.hpp`, GREEN passes for the 3 new ReactorInterface tests. |
+| Step 9 docs | done | Synced README, docs, findings, progress, tutorials, and PROJECT_MEMORY for the interface-only boundary. |
+| Step 9 verification | done | CMake configure/build, server smoke, CTest 76/76, diff check, `.gitkeep`, and stale-route path checks passed. |
+| Step 9 commit | done | Commit message: `feat(net): define reactor core interfaces`. |
 
 ## Current Decision
 
@@ -466,6 +472,45 @@ Expected new tests:
 - `TEST(SocketUtilTest, GetSocketErrorReturnsCurrentSoError)`
 
 Next Step: `Step 9: define Epoller / Channel / EventLoop interface`.
+
+## Step 9 Target
+
+Step 9 defines the Reactor core interfaces without implementing runtime epoll behavior:
+
+```text
+LiteIM/
+├── include/liteim/net/
+│   ├── Buffer.hpp
+│   ├── Channel.hpp
+│   ├── Epoller.hpp
+│   ├── EventLoop.hpp
+│   └── SocketUtil.hpp
+└── tests/net/
+    ├── buffer_test.cpp
+    ├── channel_header_test.cpp
+    ├── epoller_header_test.cpp
+    ├── event_loop_header_test.cpp
+    └── socket_util_test.cpp
+```
+
+Step 9 intentionally defines only headers. It does not create `src/net/Epoller.cpp`, `src/net/Channel.cpp`, `src/net/EventLoop.cpp`, does not call `epoll_create1()` / `epoll_ctl()` / `epoll_wait()`, and does not create `Acceptor`, `Session`, or `TcpServer`.
+
+Step 9 verification:
+
+```bash
+cmake -S . -B build
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+```
+
+Expected new tests:
+
+- `TEST(ReactorInterfaceTest, ChannelHeaderIsSelfContained)`
+- `TEST(ReactorInterfaceTest, EpollerHeaderIsSelfContained)`
+- `TEST(ReactorInterfaceTest, EventLoopHeaderIsSelfContained)`
+
+Next Step: `Step 10: implement Epoller`.
 
 ## Persistent Requirements
 

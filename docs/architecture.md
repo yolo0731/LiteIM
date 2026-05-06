@@ -1,6 +1,6 @@
 # LiteIM Architecture
 
-本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 8，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer` 和 Linux socket 工具函数 `SocketUtil`。当前还没有 epoll / Reactor / `Session` 实现。
+本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 9，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil` 和 Reactor 核心接口 `Channel` / `Epoller` / `EventLoop`。当前还没有真实 epoll 系统调用实现、事件循环实现或 `Session` 实现。
 
 ## Target Data Flow
 
@@ -130,7 +130,7 @@ liteim_protocol
 
 ## Current Network Layer
 
-当前 Step 8 已经进入网络模块，但仍然只实现底层工具：
+当前 Step 9 已经进入 Reactor 接口层，但仍然只实现头文件接口和底层工具：
 
 ```text
 liteim_net
@@ -153,6 +153,25 @@ liteim_net
        -> setKeepAlive()
        -> closeFd()
        -> getSocketError()
+  -> Channel
+       -> fd()
+       -> events()
+       -> revents()
+       -> enableReading()
+       -> enableWriting()
+       -> setReadCallback()
+       -> setWriteCallback()
+       -> handleEvent()
+  -> Epoller
+       -> poll()
+       -> updateChannel()
+       -> removeChannel()
+  -> EventLoop
+       -> loop()
+       -> quit()
+       -> updateChannel()
+       -> removeChannel()
+       -> isInLoopThread()
 ```
 
 职责边界：
@@ -165,10 +184,14 @@ liteim_net
 - `setReuseAddr()` / `setReusePort()` / `setTcpNoDelay()` / `setKeepAlive()` 只负责 socket option 的薄封装。
 - `closeFd()` 通过引用把关闭后的 fd 置为 `kInvalidFd`，减少同一变量重复关闭的风险。
 - `getSocketError()` 读取 `SO_ERROR`，后续非阻塞连接、写事件和连接异常处理会复用。
+- `Channel` 只代表一个 fd 的事件代理，不拥有 fd，不关闭 fd。
+- `Channel::events()` 表示想监听的事件，`Channel::revents()` 表示本轮 epoll 实际返回的事件。
+- `Epoller` 是 epoll 系统调用封装边界，本 Step 只声明接口，真实 `epoll_create1()`、`epoll_ctl()` 和 `epoll_wait()` 留给 Step 10。
+- `EventLoop` 是 Reactor 调度层接口，本 Step 只表达“一个 loop 拥有一个 epoller 并管理 channel”，不实现阻塞循环、任务队列或 `eventfd` 唤醒。
 - 后续 `Session` 会持有输入 `Buffer` 和输出 `Buffer`，I/O 线程负责把 socket 字节读入输入缓冲区，再交给 `FrameDecoder`。
 - 输出缓冲区高水位回压会在后续慢客户端保护 Step 中实现；当前只提供可复用的缓冲区底座。
 - `retrieve()` 越界返回 `InvalidArgument`，避免网络异常输入触发进程级崩溃。
 
 ## Current Step
 
-Step 8 adds `SocketUtil` to `liteim_net`. Epoll, Reactor interfaces, `Acceptor`, `Session`, `TcpServer`, and backpressure policy start in later steps.
+Step 9 adds Reactor core interfaces to `liteim_net`. The real `Epoller` implementation starts in Step 10; `Channel` behavior, `EventLoop` event dispatch, `eventfd` wakeup, `Acceptor`, `Session`, `TcpServer`, and backpressure policy stay in later steps.
