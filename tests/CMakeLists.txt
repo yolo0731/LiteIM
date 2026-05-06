@@ -5,6 +5,7 @@ add_executable(liteim_tests
     base/logger_test.cpp
     base/timestamp_test.cpp
     net/buffer_test.cpp
+    net/socket_util_test.cpp
     protocol/frame_decoder_test.cpp
     protocol/message_type_test.cpp
     protocol/packet_test.cpp

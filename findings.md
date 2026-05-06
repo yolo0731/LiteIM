@@ -270,6 +270,37 @@ Step 7 只实现网络层通用字节缓冲区，不进入 socket、epoll、Reac
 - `append(nullptr, nonzero)` 返回 `InvalidArgument`；`append(nullptr, 0)` 作为空追加成功。
 - `liteim_net` 链接 `liteim_base`，因为错误路径使用 `Status` / `ErrorCode`。
 
+## Step 8 约束
+
+Step 8 只实现 Linux socket 常用工具函数，不进入 epoll、Reactor 或连接生命周期管理。
+
+本 Step 允许新增：
+
+- `include/liteim/net/SocketUtil.hpp`
+- `src/net/SocketUtil.cpp`
+- `tests/net/socket_util_test.cpp`
+
+本 Step 不允许提前新增：
+
+- `Epoller`
+- `Channel`
+- `EventLoop`
+- `Acceptor`
+- `Session`
+- `TcpServer`
+- `bind()` / `listen()` / `accept()` 封装
+
+## Step 8 实现结论
+
+- `SocketUtil` 是系统调用薄封装，不拥有 fd 生命周期之外的连接语义。
+- `createNonBlockingSocket()` 使用 `AF_INET`、`SOCK_STREAM`、`SOCK_NONBLOCK` 和 `SOCK_CLOEXEC`，保证创建出的 socket 从一开始就是非阻塞并带 close-on-exec。
+- `setNonBlocking()` 使用 `fcntl(F_GETFL)` 读取现有 flag，再通过 `fcntl(F_SETFL)` 加上 `O_NONBLOCK`。
+- `setReuseAddr()`、`setReusePort()`、`setTcpNoDelay()` 和 `setKeepAlive()` 统一走 `setsockopt()`，并用 `Status` 返回错误。
+- `closeFd(int& fd)` 关闭前保存当前 fd，然后立刻把原变量置为 `kInvalidFd`，让同一变量重复调用 `closeFd()` 成为 no-op。
+- `closeFd()` 不能保护 fd 整数副本，后续 `Session` / fd owner 仍需要 RAII 管理所有权。
+- `getSocketError()` 读取 `SO_ERROR`，后续非阻塞连接、写事件和连接异常处理会复用。
+- 负 fd 统一返回 `InvalidArgument`，系统调用失败返回 `IoError`。
+
 ## PersonaAgent 最新路线结论
 
 - PersonaAgent 作为项目二独立推进，不嵌入 C++ LiteIM 服务端。
@@ -292,6 +323,7 @@ Step 7 只实现网络层通用字节缓冲区，不进入 socket、epoll、Reac
 - Step 5 使用 `tests/protocol/tlv_codec_test.cpp` 覆盖单字段、多字段、UTF-8 字符串、重复字符串字段、重复 `uint64` 字段、`uint64` 网络字节序、TLV len 越界、不完整 TLV header、缺失字段、错误 `uint64` 长度和 Unknown 类型编码。
 - Step 6 使用 `tests/protocol/frame_decoder_test.cpp` 覆盖完整包、半包、粘包、半包后接粘包、错误 magic、错误 version、body_len 超限、error 状态拒绝继续解析和空指针输入。
 - Step 7 使用 `tests/net/buffer_test.cpp` 覆盖默认状态、append、appendString、`std::uint8_t*` 输入、retrieve、retrieveAll、retrieveAllAsString、自动扩容、前部空间复用、越界 retrieve 和空指针 append。
+- Step 8 使用 `tests/net/socket_util_test.cpp` 覆盖非阻塞 socket 创建、plain socket 设置非阻塞、常用 socket option、无效 fd 错误返回、重复关闭保护和 `SO_ERROR` 查询。
 - 协议、Buffer、FrameDecoder 等底层模块优先写确定性的 GoogleTest 单元测试。
 - 后续业务层测试优先使用 gMock mock `IStorage` / `ICache`，避免单元测试依赖真实 MySQL / Redis。
 - 网络行为先写 smoke test，等 CLI / Python 客户端出现后再补 E2E。

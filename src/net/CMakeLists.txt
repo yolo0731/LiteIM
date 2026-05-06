@@ -1,5 +1,6 @@
 add_library(liteim_net
     Buffer.cpp
+    SocketUtil.cpp
 )
 
 target_compile_features(liteim_net PUBLIC cxx_std_17)

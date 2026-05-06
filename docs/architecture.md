@@ -1,6 +1,6 @@
 # LiteIM Architecture
 
-本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 7，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer`。当前还没有真正的 socket / epoll / Reactor 实现。
+本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 8，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer` 和 Linux socket 工具函数 `SocketUtil`。当前还没有 epoll / Reactor / `Session` 实现。
 
 ## Target Data Flow
 
@@ -130,7 +130,7 @@ liteim_protocol
 
 ## Current Network Layer
 
-当前 Step 7 开始进入网络模块，但只实现 socket-agnostic `Buffer`：
+当前 Step 8 已经进入网络模块，但仍然只实现底层工具：
 
 ```text
 liteim_net
@@ -144,6 +144,15 @@ liteim_net
        -> retrieveAll()
        -> retrieveAllAsString()
        -> ensureWritableBytes()
+  -> SocketUtil
+       -> createNonBlockingSocket()
+       -> setNonBlocking()
+       -> setReuseAddr()
+       -> setReusePort()
+       -> setTcpNoDelay()
+       -> setKeepAlive()
+       -> closeFd()
+       -> getSocketError()
 ```
 
 职责边界：
@@ -151,10 +160,15 @@ liteim_net
 - `Buffer` 只管理内存中的字节，不调用 `read()`、`write()`、`recv()` 或 `send()`。
 - `Buffer` 不知道 Packet、TLV、MessageType，也不解析业务数据。
 - `Buffer` 不依赖 epoll，不管理 fd，也不做线程同步。
+- `SocketUtil` 只封装 Linux socket 常用系统调用，不绑定地址、不监听端口、不 accept 连接。
+- `createNonBlockingSocket()` 创建非阻塞 TCP fd，并设置 close-on-exec。
+- `setReuseAddr()` / `setReusePort()` / `setTcpNoDelay()` / `setKeepAlive()` 只负责 socket option 的薄封装。
+- `closeFd()` 通过引用把关闭后的 fd 置为 `kInvalidFd`，减少同一变量重复关闭的风险。
+- `getSocketError()` 读取 `SO_ERROR`，后续非阻塞连接、写事件和连接异常处理会复用。
 - 后续 `Session` 会持有输入 `Buffer` 和输出 `Buffer`，I/O 线程负责把 socket 字节读入输入缓冲区，再交给 `FrameDecoder`。
 - 输出缓冲区高水位回压会在后续慢客户端保护 Step 中实现；当前只提供可复用的缓冲区底座。
 - `retrieve()` 越界返回 `InvalidArgument`，避免网络异常输入触发进程级崩溃。
 
 ## Current Step
 
-Step 7 adds the first `liteim_net` module with `Buffer`. Socket helpers, epoll, Reactor, `Session`, and backpressure policy start in later steps.
+Step 8 adds `SocketUtil` to `liteim_net`. Epoll, Reactor interfaces, `Acceptor`, `Session`, `TcpServer`, and backpressure policy start in later steps.

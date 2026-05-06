@@ -63,6 +63,12 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 7 docs | done | README, docs, findings, progress, tutorials, and PROJECT_MEMORY were updated. |
 | Step 7 verification | done | CMake configure/build, server smoke, CTest, diff check, `.gitkeep`, and stale-route checks passed. |
 | Step 7 commit | done | Commit message: `feat(net): add buffer abstraction`. |
+| Step 8 concept | done | Step 8 introduces Linux socket helper functions used by later Acceptor/Session code. |
+| Step 8 code | done | Added `SocketUtil` under `include/liteim/net/` and `src/net/`. |
+| Step 8 tests | done | Added GoogleTest coverage for nonblocking sockets, socket options, invalid fds, and close behavior. |
+| Step 8 docs | done | README, docs, findings, progress, tutorials, and PROJECT_MEMORY were updated for SocketUtil. |
+| Step 8 verification | done | CMake configure/build, server smoke, CTest, diff check, `.gitkeep`, and stale-route path checks passed. |
+| Step 8 commit | done | Commit message: `feat(net): add socket utility functions`. |
 
 ## Current Decision
 
@@ -421,7 +427,45 @@ Expected new tests:
 - `TEST(BufferTest, NullAppendWithNonzeroLengthReturnsError)`
 - `TEST(BufferTest, NullAppendWithZeroLengthIsOk)`
 
-Next Step: `Step 8: implement SocketUtil`.
+## Step 8 Target
+
+Step 8 extends the network module with Linux socket helpers:
+
+```text
+LiteIM/
+├── include/liteim/net/
+│   ├── Buffer.hpp
+│   └── SocketUtil.hpp
+├── src/net/
+│   ├── Buffer.cpp
+│   ├── SocketUtil.cpp
+│   └── CMakeLists.txt
+└── tests/net/
+    ├── buffer_test.cpp
+    └── socket_util_test.cpp
+```
+
+Step 8 intentionally implements only small socket utility wrappers. It does not create `Epoller`, `Channel`, `EventLoop`, `Acceptor`, `Session`, or `TcpServer`.
+
+Step 8 verification:
+
+```bash
+cmake -S . -B build
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+```
+
+Expected new tests:
+
+- `TEST(SocketUtilTest, CreateNonBlockingSocketReturnsNonblockingFd)`
+- `TEST(SocketUtilTest, SetNonBlockingMarksPlainSocketNonblocking)`
+- `TEST(SocketUtilTest, SocketOptionsCanBeEnabled)`
+- `TEST(SocketUtilTest, InvalidFdReturnsError)`
+- `TEST(SocketUtilTest, CloseFdInvalidatesDescriptorAndCanBeRepeated)`
+- `TEST(SocketUtilTest, GetSocketErrorReturnsCurrentSoError)`
+
+Next Step: `Step 9: define Epoller / Channel / EventLoop interface`.
 
 ## Persistent Requirements
 

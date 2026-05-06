@@ -384,3 +384,63 @@ init: create LiteIM project structure with googletest
 - 已更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Step 7 测试清单。
 - 本次按用户要求保留本地 `build/` 目录。
 - 提交完成：`feat(net): add buffer abstraction`。
+
+## 2026-05-06 Step 8 SocketUtil
+
+本次进入 `Step 8: implement SocketUtil`。
+
+开始状态：
+
+- 工作区干净。
+- 当前新路线中 Step 7 `Buffer` 已完成，下一步是 `SocketUtil`。
+- 旧记忆里曾出现过 Step 8 `EventLoop`，但那属于重启前路线；本次以 `/home/yolo/jianli/PROJECT_MEMORY.md` 和当前 `task_plan.md` 为准。
+
+概念进行中：
+
+- `SocketUtil` 只封装 Linux socket 常用系统调用。
+- 本 Step 不实现 `epoll`、`Channel`、`EventLoop`、`Acceptor`、`Session` 或 `TcpServer`。
+
+概念完成：
+
+- 明确 `SocketUtil` 是 Linux fd 工具层，不拥有连接生命周期。
+- `createNonBlockingSocket()` 负责创建 `AF_INET` / `SOCK_STREAM` / `SOCK_NONBLOCK` / `SOCK_CLOEXEC` socket。
+- `setNonBlocking()` 使用 `fcntl(F_GETFL)` + `fcntl(F_SETFL)` 补充设置非阻塞。
+- socket option 封装只设置常用选项，不在工具函数里绑定地址、监听端口或退出进程。
+- `closeFd()` 接收 fd 引用，关闭前保存当前 fd，然后把变量置为 `kInvalidFd`，避免同一变量重复关闭。
+
+代码完成：
+
+- 新增 `include/liteim/net/SocketUtil.hpp`。
+- 新增 `src/net/SocketUtil.cpp`。
+- 更新 `src/net/CMakeLists.txt`，把 `SocketUtil.cpp` 加入 `liteim_net`。
+- 新增 `createNonBlockingSocket()`、`setNonBlocking()`、`setReuseAddr()`、`setReusePort()`、`setTcpNoDelay()`、`setKeepAlive()`、`closeFd()` 和 `getSocketError()`。
+
+测试完成：
+
+- 新增 `tests/net/socket_util_test.cpp`。
+- 新增 `SocketUtilTest.CreateNonBlockingSocketReturnsNonblockingFd`。
+- 新增 `SocketUtilTest.SetNonBlockingMarksPlainSocketNonblocking`。
+- 新增 `SocketUtilTest.SocketOptionsCanBeEnabled`。
+- 新增 `SocketUtilTest.InvalidFdReturnsError`。
+- 新增 `SocketUtilTest.CloseFdInvalidatesDescriptorAndCanBeRepeated`。
+- 新增 `SocketUtilTest.GetSocketErrorReturnsCurrentSoError`。
+
+阶段验证结果：
+
+- `cmake -S . -B build`：通过。
+- `cmake --build build`：通过。
+- `./build/server/liteim_server`：通过，输出 `LiteIM server scaffold is running on 0.0.0.0:9000`。
+- `ctest --test-dir build --output-on-failure`：通过，73/73 tests passed。
+- `git diff --check`：通过。
+- `find . -path ./build -prune -o -path ./.git -prune -o -name .gitkeep -print`：无输出。
+- 旧路线路径检查：无 `server/net`、`server/protocol`、`SQLite`、`InMemory`、`step15_sqlite` 路径残留。
+
+文档完成：
+
+- 已更新 README、docs、findings、task_plan、progress 和 tutorials。
+- 已新增 `tutorials/step08_socket_util.md`。
+- 已更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Step 8 文件清单和测试清单。
+
+收尾完成：
+
+- 提交完成：`feat(net): add socket utility functions`。

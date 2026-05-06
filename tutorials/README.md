@@ -18,5 +18,6 @@ concept -> handwritten code -> tests -> commit
 | Step 5 | [`step05_tlv_codec.md`](step05_tlv_codec.md) | done |
 | Step 6 | [`step06_frame_decoder.md`](step06_frame_decoder.md) | done |
 | Step 7 | [`step07_buffer.md`](step07_buffer.md) | done |
+| Step 8 | [`step08_socket_util.md`](step08_socket_util.md) | done |
 
 旧 Step 1-15 教程已删除，后续会按新的高性能路线逐步重写。目录也会按 Step 的实际需求逐步创建。
