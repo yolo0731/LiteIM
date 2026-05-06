@@ -11,6 +11,8 @@ add_executable(liteim_tests
     net/epoller_test.cpp
     net/event_loop_header_test.cpp
     net/event_loop_test.cpp
+    net/acceptor_header_test.cpp
+    net/acceptor_test.cpp
     net/socket_util_test.cpp
     protocol/frame_decoder_test.cpp
     protocol/message_type_test.cpp

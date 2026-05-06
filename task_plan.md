@@ -93,6 +93,12 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 12 docs | done | Synced README, docs, findings, progress, tutorials, and PROJECT_MEMORY for EventLoop behavior. |
 | Step 12 verification | done | CMake configure/build, server smoke, CTest 92/92, diff check, `.gitkeep`, and stale-route path checks passed. |
 | Step 12 commit | done | Commit message: `feat(net): add event loop with eventfd task queue`. |
+| Step 13 concept | done | Step 13 implements the nonblocking listen socket and accept loop boundary. |
+| Step 13 tests | done | Added `Acceptor` interface and real localhost connection tests. |
+| Step 13 code | done | Implemented `Acceptor` with bind/listen, listen `Channel`, `accept4()` loop, callback, and close cleanup. |
+| Step 13 docs | done | Synced README, docs, findings, progress, tutorials, and PROJECT_MEMORY for Acceptor behavior. |
+| Step 13 verification | done | CMake configure/build, server smoke, CTest 97/97, diff check, `.gitkeep`, and stale-route path checks passed. |
+| Step 13 commit | done | Commit message: `feat(net): implement nonblocking acceptor`. |
 
 ## Current Decision
 
@@ -666,6 +672,55 @@ Expected new tests:
 - `TEST(EventLoopTest, QueueInLoopRunsMultipleTasksAfterWakeup)`
 
 Next Step: `Step 13: implement Acceptor`.
+
+## Step 13 Target
+
+Step 13 implements the nonblocking `Acceptor` listen socket and new-connection callback boundary:
+
+```text
+LiteIM/
+├── include/liteim/net/
+│   ├── Acceptor.hpp
+│   ├── Channel.hpp
+│   ├── Epoller.hpp
+│   └── EventLoop.hpp
+├── src/net/
+│   ├── Acceptor.cpp
+│   ├── Channel.cpp
+│   ├── EventLoop.cpp
+│   ├── Epoller.cpp
+│   ├── Buffer.cpp
+│   ├── SocketUtil.cpp
+│   └── CMakeLists.txt
+└── tests/net/
+    ├── acceptor_header_test.cpp
+    ├── acceptor_test.cpp
+    ├── event_loop_test.cpp
+    ├── channel_test.cpp
+    ├── epoller_test.cpp
+    └── socket_util_test.cpp
+```
+
+Step 13 intentionally implements only listen socket creation, socket options, bind/listen, listen fd registration in `EventLoop`, `accept4()` loop to `EAGAIN`, new-connection callback, and listen fd cleanup. It does not implement `Session`, `TcpServer`, `EventLoopThread`, `EventLoopThreadPool`, business thread pool, MySQL, or Redis.
+
+Step 13 verification:
+
+```bash
+cmake -S . -B build
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+```
+
+Expected new tests:
+
+- `TEST(ReactorInterfaceTest, AcceptorHeaderIsSelfContained)`
+- `TEST(AcceptorTest, ServerCanListenOnEphemeralPort)`
+- `TEST(AcceptorTest, ClientConnectionTriggersNewConnectionCallback)`
+- `TEST(AcceptorTest, MultiplePendingConnectionsAreAccepted)`
+- `TEST(AcceptorTest, ClosedListenSocketRejectsNewConnections)`
+
+Next Step: `Step 14: implement Session`.
 
 ## Persistent Requirements
 

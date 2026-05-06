@@ -438,6 +438,43 @@ Step 12 只实现 `EventLoop` 事件循环和 `eventfd` 任务投递。
 - `updateChannel()` 和 `removeChannel()` 继续要求在 loop 所属线程调用，用 `assertInLoopThread()` 保持 one-loop-per-thread 边界。
 - 本 Step 的 `eventfd` 是内部 wakeup fd，不代表客户端连接；后续 `Acceptor` / `Session` 才会把网络 fd 注册到 `EventLoop`。
 
+## Step 13 约束
+
+Step 13 只实现 `Acceptor` 非阻塞监听器。
+
+本 Step 允许新增：
+
+- `include/liteim/net/Acceptor.hpp`
+- `src/net/Acceptor.cpp`
+- `tests/net/acceptor_header_test.cpp`
+- `tests/net/acceptor_test.cpp`
+- `tutorials/step13_acceptor.md`
+
+本 Step 允许调整：
+
+- `src/net/CMakeLists.txt`
+- `tests/CMakeLists.txt`
+
+本 Step 不允许提前新增：
+
+- `Session`
+- `TcpServer`
+- `EventLoopThread`
+- `EventLoopThreadPool`
+- 业务线程池、MySQL、Redis
+
+## Step 13 设计结论
+
+- `Acceptor` 只负责 listen socket、bind/listen、accept 新连接和 callback 通知上层，不创建 `Session`，不解析协议，不做业务路由。
+- `Acceptor` 必须绑定一个有效 `EventLoop*`，构造、注册 listen channel 和关闭操作都应在所属 loop 线程执行。
+- listen socket 使用 `createNonBlockingSocket()` 创建，继承 `SOCK_NONBLOCK` 和 `SOCK_CLOEXEC`。
+- 构造时设置 `SO_REUSEADDR` / `SO_REUSEPORT`，然后执行 `bind()` 和 `listen(SOMAXCONN)`。
+- 端口传 0 时让系统分配临时端口，再通过 `getsockname()` 记录真实端口，便于测试和后续服务启动日志。
+- listen fd 可读时使用 `accept4(SOCK_NONBLOCK | SOCK_CLOEXEC)` 循环接收连接，直到 `EAGAIN` / `EWOULDBLOCK`。
+- `EINTR` 只表示系统调用被信号打断，应继续 accept，不当作 fatal error。
+- 新连接 fd 的所有权通过 `NewConnectionCallback` 交给上层；没有 callback 时立即关闭 accepted fd，避免 fd 泄漏。
+- `close()` 从 `EventLoop` 移除 listen channel 并关闭 listen fd；关闭后 `listenFd()` 返回 `kInvalidFd`，`listening()` 返回 false。
+
 ## PersonaAgent 最新路线结论
 
 - PersonaAgent 作为项目二独立推进，不嵌入 C++ LiteIM 服务端。

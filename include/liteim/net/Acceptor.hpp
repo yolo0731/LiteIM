@@ -1,0 +1,44 @@
+#pragma once
+
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <netinet/in.h>
+#include <string>
+
+#include "liteim/net/SocketUtil.hpp"
+
+namespace liteim {
+
+class Channel;
+class EventLoop;
+
+class Acceptor {
+public:
+    using NewConnectionCallback = std::function<void(int, const sockaddr_in&)>;
+
+    Acceptor(EventLoop* loop, const std::string& listen_ip, std::uint16_t port);
+    ~Acceptor();
+
+    Acceptor(const Acceptor&) = delete;
+    Acceptor& operator=(const Acceptor&) = delete;
+
+    void setNewConnectionCallback(NewConnectionCallback callback);
+
+    int listenFd() const noexcept;
+    std::uint16_t port() const noexcept;
+    bool listening() const noexcept;
+    void close() noexcept;
+
+private:
+    void handleRead();
+
+    EventLoop* loop_;
+    int listen_fd_{kInvalidFd};
+    std::unique_ptr<Channel> listen_channel_;
+    std::uint16_t port_{0};
+    bool listening_{false};
+    NewConnectionCallback new_connection_callback_;
+};
+
+}  // namespace liteim

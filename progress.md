@@ -690,3 +690,65 @@ TDD GREEN：
 收尾完成：
 
 - 提交完成：`feat(net): add event loop with eventfd task queue`。
+
+## 2026-05-07 Step 13 Acceptor
+
+本次进入 `Step 13: implement Acceptor`。
+
+开始状态：
+
+- 当前新路线中 Step 12 `EventLoop + eventfd` 已完成并提交。
+- 用户随后单独提交了 EventLoop 注释改动：`docs(net): add event loop explanatory comments`。
+- `session-catchup.py` 提示的未同步内容来自旧的纯概念问答，不对应当前 Step 13 代码改动。
+- 旧记忆里的 Step 13 可能和重启前路线不一致；本次以 `/home/yolo/jianli/PROJECT_MEMORY.md` 当前 Step 13 `Acceptor` 为准。
+
+概念完成：
+
+- `Acceptor` 是主 Reactor 上的监听器，只负责 listen socket 和新连接接收。
+- `Acceptor` 不创建 `Session`，不解析 Packet/TLV，不做登录、聊天、MySQL 或 Redis。
+- 构造时创建非阻塞 listen fd，设置 socket option，完成 `bind()` / `listen()`，并用 `Channel` 注册读事件到所属 `EventLoop`。
+- listen fd 可读时循环 `accept4()`，直到 `EAGAIN` / `EWOULDBLOCK`。
+- 新连接 fd 通过 callback 交给后续 `TcpServer`；如果没有 callback，立即关闭 accepted fd，避免泄漏。
+
+TDD RED：
+
+- 新增 `tests/net/acceptor_header_test.cpp`，要求 `liteim/net/Acceptor.hpp` 自包含，并声明 `NewConnectionCallback`、`listenFd()`、`port()`、`listening()` 和 `close()`。
+- 新增 `tests/net/acceptor_test.cpp`，使用真实 `127.0.0.1` socket 连接验证监听、callback、多个 pending connection 和 close 行为。
+- 更新 `tests/CMakeLists.txt` 注册 Acceptor 测试。
+- 运行 `cmake --build build`，预期失败于 `fatal error: liteim/net/Acceptor.hpp: No such file or directory`。
+
+代码完成：
+
+- 新增 `include/liteim/net/Acceptor.hpp`，声明 `Acceptor`、`NewConnectionCallback`、状态查询和关闭接口。
+- 新增 `src/net/Acceptor.cpp`，实现 `createNonBlockingSocket()`、`setReuseAddr()`、`setReusePort()`、`bind()`、`listen()`、listen channel 注册和 `accept4(SOCK_NONBLOCK | SOCK_CLOEXEC)` 循环。
+- 更新 `src/net/CMakeLists.txt`，把 `Acceptor.cpp` 加入 `liteim_net`。
+- `Acceptor::close()` 从所属 `EventLoop` 移除 listen channel，并关闭 listen fd。
+- `handleRead()` 不标记 `noexcept`，因为它会调用用户提供的 callback，异常不应在库边界被强制转成 `std::terminate()`。
+
+TDD GREEN：
+
+- `cmake --build build`：通过。
+- `ctest --test-dir build -R Acceptor --output-on-failure`：通过，5/5 tests passed。
+
+文档完成：
+
+- 新增 `tutorials/step13_acceptor.md`，说明 Acceptor、listen fd、`accept4()`、callback、close 边界和测试。
+- 更新 README，把当前状态切到 Step 13，并补充 Acceptor 文件、职责和 97 个测试总数。
+- 更新 `docs/architecture.md`，补充 `Acceptor` 在当前网络层中的职责边界。
+- 更新 `docs/project_layout.md`，补充 Step 13 新增头文件、源码、测试文件和教程。
+- 更新 `tutorials/README.md`，登记 Step 13 教程。
+- 更新 `findings.md`、`task_plan.md` 和 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Step 13 记录。
+
+阶段验证结果：
+
+- `cmake -S . -B build`：通过。
+- `cmake --build build`：通过。
+- `./build/server/liteim_server`：通过，输出 `LiteIM server scaffold is running on 0.0.0.0:9000`。
+- `ctest --test-dir build --output-on-failure`：通过，97/97 tests passed。
+- `git diff --check`：通过。
+- `find . -path ./build -prune -o -path ./.git -prune -o -name .gitkeep -print`：无输出。
+- 旧路线路径检查：无 `server/net`、`server/protocol`、`SQLite`、`InMemory`、`step15_sqlite` 路径残留。
+
+收尾完成：
+
+- 提交完成：`feat(net): implement nonblocking acceptor`。
