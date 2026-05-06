@@ -1,6 +1,6 @@
 # LiteIM Architecture
 
-本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 11，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil`、`Epoller` 系统调用封装和 `Channel` 事件分发。当前还没有 `EventLoop::loop()` 阻塞循环、`eventfd` 任务投递或 `Session` 实现。
+本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 12，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil`、`Epoller` 系统调用封装、`Channel` 事件分发和 `EventLoop` 事件循环 / `eventfd` 任务投递。当前还没有 `Acceptor`、`Session` 或 `TcpServer` 实现。
 
 ## Target Data Flow
 
@@ -130,7 +130,7 @@ liteim_protocol
 
 ## Current Network Layer
 
-当前 Step 11 已经实现 `Epoller` 系统调用层和 `Channel` 回调分发，但 `EventLoop` 阻塞循环和 `eventfd` 任务投递仍留给后续步骤：
+当前 Step 12 已经实现 `Epoller` 系统调用层、`Channel` 回调分发、`EventLoop` 阻塞循环和 `eventfd` 任务投递，但还没有 `Acceptor` / `Session` / `TcpServer`：
 
 ```text
 liteim_net
@@ -174,6 +174,8 @@ liteim_net
   -> EventLoop
        -> loop()
        -> quit()
+       -> runInLoop()
+       -> queueInLoop()
        -> updateChannel()
        -> removeChannel()
        -> isInLoopThread()
@@ -196,11 +198,15 @@ liteim_net
 - `Epoller` 是 epoll 系统调用封装边界，负责 `epoll_create1(EPOLL_CLOEXEC)`、`epoll_ctl(ADD/MOD/DEL)` 和 `epoll_wait()`。
 - `Epoller` 当前使用 LT 模式，不设置 `EPOLLET`。
 - `Epoller` 用 `fd -> Channel*` 映射判断 add/mod/del，并通过 `epoll_event.data.ptr` 在 `poll()` 返回时找回活跃 `Channel`。
-- `EventLoop` 当前只提供 `updateChannel()` / `removeChannel()` 到 `Epoller` 的桥接和线程归属检查；阻塞循环、任务队列和 `eventfd` 唤醒在 Step 12 实现。
+- `EventLoop` 是 Reactor 调度层，持有一个 `Epoller`，在 `loop()` 中等待活跃 `Channel` 并调用 `Channel::handleEvent()`。
+- `EventLoop` 内部使用 `eventfd` 作为 wakeup fd，并把它包装成内部 `Channel` 注册到 epoll。
+- `runInLoop()` 在所属线程直接执行任务，跨线程调用时转入 `queueInLoop()`。
+- `queueInLoop()` 用 mutex 保护 pending task 队列，并通过写 `eventfd` 唤醒阻塞中的 loop。
+- `updateChannel()` / `removeChannel()` 仍要求在 loop 所属线程调用，维持 one-loop-per-thread 边界。
 - 后续 `Session` 会持有输入 `Buffer` 和输出 `Buffer`，I/O 线程负责把 socket 字节读入输入缓冲区，再交给 `FrameDecoder`。
 - 输出缓冲区高水位回压会在后续慢客户端保护 Step 中实现；当前只提供可复用的缓冲区底座。
 - `retrieve()` 越界返回 `InvalidArgument`，避免网络异常输入触发进程级崩溃。
 
 ## Current Step
 
-Step 11 implements `Channel::handleEvent()` and automatic `Channel::update()` wiring in `liteim_net`. `EventLoop` event dispatch, `eventfd` wakeup, `Acceptor`, `Session`, `TcpServer`, and backpressure policy stay in later steps.
+Step 12 implements `EventLoop::loop()`, `runInLoop()`, `queueInLoop()`, and internal `eventfd` wakeup in `liteim_net`. `Acceptor`, `Session`, `TcpServer`, `EventLoopThreadPool`, and backpressure policy stay in later steps.

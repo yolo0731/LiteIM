@@ -402,6 +402,42 @@ Step 11 只实现 `Channel` 事件分发和关注事件更新链路。
 - `handleEvent()` 先把 `revents_` 和 callbacks 拷贝到局部变量，降低回调中关闭连接或修改状态导致的成员访问风险。
 - `EventLoop.cpp` 当前只实现构造 `Epoller`、`quit()`、`updateChannel()`、`removeChannel()`、`isInLoopThread()` 和 `assertInLoopThread()`；完整事件循环和 `eventfd` 任务队列留给 Step 12。
 
+## Step 12 约束
+
+Step 12 只实现 `EventLoop` 事件循环和 `eventfd` 任务投递。
+
+本 Step 允许调整：
+
+- `include/liteim/net/EventLoop.hpp`
+- `src/net/EventLoop.cpp`
+- `tests/net/event_loop_header_test.cpp`
+- `tests/CMakeLists.txt`
+
+本 Step 允许新增：
+
+- `tests/net/event_loop_test.cpp`
+- `tutorials/step12_event_loop.md`
+
+本 Step 不允许提前新增：
+
+- `Acceptor`
+- `Session`
+- `TcpServer`
+- `EventLoopThread`
+- `EventLoopThreadPool`
+- 业务线程池、MySQL、Redis
+
+## Step 12 设计结论
+
+- `EventLoop` 是 Reactor 调度层，持有 `Epoller`，在 `loop()` 中阻塞等待 fd 事件并调用活跃 `Channel::handleEvent()`。
+- `EventLoop` 构造时创建 `eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)`，并用内部 `Channel` 注册读事件，用于跨线程 wakeup。
+- `runInLoop()` 在调用线程就是 loop 所属线程时立即执行任务，否则转入 `queueInLoop()`。
+- `queueInLoop()` 使用 mutex 保护任务队列；跨线程调用或当前正在执行 pending tasks 时会写 eventfd 唤醒 loop。
+- `loop()` 每轮 poll 前后都执行 `doPendingTasks()`，避免 loop 启动前已有任务或事件回调后追加任务被长期滞留。
+- `quit()` 设置原子退出标志；跨线程调用时写 eventfd，唤醒阻塞在 `epoll_wait()` 的 loop。
+- `updateChannel()` 和 `removeChannel()` 继续要求在 loop 所属线程调用，用 `assertInLoopThread()` 保持 one-loop-per-thread 边界。
+- 本 Step 的 `eventfd` 是内部 wakeup fd，不代表客户端连接；后续 `Acceptor` / `Session` 才会把网络 fd 注册到 `EventLoop`。
+
 ## PersonaAgent 最新路线结论
 
 - PersonaAgent 作为项目二独立推进，不嵌入 C++ LiteIM 服务端。

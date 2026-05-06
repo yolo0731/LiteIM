@@ -22,5 +22,6 @@ concept -> handwritten code -> tests -> commit
 | Step 9 | [`step09_reactor_interfaces.md`](step09_reactor_interfaces.md) | done |
 | Step 10 | [`step10_epoller.md`](step10_epoller.md) | done |
 | Step 11 | [`step11_channel.md`](step11_channel.md) | done |
+| Step 12 | [`step12_event_loop.md`](step12_event_loop.md) | done |
 
 旧 Step 1-15 教程已删除，后续会按新的高性能路线逐步重写。目录也会按 Step 的实际需求逐步创建。

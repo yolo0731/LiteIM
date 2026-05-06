@@ -3,17 +3,113 @@
 #include "liteim/net/Channel.hpp"
 #include "liteim/net/Epoller.hpp"
 
+#include <cerrno>
+#include <cstdint>
 #include <stdexcept>
+#include <string>
+#include <sys/eventfd.h>
+#include <unistd.h>
+#include <utility>
 
 namespace liteim {
+namespace {
+
+int createEventFd() {
+    const int fd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+    if (fd < 0) {
+        throw std::runtime_error("eventfd failed with errno " + std::to_string(errno));
+    }
+
+    return fd;
+}
+
+}  // namespace
 
 EventLoop::EventLoop()
-    : thread_id_(std::this_thread::get_id()), epoller_(std::make_unique<Epoller>(this)) {}
+    : thread_id_(std::this_thread::get_id()),
+      epoller_(std::make_unique<Epoller>(this)),
+      wakeup_fd_(createEventFd()),
+      wakeup_channel_(std::make_unique<Channel>(this, wakeup_fd_)) {
+    wakeup_channel_->setReadCallback([this]() { handleWakeup(); });
+    wakeup_channel_->enableReading();
+}
 
-EventLoop::~EventLoop() = default;
+EventLoop::~EventLoop() {
+    if (wakeup_channel_ != nullptr) {
+        const auto status = epoller_->removeChannel(wakeup_channel_.get());
+        (void)status;
+    }
+    if (wakeup_fd_ >= 0) {
+        ::close(wakeup_fd_);
+        wakeup_fd_ = -1;
+    }
+}
+
+void EventLoop::loop() {
+    assertInLoopThread();
+    if (looping_) {
+        throw std::logic_error("EventLoop::loop is already running");
+    }
+
+    looping_ = true;
+    Epoller::ChannelList active_channels;
+
+    while (!quit_.load()) {
+        doPendingTasks();
+        if (quit_.load()) {
+            break;
+        }
+
+        const auto status = epoller_->poll(-1, active_channels);
+        if (!status.isOk()) {
+            throw std::runtime_error(status.message());
+        }
+
+        for (auto* channel : active_channels) {
+            if (channel != nullptr) {
+                channel->handleEvent();
+            }
+        }
+
+        doPendingTasks();
+    }
+
+    looping_ = false;
+}
 
 void EventLoop::quit() noexcept {
     quit_ = true;
+    if (!isInLoopThread()) {
+        wakeup();
+    }
+}
+
+void EventLoop::runInLoop(Functor task) {
+    if (!task) {
+        return;
+    }
+
+    if (isInLoopThread()) {
+        task();
+        return;
+    }
+
+    queueInLoop(std::move(task));
+}
+
+void EventLoop::queueInLoop(Functor task) {
+    if (!task) {
+        return;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        pending_tasks_.push_back(std::move(task));
+    }
+
+    if (!isInLoopThread() || calling_pending_tasks_.load()) {
+        wakeup();
+    }
 }
 
 void EventLoop::updateChannel(Channel* channel) {
@@ -40,6 +136,50 @@ void EventLoop::assertInLoopThread() const {
     if (!isInLoopThread()) {
         throw std::logic_error("EventLoop used from a different thread");
     }
+}
+
+void EventLoop::wakeup() noexcept {
+    if (wakeup_fd_ < 0) {
+        return;
+    }
+
+    eventfd_t value = 1;
+    while (::eventfd_write(wakeup_fd_, value) < 0) {
+        if (errno == EINTR) {
+            continue;
+        }
+        return;
+    }
+}
+
+void EventLoop::handleWakeup() noexcept {
+    if (wakeup_fd_ < 0) {
+        return;
+    }
+
+    eventfd_t value = 0;
+    while (::eventfd_read(wakeup_fd_, &value) < 0) {
+        if (errno == EINTR) {
+            continue;
+        }
+        return;
+    }
+}
+
+void EventLoop::doPendingTasks() {
+    std::vector<Functor> tasks;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        tasks.swap(pending_tasks_);
+    }
+
+    calling_pending_tasks_ = true;
+    for (auto& task : tasks) {
+        if (task) {
+            task();
+        }
+    }
+    calling_pending_tasks_ = false;
 }
 
 }  // namespace liteim

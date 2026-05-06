@@ -437,15 +437,7 @@ init: create LiteIM project structure with googletest
 
 收尾完成：
 
-- 提交完成：`1f9a365 feat(net): implement channel event dispatching`。
-
-收尾完成：
-
-- 提交完成：`feat(net): implement epoller wrapper`。
-
-收尾完成：
-
-- 提交完成：`feat(net): define reactor core interfaces`。
+- 提交完成：`feat(net): add socket utility functions`。
 
 ## 2026-05-06 Step 10 Epoller
 
@@ -504,15 +496,9 @@ TDD GREEN：
 - `find . -path ./build -prune -o -path ./.git -prune -o -name .gitkeep -print`：无输出。
 - 旧路线路径检查：无 `server/net`、`server/protocol`、`SQLite`、`InMemory`、`step15_sqlite` 路径残留。
 
-文档完成：
-
-- 已更新 README、docs、findings、task_plan、progress 和 tutorials。
-- 已新增 `tutorials/step08_socket_util.md`。
-- 已更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Step 8 文件清单和测试清单。
-
 收尾完成：
 
-- 提交完成：`feat(net): add socket utility functions`。
+- 提交完成：`feat(net): implement epoller wrapper`。
 
 ## 2026-05-06 Step 9 Reactor Interfaces
 
@@ -571,6 +557,10 @@ TDD GREEN：
 - `git diff --check`：通过。
 - `find . -path ./build -prune -o -path ./.git -prune -o -name .gitkeep -print`：无输出。
 - 旧路线路径检查：无 `server/net`、`server/protocol`、`SQLite`、`InMemory`、`step15_sqlite` 路径残留。
+
+收尾完成：
+
+- 提交完成：`feat(net): define reactor core interfaces`。
 
 ## 2026-05-06 Step 11 Channel
 
@@ -633,3 +623,70 @@ TDD GREEN：
 - `git diff --check`：通过。
 - `find . -path ./build -prune -o -path ./.git -prune -o -name .gitkeep -print`：无输出。
 - 旧路线路径检查：无 `server/net`、`server/protocol`、`SQLite`、`InMemory`、`step15_sqlite` 路径残留。
+
+收尾完成：
+
+- 提交完成：`feat(net): implement channel event dispatching`。
+
+## 2026-05-06 Step 12 EventLoop + eventfd
+
+本次进入 `Step 12: implement EventLoop + eventfd task dispatch`。
+
+开始状态：
+
+- 当前新路线中 Step 11 `Channel` 已完成并提交。
+- LiteIM 工作区干净。
+- `session-catchup.py` 提示的未同步内容来自旧的纯概念问答，不对应当前 Step 12 代码改动。
+- 旧记忆里的 Step 12 `TcpServer` 属于重启前路线；本次以 `/home/yolo/jianli/PROJECT_MEMORY.md` 当前 Step 12 `EventLoop + eventfd` 为准。
+
+概念完成：
+
+- `EventLoop` 是 Reactor 调度层，负责持有 `Epoller`、阻塞等待 fd 事件、遍历活跃 `Channel` 并调用 `handleEvent()`。
+- 每个 `EventLoop` 内置一个 `eventfd` wakeup channel，用于跨线程唤醒阻塞中的 `epoll_wait()`。
+- `runInLoop()` 在所属线程立即执行任务，跨线程调用时转入 `queueInLoop()`。
+- `queueInLoop()` 把任务放进 mutex 保护的队列，并在需要时写 eventfd 唤醒 loop。
+- 本 Step 不实现 `Acceptor`、`Session`、`TcpServer`、业务线程池、MySQL 或 Redis。
+
+TDD RED：
+
+- 更新 `tests/net/event_loop_header_test.cpp`，要求 `EventLoop::Functor`、`runInLoop()` 和 `queueInLoop()` 存在。
+- 新增 `tests/net/event_loop_test.cpp`，使用真实线程、真实 pipe fd 和真实 eventfd wakeup 路径验证事件循环。
+- 更新 `tests/CMakeLists.txt` 注册 `event_loop_test.cpp`。
+- 运行 `cmake --build build`，预期失败于 `EventLoop::Functor does not name a type`、`runInLoop is not a member of EventLoop` 和 `queueInLoop is not a member of EventLoop`。
+
+代码完成：
+
+- 更新 `include/liteim/net/EventLoop.hpp`，新增 `Functor`、`runInLoop()`、`queueInLoop()`、wakeup fd、wakeup channel、pending task 队列、mutex 和 pending-task 执行标记。
+- 更新 `src/net/EventLoop.cpp`，实现 `eventfd` 创建、wakeup channel 注册、`loop()`、`quit()`、`runInLoop()`、`queueInLoop()`、`wakeup()`、`handleWakeup()` 和 `doPendingTasks()`。
+- `loop()` 先执行 pending tasks，再阻塞 `Epoller::poll(-1)`，返回后遍历活跃 `Channel` 并调用 `handleEvent()`，随后再次执行 pending tasks。
+- `quit()` 跨线程调用时写 eventfd，保证阻塞中的 loop 能醒来退出。
+- `EventLoop` 析构时从 `Epoller` 移除内部 wakeup channel，并关闭 wakeup fd。
+
+TDD GREEN：
+
+- `cmake --build build`：通过。
+- `ctest --test-dir build -R EventLoop --output-on-failure`：通过，5/5 tests passed。
+
+文档完成：
+
+- 新增 `tutorials/step12_event_loop.md`，说明 EventLoop、eventfd、任务队列、线程边界、测试和面试问答。
+- 更新 `findings.md` 记录 Step 12 约束和设计结论。
+- 更新 README，把当前状态切到 Step 12，并补充 `EventLoop::loop()`、`runInLoop()`、`queueInLoop()`、eventfd wakeup 和 92 个测试总数。
+- 更新 `docs/architecture.md`，补充当前网络层中的 `EventLoop` 职责、eventfd wakeup 和线程边界。
+- 更新 `docs/project_layout.md`，补充 Step 12 新增测试文件和教程。
+- 更新 `tutorials/README.md`，登记 Step 12 教程。
+- 更新 `task_plan.md` 和 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Step 12 记录。
+
+阶段验证结果：
+
+- `cmake -S . -B build`：通过。
+- `cmake --build build`：通过。
+- `./build/server/liteim_server`：通过，输出 `LiteIM server scaffold is running on 0.0.0.0:9000`。
+- `ctest --test-dir build --output-on-failure`：通过，92/92 tests passed。
+- `git diff --check`：通过。
+- `find . -path ./build -prune -o -path ./.git -prune -o -name .gitkeep -print`：无输出。
+- 旧路线路径检查：无 `server/net`、`server/protocol`、`SQLite`、`InMemory`、`step15_sqlite` 路径残留。
+
+收尾完成：
+
+- 提交完成：`feat(net): add event loop with eventfd task queue`。

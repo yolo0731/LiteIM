@@ -87,6 +87,12 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 11 docs | done | Synced README, docs, findings, progress, tutorials, and PROJECT_MEMORY for Channel behavior. |
 | Step 11 verification | done | CMake configure/build, server smoke, CTest 88/88, diff check, `.gitkeep`, and stale-route path checks passed. |
 | Step 11 commit | done | Commit message: `feat(net): implement channel event dispatching`. |
+| Step 12 concept | done | Step 12 implements the real `EventLoop` dispatcher and eventfd wakeup path. |
+| Step 12 tests | done | Added `EventLoopTest` coverage for run/queue task execution, fd event dispatch, and multiple queued tasks. |
+| Step 12 code | done | Implemented `EventLoop::loop()`, `runInLoop()`, `queueInLoop()`, eventfd wakeup, and pending task execution. |
+| Step 12 docs | done | Synced README, docs, findings, progress, tutorials, and PROJECT_MEMORY for EventLoop behavior. |
+| Step 12 verification | done | CMake configure/build, server smoke, CTest 92/92, diff check, `.gitkeep`, and stale-route path checks passed. |
+| Step 12 commit | done | Commit message: `feat(net): add event loop with eventfd task queue`. |
 
 ## Current Decision
 
@@ -615,6 +621,51 @@ Expected new tests:
 - `TEST(ChannelTest, HandleEventToleratesMissingCallbacks)`
 
 Next Step: `Step 12: implement EventLoop + eventfd task dispatch`.
+
+## Step 12 Target
+
+Step 12 implements the real `EventLoop` event dispatch loop and `eventfd` task wakeup path:
+
+```text
+LiteIM/
+├── include/liteim/net/
+│   ├── Channel.hpp
+│   ├── Epoller.hpp
+│   └── EventLoop.hpp
+├── src/net/
+│   ├── Channel.cpp
+│   ├── EventLoop.cpp
+│   ├── Epoller.cpp
+│   ├── Buffer.cpp
+│   ├── SocketUtil.cpp
+│   └── CMakeLists.txt
+└── tests/net/
+    ├── event_loop_test.cpp
+    ├── event_loop_header_test.cpp
+    ├── channel_test.cpp
+    ├── epoller_test.cpp
+    └── socket_util_test.cpp
+```
+
+Step 12 intentionally implements only `EventLoop::loop()`, `runInLoop()`, `queueInLoop()`, internal `eventfd` wakeup, pending task execution, and active `Channel` dispatch. It does not implement `Acceptor`, `Session`, `TcpServer`, `EventLoopThread`, `EventLoopThreadPool`, business thread pool, MySQL, or Redis.
+
+Step 12 verification:
+
+```bash
+cmake -S . -B build
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+```
+
+Expected new tests:
+
+- `TEST(EventLoopTest, RunInLoopExecutesImmediatelyOnOwnerThread)`
+- `TEST(EventLoopTest, QueueInLoopFromOtherThreadWakesAndExecutesTask)`
+- `TEST(EventLoopTest, LoopHandlesRegisteredFdEvent)`
+- `TEST(EventLoopTest, QueueInLoopRunsMultipleTasksAfterWakeup)`
+
+Next Step: `Step 13: implement Acceptor`.
 
 ## Persistent Requirements
 
