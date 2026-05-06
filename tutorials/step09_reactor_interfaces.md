@@ -130,16 +130,16 @@ Channel represents fd, but does not own fd.
 ```cpp
 using ChannelList = std::vector<Channel*>;
 
-ChannelList poll(int timeout_ms);
-void updateChannel(Channel* channel);
-void removeChannel(Channel* channel);
+Status poll(int timeout_ms, ChannelList& active_channels);
+Status updateChannel(Channel* channel);
+Status removeChannel(Channel* channel);
 ```
 
 含义：
 
-- `poll()`：后续会调用 `epoll_wait()`，返回本轮活跃的 `Channel*` 列表。
-- `updateChannel()`：后续会根据 `Channel::events()` 做 `EPOLL_CTL_ADD` 或 `EPOLL_CTL_MOD`。
-- `removeChannel()`：后续会把 fd 从 epoll 中删除。
+- `poll()`：后续会调用 `epoll_wait()`，通过输出参数返回本轮活跃的 `Channel*` 列表，并用 `Status` 表达系统调用结果。
+- `updateChannel()`：后续会根据 `Channel::events()` 做 `EPOLL_CTL_ADD` 或 `EPOLL_CTL_MOD`，并用 `Status` 返回无效参数或系统调用错误。
+- `removeChannel()`：后续会把 fd 从 epoll 中删除，并用 `Status` 返回结果。
 
 本 Step 的 `Epoller.hpp` 预留了私有状态：
 

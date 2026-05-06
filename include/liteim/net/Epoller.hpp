@@ -5,6 +5,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "liteim/base/Status.hpp"
+
 namespace liteim {
 
 class Channel;
@@ -20,9 +22,9 @@ public:
     Epoller(const Epoller&) = delete;
     Epoller& operator=(const Epoller&) = delete;
 
-    ChannelList poll(int timeout_ms);
-    void updateChannel(Channel* channel);
-    void removeChannel(Channel* channel);
+    Status poll(int timeout_ms, ChannelList& active_channels);
+    Status updateChannel(Channel* channel);
+    Status removeChannel(Channel* channel);
 
 private:
     EventLoop* owner_loop_;

@@ -437,7 +437,68 @@ init: create LiteIM project structure with googletest
 
 收尾完成：
 
+- 提交完成：`feat(net): implement epoller wrapper`。
+
+收尾完成：
+
 - 提交完成：`feat(net): define reactor core interfaces`。
+
+## 2026-05-06 Step 10 Epoller
+
+本次进入 `Step 10: implement Epoller`。
+
+开始状态：
+
+- LiteIM 仓库当前 HEAD 是 `cdfaa14 feat(net): define reactor core interfaces`。
+- 工作区干净。
+- `session-catchup.py` 提示的未同步内容仍来自旧的纯概念问答，不对应当前 Step 10 代码改动。
+
+概念进行中：
+
+- `Epoller` 是 Reactor 的系统调用层，只封装 `epoll_create1()`、`epoll_ctl()` 和 `epoll_wait()`。
+- `Channel` 仍是 fd/event 状态对象，不拥有 fd。
+- 本 Step 会补最小 `Channel.cpp` 状态函数以支撑 `Epoller` 测试，但不实现 `Channel::handleEvent()` 回调分发或自动 `EventLoop` 更新。
+- 为满足“无效操作返回错误”，`Epoller` 接口会改为返回 `Status`，并通过输出参数返回 active channel list。
+
+TDD RED：
+
+- 更新 `tests/net/epoller_header_test.cpp`，要求 `Epoller::poll()`、`updateChannel()`、`removeChannel()` 返回 `Status`。
+- 新增 `tests/net/epoller_test.cpp`，使用真实 `pipe()` fd 覆盖 add、mod、del、timeout 和无效操作。
+- 更新 `tests/CMakeLists.txt` 注册 `epoller_test.cpp`。
+- 运行 `cmake --build build`，预期失败于 `EpollerHeaderIsSelfContained` 的 `static_assert`，证明当前接口还不满足 Step 10 错误返回要求。
+
+代码完成：
+
+- 更新 `include/liteim/net/Epoller.hpp`，让 `poll()`、`updateChannel()`、`removeChannel()` 返回 `Status`。
+- 新增 `src/net/Epoller.cpp`，实现 `epoll_create1(EPOLL_CLOEXEC)`、`EPOLL_CTL_ADD`、`EPOLL_CTL_MOD`、`EPOLL_CTL_DEL` 和 `epoll_wait()`。
+- 新增 `src/net/Channel.cpp`，只实现构造、fd/event/revent 访问、读写事件 mask 修改和回调 setter。
+- 更新 `src/net/CMakeLists.txt`，把 `Channel.cpp` 和 `Epoller.cpp` 加入 `liteim_net`。
+- 本 Step 仍未实现 `Channel::handleEvent()`、`Channel::update()`、`EventLoop::loop()` 或 `eventfd`。
+
+TDD GREEN：
+
+- 运行 `cmake --build build`：通过。
+- 运行 `ctest --test-dir build --output-on-failure -R Epoller`：通过，6/6 tests passed。
+
+文档完成：
+
+- 更新 README，把当前状态切到 Step 10，并补充 `Epoller.cpp`、`Channel.cpp`、LT 模式、`Status` 返回和 81 个测试总数。
+- 更新 `docs/architecture.md`，补充 `Epoller` 系统调用层行为和当前边界。
+- 更新 `docs/project_layout.md`，补充 Step 10 新增源码、测试文件和教程。
+- 更新 `tutorials/README.md`，登记 Step 10 教程。
+- 更新 `tutorials/step09_reactor_interfaces.md` 中 `Epoller` 的当前 `Status` 接口签名，避免教程和代码漂移。
+- 新增 `tutorials/step10_epoller.md`，按概念、接口、实现规则、测试和面试问答展开说明。
+- 更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Step 10 测试清单。
+
+阶段验证结果：
+
+- `cmake -S . -B build`：通过。
+- `cmake --build build`：通过。
+- `./build/server/liteim_server`：通过，输出 `LiteIM server scaffold is running on 0.0.0.0:9000`。
+- `ctest --test-dir build --output-on-failure`：通过，81/81 tests passed。
+- `git diff --check`：通过。
+- `find . -path ./build -prune -o -path ./.git -prune -o -name .gitkeep -print`：无输出。
+- 旧路线路径检查：无 `server/net`、`server/protocol`、`SQLite`、`InMemory`、`step15_sqlite` 路径残留。
 
 文档完成：
 

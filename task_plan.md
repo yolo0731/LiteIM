@@ -75,6 +75,12 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 9 docs | done | Synced README, docs, findings, progress, tutorials, and PROJECT_MEMORY for the interface-only boundary. |
 | Step 9 verification | done | CMake configure/build, server smoke, CTest 76/76, diff check, `.gitkeep`, and stale-route path checks passed. |
 | Step 9 commit | done | Commit message: `feat(net): define reactor core interfaces`. |
+| Step 10 concept | done | Step 10 implements the real `Epoller` wrapper over Linux epoll in LT mode. |
+| Step 10 tests | done | Added real `pipe()` fd tests for add/mod/del, timeout, and invalid operations. |
+| Step 10 code | done | Added `src/net/Epoller.cpp` plus minimal `Channel.cpp` state helpers required by Epoller tests. |
+| Step 10 docs | done | Synced README, docs, findings, progress, tutorials, and PROJECT_MEMORY for Epoller behavior. |
+| Step 10 verification | done | CMake configure/build, server smoke, CTest 81/81, diff check, `.gitkeep`, and stale-route path checks passed. |
+| Step 10 commit | done | Commit message: `feat(net): implement epoller wrapper`. |
 
 ## Current Decision
 
@@ -511,6 +517,50 @@ Expected new tests:
 - `TEST(ReactorInterfaceTest, EventLoopHeaderIsSelfContained)`
 
 Next Step: `Step 10: implement Epoller`.
+
+## Step 10 Target
+
+Step 10 implements the real Linux epoll wrapper behind the Step 9 interface:
+
+```text
+LiteIM/
+├── include/liteim/net/
+│   ├── Channel.hpp
+│   ├── Epoller.hpp
+│   └── EventLoop.hpp
+├── src/net/
+│   ├── Channel.cpp
+│   ├── Epoller.cpp
+│   ├── Buffer.cpp
+│   ├── SocketUtil.cpp
+│   └── CMakeLists.txt
+└── tests/net/
+    ├── epoller_test.cpp
+    ├── channel_header_test.cpp
+    ├── epoller_header_test.cpp
+    └── event_loop_header_test.cpp
+```
+
+Step 10 intentionally implements only `Epoller` plus minimal `Channel` state helpers needed to test epoll registration. It does not implement `Channel::handleEvent()` callback dispatch, automatic `Channel::update()` wiring, `EventLoop::loop()`, `eventfd`, `Acceptor`, `Session`, or `TcpServer`.
+
+Step 10 verification:
+
+```bash
+cmake -S . -B build
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+```
+
+Expected new tests:
+
+- `TEST(EpollerTest, AddChannelReceivesReadableEvent)`
+- `TEST(EpollerTest, ModifyChannelToWriteInterestTakesEffect)`
+- `TEST(EpollerTest, RemoveChannelStopsEvents)`
+- `TEST(EpollerTest, PollTimeoutReturnsEmptyActiveList)`
+- `TEST(EpollerTest, InvalidChannelOperationsReturnError)`
+
+Next Step: `Step 11: implement Channel`.
 
 ## Persistent Requirements
 

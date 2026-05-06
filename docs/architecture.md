@@ -130,7 +130,7 @@ liteim_protocol
 
 ## Current Network Layer
 
-当前 Step 9 已经进入 Reactor 接口层，但仍然只实现头文件接口和底层工具：
+当前 Step 10 已经实现 `Epoller` 系统调用层，但 `Channel` 回调分发和 `EventLoop` 阻塞循环仍留给后续步骤：
 
 ```text
 liteim_net
@@ -186,12 +186,14 @@ liteim_net
 - `getSocketError()` 读取 `SO_ERROR`，后续非阻塞连接、写事件和连接异常处理会复用。
 - `Channel` 只代表一个 fd 的事件代理，不拥有 fd，不关闭 fd。
 - `Channel::events()` 表示想监听的事件，`Channel::revents()` 表示本轮 epoll 实际返回的事件。
-- `Epoller` 是 epoll 系统调用封装边界，本 Step 只声明接口，真实 `epoll_create1()`、`epoll_ctl()` 和 `epoll_wait()` 留给 Step 10。
-- `EventLoop` 是 Reactor 调度层接口，本 Step 只表达“一个 loop 拥有一个 epoller 并管理 channel”，不实现阻塞循环、任务队列或 `eventfd` 唤醒。
+- `Epoller` 是 epoll 系统调用封装边界，负责 `epoll_create1(EPOLL_CLOEXEC)`、`epoll_ctl(ADD/MOD/DEL)` 和 `epoll_wait()`。
+- `Epoller` 当前使用 LT 模式，不设置 `EPOLLET`。
+- `Epoller` 用 `fd -> Channel*` 映射判断 add/mod/del，并通过 `epoll_event.data.ptr` 在 `poll()` 返回时找回活跃 `Channel`。
+- `EventLoop` 是 Reactor 调度层接口，本阶段只表达“一个 loop 拥有一个 epoller 并管理 channel”，不实现阻塞循环、任务队列或 `eventfd` 唤醒。
 - 后续 `Session` 会持有输入 `Buffer` 和输出 `Buffer`，I/O 线程负责把 socket 字节读入输入缓冲区，再交给 `FrameDecoder`。
 - 输出缓冲区高水位回压会在后续慢客户端保护 Step 中实现；当前只提供可复用的缓冲区底座。
 - `retrieve()` 越界返回 `InvalidArgument`，避免网络异常输入触发进程级崩溃。
 
 ## Current Step
 
-Step 9 adds Reactor core interfaces to `liteim_net`. The real `Epoller` implementation starts in Step 10; `Channel` behavior, `EventLoop` event dispatch, `eventfd` wakeup, `Acceptor`, `Session`, `TcpServer`, and backpressure policy stay in later steps.
+Step 10 implements the real `Epoller` wrapper in `liteim_net`. `Channel::handleEvent()`, automatic `Channel::update()` wiring, `EventLoop` event dispatch, `eventfd` wakeup, `Acceptor`, `Session`, `TcpServer`, and backpressure policy stay in later steps.
