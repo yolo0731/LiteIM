@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <sys/epoll.h>
 
 namespace liteim {
@@ -43,15 +44,19 @@ public:
     void setCloseCallback(EventCallback callback);
     void setErrorCallback(EventCallback callback);
 
+    void tie(const std::shared_ptr<void>& owner);
     void handleEvent();
 
 private:
+    void handleEventWithGuard();
     void update();
 
     EventLoop* owner_loop_;
     const int fd_;
     std::uint32_t events_{kNoneEvent};
     std::uint32_t revents_{kNoneEvent};
+    bool tied_{false};
+    std::weak_ptr<void> tie_;
     EventCallback read_callback_;
     EventCallback write_callback_;
     EventCallback close_callback_;

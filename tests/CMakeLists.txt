@@ -5,6 +5,7 @@ add_executable(liteim_tests
     base/logger_test.cpp
     base/timestamp_test.cpp
     net/buffer_test.cpp
+    net/unique_fd_test.cpp
     net/channel_header_test.cpp
     net/channel_test.cpp
     net/epoller_header_test.cpp

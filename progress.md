@@ -1,5 +1,36 @@
 # LiteIM Progress
 
+## 2026-05-07 Step 13 Review Hardening
+
+本次任务来自外部代码评价核对，目标是在不启动 Step 14 `Session` 的前提下，修复 Step 13 网络层中已经确认的局部风险。
+
+确认结论：
+
+- `Acceptor::close()` 非 loop 线程调用时没有从 `Epoller` 删除 `listen_channel_`，存在 stale `Channel*` 风险，需要回到 loop 线程执行关闭清理。
+- `Acceptor::handleRead()` 中 accepted fd 缺少 RAII 所有权保护，callback 抛异常时可能泄漏 fd。
+- `Channel` 需要补 `tie(std::shared_ptr<void>)` / `weak_ptr` 机制，为后续 `Session` 生命周期管理打基础。
+- `EventLoop` 异常策略和 `FrameDecoder` 高吞吐输入消费方式留到后续 `Session` / `TcpServer` 设计中处理。
+
+实施计划：
+
+1. 先补 Acceptor / Channel 回归测试，并确认新测试在当前实现下失败。
+2. 实现轻量 `UniqueFd`、Acceptor loop 内关闭、Channel tie。
+3. 同步 README、docs、tutorials、task_plan、findings、progress。
+4. 运行 CMake build、server smoke、CTest、旧路线残留检查，并 review diff。
+
+当前完成：
+
+- 已新增 `include/liteim/net/UniqueFd.hpp` 和 `src/net/UniqueFd.cpp`。
+- 已让 `Acceptor` 使用 `UniqueFd` 管理 listen fd 和 accepted fd。
+- 已把 `Acceptor::close()` 的实际清理移动到 `closeInLoop()`，非 loop 线程调用时通过 `queueInLoop()` 投递并等待完成。
+- 已新增 `Channel::tie()`，用 `weak_ptr` 保护 owner 生命周期。
+- 已新增 `UniqueFdTest`、Acceptor hardening 回归测试和 Channel tie 回归测试。
+- 定向验证已通过：`cmake --build build && ctest --test-dir build --output-on-failure -R "UniqueFdTest|ChannelTest|AcceptorTest|ReactorInterfaceTest.Channel"`，20/20 passed。
+- 全量验证已通过：`cmake -S . -B build && cmake --build build && ./build/server/liteim_server && ctest --test-dir build --output-on-failure`，105/105 passed。
+- 路径级旧路线残留检查无输出：没有 `server/net`、`server/protocol`、SQLite、InMemoryStorage 或 `step15_sqlite` 文件路径。
+- README/docs/tutorials 仓库外 `PROJECT_MEMORY` 链接检查无输出；公开入口已改为 `docs/roadmap.md`。
+- 最终 diff review 未发现需要继续修改的代码逻辑；`EventLoop` 异常策略和 `FrameDecoder` 输入 Buffer 化仍记录为后续 `Session` / `TcpServer` 设计事项。
+
 ## 2026-05-05 Step 0 Reset
 
 本次进度是 `Step 0: reset workspace`，目标是把 LiteIM 文件夹清理成可以从零教学推进的最小起点。

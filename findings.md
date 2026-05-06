@@ -7,6 +7,22 @@
 - 当前路线是 `LiteIM High Performance + Qt Client + PersonaAgent Authorized Style RAG Edition`。
 - 如果 `README.md`、`task_plan.md`、`progress.md`、教程或源码与 `PROJECT_MEMORY.md` 冲突，统一改回 `PROJECT_MEMORY.md` 的路线。
 
+## 2026-05-07 Step 13 Review Hardening Findings
+
+本次处理的是 Step 13 完成后的外部评审反馈核对，不启动 Step 14 `Session`。
+
+已经确认需要立即修复的点：
+
+- `Acceptor::close()` 的非 loop 线程调用边界有真实风险：当前实现会在非 loop 线程 reset `listen_channel_` 并关闭 listen fd，但不会调用 `EventLoop::removeChannel()`，`Epoller` 的 `fd -> Channel*` 映射可能保留悬空指针。
+- `Acceptor::handleRead()` 把 accepted fd 以裸 `int` 交给 callback；如果 callback 在接管所有权前抛异常，accepted fd 可能泄漏。需要引入轻量 RAII fd 包装或等价的局部保护。
+- `Channel` 目前没有 `tie()` 机制。虽然当前 Step 13 还没有 `Session`，但后续 `Session` / `TcpConnection` 必须能用 `weak_ptr` 防止事件回调期间 owner 已销毁或在回调中被销毁。
+
+已经确认暂不直接改的点：
+
+- `EventLoop` 的异常策略需要和后续 `Session`、`TcpServer`、日志和优雅退出一起设计；本次不在 Step 13 hardening 中改变主循环错误语义。
+- `FrameDecoder` 目前内部 `vector::erase()` 功能正确；Step 14 的 `Session` 应优先基于 `Buffer::peek()` / `retrieve()` 组织输入字节，避免长期在高吞吐路径依赖反复搬移。
+- 公开 README 不应链接仓库外的 `../PROJECT_MEMORY.md`；应改为仓库内 `docs/roadmap.md`，但本地规划文件仍保留对权威总方案的说明，供开发流程使用。
+
 ## Step 0 清理结论
 
 本次 Step 0 的目的不是实现功能，而是清掉旧路线，留下最小起点。
@@ -467,12 +483,15 @@ Step 13 只实现 `Acceptor` 非阻塞监听器。
 
 - `Acceptor` 只负责 listen socket、bind/listen、accept 新连接和 callback 通知上层，不创建 `Session`，不解析协议，不做业务路由。
 - `Acceptor` 必须绑定一个有效 `EventLoop*`，构造、注册 listen channel 和关闭操作都应在所属 loop 线程执行。
+- review hardening 后，`Acceptor::close()` 可以从非 loop 线程发起，但 `removeChannel()` 和 listen fd 关闭会通过 `queueInLoop()` 回到所属 loop 线程执行，避免 `Epoller` 保留 stale `Channel*`。
+- 新增 `UniqueFd` 表达 fd 独占所有权；`Acceptor` 用它保护 listen fd 和 accepted fd，callback 抛异常时 accepted fd 会自动关闭。
+- `Channel::tie()` 使用 `weak_ptr` 锁定 owner；owner 已释放时跳过事件回调，owner 存在时用局部 `shared_ptr` 保证回调期间生命周期稳定。
 - listen socket 使用 `createNonBlockingSocket()` 创建，继承 `SOCK_NONBLOCK` 和 `SOCK_CLOEXEC`。
 - 构造时设置 `SO_REUSEADDR` / `SO_REUSEPORT`，然后执行 `bind()` 和 `listen(SOMAXCONN)`。
 - 端口传 0 时让系统分配临时端口，再通过 `getsockname()` 记录真实端口，便于测试和后续服务启动日志。
 - listen fd 可读时使用 `accept4(SOCK_NONBLOCK | SOCK_CLOEXEC)` 循环接收连接，直到 `EAGAIN` / `EWOULDBLOCK`。
 - `EINTR` 只表示系统调用被信号打断，应继续 accept，不当作 fatal error。
-- 新连接 fd 的所有权通过 `NewConnectionCallback` 交给上层；没有 callback 时立即关闭 accepted fd，避免 fd 泄漏。
+- 新连接 fd 的所有权通过 `NewConnectionCallback` 交给上层；没有 callback 时立即关闭 accepted fd，callback 抛异常时由局部 `UniqueFd` 自动关闭，避免 fd 泄漏。
 - `close()` 从 `EventLoop` 移除 listen channel 并关闭 listen fd；关闭后 `listenFd()` 返回 `kInvalidFd`，`listening()` 返回 false。
 
 ## PersonaAgent 最新路线结论

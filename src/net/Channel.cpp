@@ -83,7 +83,25 @@ void Channel::setErrorCallback(EventCallback callback) {
     error_callback_ = std::move(callback);
 }
 
+void Channel::tie(const std::shared_ptr<void>& owner) {
+    tie_ = owner;
+    tied_ = true;
+}
+
 void Channel::handleEvent() {
+    if (tied_) {
+        auto guard = tie_.lock();
+        if (guard == nullptr) {
+            return;
+        }
+        handleEventWithGuard();
+        return;
+    }
+
+    handleEventWithGuard();
+}
+
+void Channel::handleEventWithGuard() {
     const auto active_events = revents_;
     auto read_callback = read_callback_;
     auto write_callback = write_callback_;

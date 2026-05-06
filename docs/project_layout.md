@@ -30,7 +30,8 @@ LiteIM/
 │       │   ├── Channel.hpp
 │       │   ├── Epoller.hpp
 │       │   ├── EventLoop.hpp
-│       │   └── SocketUtil.hpp
+│       │   ├── SocketUtil.hpp
+│       │   └── UniqueFd.hpp
 │       └── protocol/
 │           ├── FrameDecoder.hpp
 │           ├── MessageType.hpp
@@ -56,6 +57,7 @@ LiteIM/
 │   │   ├── EventLoop.cpp
 │   │   ├── Epoller.cpp
 │   │   ├── SocketUtil.cpp
+│   │   ├── UniqueFd.cpp
 │   │   └── CMakeLists.txt
 │   └── protocol/
 │       ├── CMakeLists.txt
@@ -80,7 +82,8 @@ LiteIM/
 │   │   ├── epoller_test.cpp
 │   │   ├── event_loop_header_test.cpp
 │   │   ├── event_loop_test.cpp
-│   │   └── socket_util_test.cpp
+│   │   ├── socket_util_test.cpp
+│   │   └── unique_fd_test.cpp
 │   ├── protocol/
 │   │   ├── frame_decoder_test.cpp
 │   │   ├── message_type_test.cpp
@@ -115,11 +118,11 @@ LiteIM/
 - 库实现放在 `src/<module>/`。
 - 基础公共模块从 Step 2 开始放在 `include/liteim/base/` 和 `src/base/`。
 - 协议模块从 Step 3 开始放在 `include/liteim/protocol/` 和 `src/protocol/`，Step 4 在同一模块内加入 `Packet` 编解码，Step 5 加入 `TlvCodec`，Step 6 加入 `FrameDecoder`。
-- 网络模块从 Step 7 开始放在 `include/liteim/net/` 和 `src/net/`，Step 7 加入 socket-agnostic `Buffer`，Step 8 加入 Linux socket 工具函数 `SocketUtil`，Step 9 加入 Reactor 核心接口 `Channel` / `Epoller` / `EventLoop`，Step 10 实现 `Epoller` 和最小 `Channel` 状态函数，Step 11 实现 `Channel` 回调分发和 `EventLoop` 更新桥接，Step 12 实现 `EventLoop` 阻塞循环和 `eventfd` 任务投递，Step 13 实现非阻塞监听器 `Acceptor`。
+- 网络模块从 Step 7 开始放在 `include/liteim/net/` 和 `src/net/`，Step 7 加入 socket-agnostic `Buffer`，Step 8 加入 Linux socket 工具函数 `SocketUtil`，Step 9 加入 Reactor 核心接口 `Channel` / `Epoller` / `EventLoop`，Step 10 实现 `Epoller` 和最小 `Channel` 状态函数，Step 11 实现 `Channel` 回调分发和 `EventLoop` 更新桥接，Step 12 实现 `EventLoop` 阻塞循环和 `eventfd` 任务投递，Step 13 实现非阻塞监听器 `Acceptor`，Step 13 review hardening 补充 `UniqueFd`、`Channel::tie()` 和 Acceptor loop-thread close 清理。
 - 服务端入口放在 `server/`。
 - CLI 客户端放在 `client_cli/`。
 - Qt 客户端放在 `client_qt/`。
 - 压测工具放在 `bench/`。
 - 不向 `server/net` 或 `server/protocol` 增加头文件。
 
-这些目录将在真正需要它们的 Step 中创建。当前 Step 13 只在 `net` 模块中补充 `Acceptor.hpp`、`Acceptor.cpp`、`acceptor_header_test.cpp`、`acceptor_test.cpp` 和 `step13_acceptor.md`，因为它只需要验证 listen socket、bind/listen、listen fd 事件注册、`accept4()` 循环和 new-connection callback，不实现 `Session` 或 `TcpServer`。
+这些目录将在真正需要它们的 Step 中创建。当前 Step 13 只在 `net` 模块中补充 `Acceptor.hpp`、`Acceptor.cpp`、`acceptor_header_test.cpp`、`acceptor_test.cpp` 和 `step13_acceptor.md`；review hardening 只额外补充 `UniqueFd` 和现有 `Channel` / `Acceptor` 的生命周期安全边界，不实现 `Session` 或 `TcpServer`。

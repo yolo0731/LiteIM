@@ -99,6 +99,11 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 13 docs | done | Synced README, docs, findings, progress, tutorials, and PROJECT_MEMORY for Acceptor behavior. |
 | Step 13 verification | done | CMake configure/build, server smoke, CTest 97/97, diff check, `.gitkeep`, and stale-route path checks passed. |
 | Step 13 commit | done | Commit message: `feat(net): implement nonblocking acceptor`. |
+| Step 13 review hardening concept | done | Verified external review points and only fixed confirmed local net-layer issues before Step 14. |
+| Step 13 review hardening tests | done | Added regression coverage for cross-thread Acceptor close, callback exception fd cleanup, Channel tie, and UniqueFd ownership. |
+| Step 13 review hardening code | done | Added `UniqueFd`, made Acceptor close cleanup run on the loop thread, and added Channel weak tie support. |
+| Step 13 review hardening docs | done | Synced README/docs/tutorials/planning files and moved public roadmap link inside the repo. |
+| Step 13 review hardening verification | done | CMake configure/build, server smoke, CTest 105/105, path stale-route checks, README external-link check, and final diff review passed. |
 
 ## Current Decision
 
@@ -683,7 +688,8 @@ LiteIM/
 │   ├── Acceptor.hpp
 │   ├── Channel.hpp
 │   ├── Epoller.hpp
-│   └── EventLoop.hpp
+│   ├── EventLoop.hpp
+│   └── UniqueFd.hpp
 ├── src/net/
 │   ├── Acceptor.cpp
 │   ├── Channel.cpp
@@ -691,6 +697,7 @@ LiteIM/
 │   ├── Epoller.cpp
 │   ├── Buffer.cpp
 │   ├── SocketUtil.cpp
+│   ├── UniqueFd.cpp
 │   └── CMakeLists.txt
 └── tests/net/
     ├── acceptor_header_test.cpp
@@ -698,10 +705,11 @@ LiteIM/
     ├── event_loop_test.cpp
     ├── channel_test.cpp
     ├── epoller_test.cpp
-    └── socket_util_test.cpp
+    ├── socket_util_test.cpp
+    └── unique_fd_test.cpp
 ```
 
-Step 13 intentionally implements only listen socket creation, socket options, bind/listen, listen fd registration in `EventLoop`, `accept4()` loop to `EAGAIN`, new-connection callback, and listen fd cleanup. It does not implement `Session`, `TcpServer`, `EventLoopThread`, `EventLoopThreadPool`, business thread pool, MySQL, or Redis.
+Step 13 intentionally implements only listen socket creation, socket options, bind/listen, listen fd registration in `EventLoop`, `accept4()` loop to `EAGAIN`, new-connection callback, fd RAII cleanup, and listen fd cleanup. It does not implement `Session`, `TcpServer`, `EventLoopThread`, `EventLoopThreadPool`, business thread pool, MySQL, or Redis.
 
 Step 13 verification:
 
@@ -719,6 +727,14 @@ Expected new tests:
 - `TEST(AcceptorTest, ClientConnectionTriggersNewConnectionCallback)`
 - `TEST(AcceptorTest, MultiplePendingConnectionsAreAccepted)`
 - `TEST(AcceptorTest, ClosedListenSocketRejectsNewConnections)`
+- `TEST(AcceptorTest, CloseFromOtherThreadRemovesChannelBeforeClosingFd)`
+- `TEST(AcceptorTest, AcceptedFdIsClosedWhenCallbackThrowsBeforeTakingOwnership)`
+- `TEST(UniqueFdTest, DestructorClosesOwnedFd)`
+- `TEST(UniqueFdTest, ReleaseReturnsFdWithoutClosing)`
+- `TEST(UniqueFdTest, MoveTransfersOwnership)`
+- `TEST(UniqueFdTest, ResetClosesPreviousFd)`
+- `TEST(ChannelTest, TiedExpiredOwnerSkipsCallbacks)`
+- `TEST(ChannelTest, TiedOwnerStaysAliveDuringCallback)`
 
 Next Step: `Step 14: implement Session`.
 

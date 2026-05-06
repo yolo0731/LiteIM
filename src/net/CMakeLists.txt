@@ -5,6 +5,7 @@ add_library(liteim_net
     EventLoop.cpp
     Epoller.cpp
     SocketUtil.cpp
+    UniqueFd.cpp
 )
 
 target_compile_features(liteim_net PUBLIC cxx_std_17)

@@ -2,6 +2,7 @@
 
 #include <sys/epoll.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -105,4 +106,39 @@ TEST(ChannelTest, HandleEventToleratesMissingCallbacks) {
     channel.setRevents(EPOLLIN | EPOLLOUT);
 
     EXPECT_NO_THROW(channel.handleEvent());
+}
+
+TEST(ChannelTest, TiedExpiredOwnerSkipsCallbacks) {
+    liteim::Channel channel(nullptr, 10);
+    auto owner = std::make_shared<int>(42);
+    int read_count = 0;
+
+    channel.tie(owner);
+    channel.setReadCallback([&read_count]() { ++read_count; });
+    owner.reset();
+
+    channel.setRevents(EPOLLIN);
+    channel.handleEvent();
+
+    EXPECT_EQ(read_count, 0);
+}
+
+TEST(ChannelTest, TiedOwnerStaysAliveDuringCallback) {
+    liteim::Channel channel(nullptr, 10);
+    auto owner = std::make_shared<int>(42);
+    std::weak_ptr<int> weak_owner = owner;
+    int read_count = 0;
+
+    channel.tie(owner);
+    channel.setReadCallback([&owner, &weak_owner, &read_count]() {
+        owner.reset();
+        EXPECT_FALSE(weak_owner.expired());
+        ++read_count;
+    });
+
+    channel.setRevents(EPOLLIN);
+    channel.handleEvent();
+
+    EXPECT_EQ(read_count, 1);
+    EXPECT_TRUE(weak_owner.expired());
 }

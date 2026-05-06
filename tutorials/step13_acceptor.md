@@ -20,12 +20,14 @@ listen socket 可读
 
 ```text
 include/liteim/net/Acceptor.hpp
+include/liteim/net/UniqueFd.hpp
 ```
 
 新增实现：
 
 ```text
 src/net/Acceptor.cpp
+src/net/UniqueFd.cpp
 ```
 
 新增测试：
@@ -33,6 +35,7 @@ src/net/Acceptor.cpp
 ```text
 tests/net/acceptor_header_test.cpp
 tests/net/acceptor_test.cpp
+tests/net/unique_fd_test.cpp
 ```
 
 ## Acceptor 的职责
@@ -49,7 +52,11 @@ Channel(listen_fd)
 enableReading()
 ```
 
-这里的 `enableReading()` 会通过 `Channel::update()` 注册到所属 `EventLoop`，所以 `Acceptor` 必须在它所属的 loop 线程里创建和关闭。
+这里的 `enableReading()` 会通过 `Channel::update()` 注册到所属 `EventLoop`，所以 `Acceptor` 必须在它所属的 loop 线程里创建。
+
+本次 review hardening 后，`Acceptor::close()` 可以从非 loop 线程发起，但真正的 `removeChannel()` 和 listen fd 关闭仍然回到所属 loop 线程执行。这样 `Epoller` 的 `fd -> Channel*` 映射不会留下旧 fd 对应的旧 `Channel*`。
+
+`UniqueFd` 是一个很小的 RAII 工具：对象析构时关闭自己持有的 fd，`release()` 表示所有权成功交给上层。`Acceptor` 用它保护 listen fd 和 accepted fd，尤其是 callback 抛异常时，accepted fd 不会泄漏。
 
 ## 为什么 listen fd 要非阻塞
 
@@ -99,6 +106,8 @@ sockaddr_in      对端地址
 
 如果没有设置 callback，`Acceptor` 会立即关闭 accepted fd，避免文件描述符泄漏。
 
+如果设置了 callback，`Acceptor` 会先用局部 `UniqueFd` 持有 accepted fd，callback 正常返回后才 `release()`。如果 callback 抛异常，局部 `UniqueFd` 析构会关闭 accepted fd，避免“上层还没接管所有权就异常退出”造成泄漏。
+
 ## close 的边界
 
 `Acceptor::close()` 做两件事：
@@ -109,6 +118,8 @@ sockaddr_in      对端地址
 ```
 
 关闭后 `listenFd()` 返回 `kInvalidFd`，`listening()` 返回 false，新客户端不能再连接到这个监听 socket。
+
+跨线程调用 `close()` 时，`Acceptor` 会通过 `EventLoop::queueInLoop()` 把 `closeInLoop()` 投递给 loop 线程，并等待清理完成。这个设计保留 one-loop-per-thread 边界：`Epoller::removeChannel()` 仍然只在 owner loop 线程执行。
 
 ## 本 Step 不做什么
 
@@ -132,6 +143,14 @@ sockaddr_in      对端地址
 - `AcceptorTest.ClientConnectionTriggersNewConnectionCallback`
 - `AcceptorTest.MultiplePendingConnectionsAreAccepted`
 - `AcceptorTest.ClosedListenSocketRejectsNewConnections`
+- `AcceptorTest.CloseFromOtherThreadRemovesChannelBeforeClosingFd`
+- `AcceptorTest.AcceptedFdIsClosedWhenCallbackThrowsBeforeTakingOwnership`
+- `UniqueFdTest.DestructorClosesOwnedFd`
+- `UniqueFdTest.ReleaseReturnsFdWithoutClosing`
+- `UniqueFdTest.MoveTransfersOwnership`
+- `UniqueFdTest.ResetClosesPreviousFd`
+- `ChannelTest.TiedExpiredOwnerSkipsCallbacks`
+- `ChannelTest.TiedOwnerStaysAliveDuringCallback`
 
 运行：
 
@@ -147,3 +166,7 @@ ctest --test-dir build --output-on-failure
 可以这样讲：
 
 > `Acceptor` 是主 Reactor 上的监听器。它持有非阻塞 listen fd 和对应的 `Channel`，listen fd 可读时循环 `accept4()` 到 `EAGAIN`。每个新连接 fd 都带 `SOCK_NONBLOCK` 和 `SOCK_CLOEXEC`，然后通过 callback 交给上层 `TcpServer`。它不负责连接生命周期和业务处理，只负责接收连接这一层边界。
+
+review hardening 后还可以补充：
+
+> listen fd 和 accepted fd 都用 RAII 思路兜底。`Acceptor::close()` 即使从其他线程发起，也会把真正的 epoll 删除和 fd 关闭投递回 owner loop，避免 epoll 中保存悬空 `Channel*`。`Channel::tie()` 则为下一步 `Session` 的 `shared_ptr` / `weak_ptr` 生命周期模型预留了基础。

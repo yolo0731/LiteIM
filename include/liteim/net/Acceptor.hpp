@@ -7,6 +7,7 @@
 #include <string>
 
 #include "liteim/net/SocketUtil.hpp"
+#include "liteim/net/UniqueFd.hpp"
 
 namespace liteim {
 
@@ -31,10 +32,11 @@ public:
     void close() noexcept;
 
 private:
+    void closeInLoop() noexcept;
     void handleRead();
 
     EventLoop* loop_;
-    int listen_fd_{kInvalidFd};
+    UniqueFd listen_fd_;
     std::unique_ptr<Channel> listen_channel_;
     std::uint16_t port_{0};
     bool listening_{false};

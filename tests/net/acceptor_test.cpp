@@ -1,5 +1,6 @@
 #include "liteim/net/Acceptor.hpp"
 
+#include "liteim/net/Channel.hpp"
 #include "liteim/net/EventLoop.hpp"
 #include "liteim/net/SocketUtil.hpp"
 
@@ -13,6 +14,8 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <exception>
+#include <stdexcept>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -70,7 +73,9 @@ private:
 
 struct LoopThreadHandle {
     liteim::EventLoop* loop{nullptr};
+    liteim::Acceptor* acceptor{nullptr};
     std::uint16_t port{0};
+    int listen_fd{liteim::kInvalidFd};
     std::mutex mutex;
     std::condition_variable ready;
 };
@@ -111,6 +116,12 @@ int getSocketFlag(int fd) {
 
 int getFdFlag(int fd) {
     return ::fcntl(fd, F_GETFD, 0);
+}
+
+bool isClosed(int fd) {
+    errno = 0;
+    const int rc = ::fcntl(fd, F_GETFL, 0);
+    return rc == -1 && errno == EBADF;
 }
 
 }  // namespace
@@ -224,4 +235,115 @@ TEST(AcceptorTest, ClosedListenSocketRejectsNewConnections) {
 
     EXPECT_EQ(rc, -1);
     EXPECT_EQ(errno, ECONNREFUSED);
+}
+
+TEST(AcceptorTest, CloseFromOtherThreadRemovesChannelBeforeClosingFd) {
+    LoopThreadHandle handle;
+    std::exception_ptr task_error;
+    std::atomic_bool channel_reused{false};
+
+    std::thread loop_thread([&handle]() {
+        liteim::EventLoop loop;
+        liteim::Acceptor acceptor(&loop, "127.0.0.1", 0);
+
+        {
+            std::lock_guard<std::mutex> lock(handle.mutex);
+            handle.loop = &loop;
+            handle.acceptor = &acceptor;
+            handle.port = acceptor.port();
+            handle.listen_fd = acceptor.listenFd();
+        }
+        handle.ready.notify_one();
+        loop.loop();
+    });
+
+    (void)waitForPort(handle);
+
+    liteim::EventLoop* loop = nullptr;
+    liteim::Acceptor* acceptor = nullptr;
+    int old_listen_fd = liteim::kInvalidFd;
+    {
+        std::lock_guard<std::mutex> lock(handle.mutex);
+        loop = handle.loop;
+        acceptor = handle.acceptor;
+        old_listen_fd = handle.listen_fd;
+    }
+
+    ASSERT_NE(loop, nullptr);
+    ASSERT_NE(acceptor, nullptr);
+    ASSERT_GE(old_listen_fd, 0);
+
+    acceptor->close();
+
+    int fds[2] = {liteim::kInvalidFd, liteim::kInvalidFd};
+    ASSERT_EQ(::pipe(fds), 0);
+    FdGuard pipe_read(fds[0]);
+    FdGuard pipe_write(fds[1]);
+    FdGuard reused_fd;
+
+    if (pipe_read.fd() != old_listen_fd) {
+        ASSERT_EQ(::dup2(pipe_read.fd(), old_listen_fd), old_listen_fd);
+        reused_fd.reset(old_listen_fd);
+    }
+
+    loop->queueInLoop([loop, old_listen_fd, &task_error, &channel_reused]() {
+        try {
+            liteim::Channel channel(loop, old_listen_fd);
+            channel.enableReading();
+            channel.disableAll();
+            channel_reused = true;
+        } catch (...) {
+            task_error = std::current_exception();
+        }
+        loop->quit();
+    });
+
+    loop_thread.join();
+
+    if (task_error) {
+        std::rethrow_exception(task_error);
+    }
+    EXPECT_TRUE(channel_reused.load());
+}
+
+TEST(AcceptorTest, AcceptedFdIsClosedWhenCallbackThrowsBeforeTakingOwnership) {
+    LoopThreadHandle handle;
+    std::atomic_int callback_fd{liteim::kInvalidFd};
+    std::atomic_bool callback_exception_caught{false};
+
+    std::thread loop_thread([&handle, &callback_fd, &callback_exception_caught]() {
+        liteim::EventLoop loop;
+        liteim::Acceptor acceptor(&loop, "127.0.0.1", 0);
+        acceptor.setNewConnectionCallback([&callback_fd](int fd, const sockaddr_in&) {
+            callback_fd = fd;
+            throw std::runtime_error("callback failed before taking fd ownership");
+        });
+
+        {
+            std::lock_guard<std::mutex> lock(handle.mutex);
+            handle.loop = &loop;
+            handle.port = acceptor.port();
+        }
+        handle.ready.notify_one();
+
+        try {
+            loop.loop();
+        } catch (const std::runtime_error&) {
+            callback_exception_caught = true;
+        }
+    });
+
+    auto client = connectTo(waitForPort(handle));
+    ASSERT_GE(client.fd(), 0);
+
+    loop_thread.join();
+
+    ASSERT_TRUE(callback_exception_caught.load());
+    ASSERT_GE(callback_fd.load(), 0);
+    EXPECT_TRUE(isClosed(callback_fd.load()));
+    if (!isClosed(callback_fd.load())) {
+        int leaked_fd = callback_fd.load();
+        const auto status = liteim::closeFd(leaked_fd);
+        (void)status;
+    }
 }

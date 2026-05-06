@@ -6,6 +6,8 @@
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cstring>
+#include <future>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <sys/socket.h>
@@ -59,24 +61,26 @@ Acceptor::Acceptor(EventLoop* loop, const std::string& listen_ip, std::uint16_t 
     loop_->assertInLoopThread();
 
     try {
-        throwIfError(createNonBlockingSocket(listen_fd_));
-        throwIfError(setReuseAddr(listen_fd_));
-        throwIfError(setReusePort(listen_fd_));
+        int fd = kInvalidFd;
+        throwIfError(createNonBlockingSocket(fd));
+        listen_fd_.reset(fd);
+        throwIfError(setReuseAddr(listen_fd_.fd()));
+        throwIfError(setReusePort(listen_fd_.fd()));
 
         const auto listen_address = makeListenAddress(listen_ip, port);
-        if (::bind(listen_fd_,
+        if (::bind(listen_fd_.fd(),
                    reinterpret_cast<const sockaddr*>(&listen_address),
                    static_cast<socklen_t>(sizeof(listen_address))) < 0) {
             throw std::runtime_error("bind failed with errno " + std::to_string(errno));
         }
 
-        if (::listen(listen_fd_, SOMAXCONN) < 0) {
+        if (::listen(listen_fd_.fd(), SOMAXCONN) < 0) {
             throw std::runtime_error("listen failed with errno " + std::to_string(errno));
         }
 
-        port_ = boundPort(listen_fd_);
+        port_ = boundPort(listen_fd_.fd());
         listening_ = true;
-        listen_channel_ = std::make_unique<Channel>(loop_, listen_fd_);
+        listen_channel_ = std::make_unique<Channel>(loop_, listen_fd_.fd());
         listen_channel_->setReadCallback([this]() { handleRead(); });
         listen_channel_->enableReading();
     } catch (...) {
@@ -94,7 +98,7 @@ void Acceptor::setNewConnectionCallback(NewConnectionCallback callback) {
 }
 
 int Acceptor::listenFd() const noexcept {
-    return listen_fd_;
+    return listen_fd_.fd();
 }
 
 std::uint16_t Acceptor::port() const noexcept {
@@ -106,10 +110,28 @@ bool Acceptor::listening() const noexcept {
 }
 
 void Acceptor::close() noexcept {
+    if (loop_ != nullptr && !loop_->isInLoopThread()) {
+        try {
+            auto done = std::make_shared<std::promise<void>>();
+            auto future = done->get_future();
+            loop_->queueInLoop([this, done]() noexcept {
+                closeInLoop();
+                done->set_value();
+            });
+            future.wait();
+        } catch (...) {
+        }
+        return;
+    }
+
+    closeInLoop();
+}
+
+void Acceptor::closeInLoop() noexcept {
     listening_ = false;
 
     if (listen_channel_ != nullptr) {
-        if (loop_ != nullptr && loop_->isInLoopThread()) {
+        if (loop_ != nullptr) {
             try {
                 loop_->removeChannel(listen_channel_.get());
             } catch (...) {
@@ -118,25 +140,22 @@ void Acceptor::close() noexcept {
         listen_channel_.reset();
     }
 
-    const auto status = closeFd(listen_fd_);
-    (void)status;
+    listen_fd_.reset();
 }
 
 void Acceptor::handleRead() {
-    while (listen_fd_ >= 0) {
+    while (listen_fd_) {
         sockaddr_in peer_address{};
         socklen_t len = static_cast<socklen_t>(sizeof(peer_address));
-        const int fd = ::accept4(listen_fd_,
+        const int fd = ::accept4(listen_fd_.fd(),
                                  reinterpret_cast<sockaddr*>(&peer_address),
                                  &len,
                                  SOCK_NONBLOCK | SOCK_CLOEXEC);
         if (fd >= 0) {
+            UniqueFd accepted_fd(fd);
             if (new_connection_callback_) {
-                new_connection_callback_(fd, peer_address);
-            } else {
-                int accepted_fd = fd;
-                const auto status = closeFd(accepted_fd);
-                (void)status;
+                new_connection_callback_(accepted_fd.fd(), peer_address);
+                (void)accepted_fd.release();
             }
             continue;
         }

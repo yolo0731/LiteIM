@@ -1,6 +1,6 @@
 # LiteIM Architecture
 
-本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 13，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil`、`Epoller` 系统调用封装、`Channel` 事件分发、`EventLoop` 事件循环 / `eventfd` 任务投递和非阻塞监听器 `Acceptor`。当前还没有 `Session` 或 `TcpServer` 实现。
+本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 13 review hardening 后，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil`、RAII fd 包装 `UniqueFd`、`Epoller` 系统调用封装、`Channel` 事件分发 / `tie()` 生命周期保护、`EventLoop` 事件循环 / `eventfd` 任务投递和非阻塞监听器 `Acceptor`。当前还没有 `Session` 或 `TcpServer` 实现。
 
 ## Target Data Flow
 
@@ -153,6 +153,10 @@ liteim_net
        -> setKeepAlive()
        -> closeFd()
        -> getSocketError()
+  -> UniqueFd
+       -> fd()
+       -> release()
+       -> reset()
   -> Acceptor
        -> setNewConnectionCallback()
        -> listenFd()
@@ -172,6 +176,7 @@ liteim_net
        -> setWriteCallback()
        -> setCloseCallback()
        -> setErrorCallback()
+       -> tie()
        -> handleEvent()
   -> Epoller
        -> poll()
@@ -197,9 +202,12 @@ liteim_net
 - `setReuseAddr()` / `setReusePort()` / `setTcpNoDelay()` / `setKeepAlive()` 只负责 socket option 的薄封装。
 - `closeFd()` 通过引用把关闭后的 fd 置为 `kInvalidFd`，减少同一变量重复关闭的风险。
 - `getSocketError()` 读取 `SO_ERROR`，后续非阻塞连接、写事件和连接异常处理会复用。
+- `UniqueFd` 是轻量 RAII fd 包装，只表达独占所有权和关闭责任，不隐藏 socket 的业务语义。
+- `UniqueFd::release()` 用于把 fd 所有权交给上层；如果 callback 抛异常而没有成功接管，局部 `UniqueFd` 会自动关闭 fd。
 - `Channel` 只代表一个 fd 的事件代理，不拥有 fd，不关闭 fd。
 - `Channel::events()` 表示想监听的事件，`Channel::revents()` 表示本轮 epoll 实际返回的事件。
 - `Channel::handleEvent()` 把 `EPOLLIN` / `EPOLLPRI` / `EPOLLRDHUP` 分发给 read callback，把 `EPOLLOUT` 分发给 write callback，把 `EPOLLHUP` 和 `EPOLLERR` 分发给 close/error callback。
+- `Channel::tie()` 保存 owner 的 `weak_ptr`；事件分发前会先 lock，owner 已释放时跳过回调，owner 仍存在时用局部 `shared_ptr` 保证回调执行期间对象不被销毁。
 - `Channel` 修改关注事件后通过所属 `EventLoop::updateChannel()` 交给 `Epoller` 更新 epoll 注册状态。
 - `Epoller` 是 epoll 系统调用封装边界，负责 `epoll_create1(EPOLL_CLOEXEC)`、`epoll_ctl(ADD/MOD/DEL)` 和 `epoll_wait()`。
 - `Epoller` 当前使用 LT 模式，不设置 `EPOLLET`。
@@ -213,11 +221,11 @@ liteim_net
 - `Acceptor` 构造时创建非阻塞 TCP listen fd，设置 `SO_REUSEADDR` / `SO_REUSEPORT`，完成 bind/listen，并把 listen fd 包装成 `Channel` 注册到所属 `EventLoop`。
 - listen fd 可读时，`Acceptor` 使用 `accept4(SOCK_NONBLOCK | SOCK_CLOEXEC)` 循环接收新连接，直到 `EAGAIN` / `EWOULDBLOCK`。
 - `Acceptor::NewConnectionCallback` 把已连接 fd 和 peer address 交给后续 `TcpServer`；如果没有 callback，`Acceptor` 会立即关闭 accepted fd，避免泄漏。
-- `Acceptor::close()` 从 `EventLoop` 移除 listen channel 并关闭 listen fd；它仍应在所属 loop 线程使用，保持 Reactor 线程边界。
+- `Acceptor::close()` 可以从非 loop 线程请求关闭；实际 `removeChannel()` 和 listen fd 关闭会回到所属 loop 线程完成，避免 `Epoller` 留下旧 fd 到旧 `Channel*` 的 stale 映射。
 - 后续 `Session` 会持有输入 `Buffer` 和输出 `Buffer`，I/O 线程负责把 socket 字节读入输入缓冲区，再交给 `FrameDecoder`。
 - 输出缓冲区高水位回压会在后续慢客户端保护 Step 中实现；当前只提供可复用的缓冲区底座。
 - `retrieve()` 越界返回 `InvalidArgument`，避免网络异常输入触发进程级崩溃。
 
 ## Current Step
 
-Step 13 implements nonblocking `Acceptor` in `liteim_net`. `Session`, `TcpServer`, `EventLoopThreadPool`, and backpressure policy stay in later steps.
+Step 13 implements nonblocking `Acceptor` in `liteim_net` and the post-review hardening needed before `Session`: `UniqueFd`, `Channel::tie()`, and loop-thread close cleanup. `Session`, `TcpServer`, `EventLoopThreadPool`, and backpressure policy stay in later steps.
