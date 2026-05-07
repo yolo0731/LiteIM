@@ -1,5 +1,70 @@
 # LiteIM Progress
 
+## 2026-05-07 Step 14 Session
+
+本次进入 `Step 14: implement Session`，目标是实现单个已连接 fd 的生命周期和 Packet I/O，不启动 Step 15 多 Reactor 线程池。
+
+概念边界：
+
+- `Session` 是连接 owner，接管一个已连接 fd。
+- `Acceptor` 只负责 accept，后续 `TcpServer` 会创建 `Session`；本 Step 不实现 `TcpServer`。
+- `Session` 持有 `Channel`、输入 `Buffer`、输出 `Buffer` 和 `FrameDecoder`。
+- I/O 线程负责非阻塞读写和协议编解码，不做 MySQL / Redis 阻塞业务。
+- 跨线程 `sendPacket()` 通过 `EventLoop::queueInLoop()` 回到连接所属 loop。
+
+TDD RED 已确认：
+
+```bash
+cmake --build build
+```
+
+新增测试先失败于 `fatal error: liteim/net/Session.hpp: No such file or directory`，证明测试覆盖了当前 Step 缺失的 `Session` 接口。
+
+已完成代码：
+
+- 新增 `include/liteim/net/Session.hpp`。
+- 新增 `src/net/Session.cpp`。
+- `Session` 使用 `std::enable_shared_from_this`，`start()` 中调用 `Channel::tie()`。
+- `handleRead()` 循环读到 `EAGAIN`，输入字节经过 `Buffer` 后交给 `FrameDecoder`。
+- `sendPacket()` 编码 Packet，跨线程调用时投递回 owner `EventLoop`。
+- `handleWrite()` 发送 output buffer，未写完的数据保留，写完后关闭写兴趣。
+- `close()` / `closeInLoop()` 在 loop 线程移除 `Channel`、关闭 fd、清理缓冲并触发 close callback。
+- `Channel` 对象释放延迟到当前事件回调栈帧之后，避免在 `Channel::handleEvent()` 正执行时析构当前 `Channel`。
+- `last_active_time` 使用原子毫秒时间戳保存。
+- `liteim_net` 链接 `liteim_protocol`，`src/CMakeLists.txt` 构建顺序调整为 base -> protocol -> net。
+
+新增测试：
+
+- `ReactorInterfaceTest.SessionHeaderIsSelfContained`
+- `SessionTest.CompletePacketInvokesMessageCallback`
+- `SessionTest.HalfPacketDoesNotInvokeMessageCallback`
+- `SessionTest.StickyPacketsInvokeCallbackForEachPacket`
+- `SessionTest.PeerCloseInvokesCloseCallback`
+- `SessionTest.SendPacketFromOtherThreadDeliversEncodedPacket`
+- `SessionTest.LargePacketLeavesPendingOutputWhenPeerDoesNotRead`
+- `SessionTest.LastActiveTimeIsInitialized`
+
+定向验证已通过：
+
+```bash
+cmake --build build
+ctest --test-dir build --output-on-failure -R "Session"
+```
+
+结果：8/8 Session tests passed。
+
+全量验证已通过：
+
+```bash
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+git diff --check
+find . \( -path './server/net' -o -path './server/protocol' -o -name '*SQLite*' -o -name '*InMemory*' -o -name '*step15_sqlite*' \) -print
+```
+
+结果：server scaffold 正常输出监听配置，124/124 tests passed，diff whitespace check 无输出，旧路线文件路径检查无输出。
+
 ## 2026-05-07 Step 13 Hardening Round 3
 
 本次任务继续复核 Step 13 hardening round 2 后的审阅反馈，仍然限定在 `EventLoop` / `Acceptor` / `Channel` 网络层边界内，不启动 Step 14。

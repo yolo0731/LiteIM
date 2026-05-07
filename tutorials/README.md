@@ -24,5 +24,6 @@ concept -> handwritten code -> tests -> commit
 | Step 11 | [`step11_channel.md`](step11_channel.md) | done |
 | Step 12 | [`step12_event_loop.md`](step12_event_loop.md) | done |
 | Step 13 | [`step13_acceptor.md`](step13_acceptor.md) | done |
+| Step 14 | [`step14_session.md`](step14_session.md) | done |
 
 旧 Step 1-15 教程已删除，后续会按新的高性能路线逐步重写。目录也会按 Step 的实际需求逐步创建。

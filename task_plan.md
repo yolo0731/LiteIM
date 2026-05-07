@@ -114,6 +114,12 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 13 hardening round 3 code | done | Fixed `EventLoop::isStopped()` to use explicit loop-exited state, made loop drain pending tasks before honoring pre-start quit, protected Acceptor noexcept logging, and documented Channel callback lifetime requirements in the header. |
 | Step 13 hardening round 3 docs | done | Synced README, docs, findings, progress, task plan, and Step 11/12/13 tutorials for hardening round 3 behavior. |
 | Step 13 hardening round 3 verification | done | CMake build, targeted hardening tests, server smoke, full CTest 116/116, and diff whitespace check passed. |
+| Step 14 concept | done | Step 14 introduces `Session` as the owner of one connected fd, one `Channel`, input/output buffers, packet decode/encode, and close lifecycle. |
+| Step 14 tests | done | Added Session header and socketpair tests for complete packets, half packets, sticky packets, peer close, cross-thread send, large pending output, and last-active initialization. |
+| Step 14 code | done | Added `Session.hpp` / `Session.cpp`, linked `liteim_net` to `liteim_protocol`, and implemented nonblocking read/write, `FrameDecoder`, output buffering, `sendPacket()`, close cleanup, and `last_active_time`. |
+| Step 14 docs | done | Synced README, docs, findings, progress, task plan, tutorial index, Step 14 tutorial, and PROJECT_MEMORY current progress snapshot. |
+| Step 14 verification | done | CMake build, targeted Session tests, server smoke, full CTest 124/124, diff whitespace check, stale route file-path check, and final code review passed. |
+| Step 14 commit | done | Commit message: `feat(net): implement session lifecycle and packet IO`. |
 
 ## Current Decision
 
@@ -753,7 +759,54 @@ Expected new tests:
 - `TEST(LoggerTest, GetDoesNotResetConfiguredLevel)`
 - `TEST(LoggerTest, SetLevelSurvivesLaterGetCalls)`
 
-Next Step: `Step 14: implement Session`.
+## Step 14 Target
+
+Step 14 adds the single-connection owner in the network module:
+
+```text
+LiteIM/
+├── include/liteim/net/
+│   ├── Session.hpp
+│   └── ...
+├── src/net/
+│   ├── Session.cpp
+│   └── CMakeLists.txt
+└── tests/net/
+    ├── session_header_test.cpp
+    └── session_test.cpp
+```
+
+Step 14 intentionally implements only one connected fd lifecycle: `Session` owns the fd,
+holds a `Channel`, reads bytes into input `Buffer`, feeds `FrameDecoder`, invokes message
+callback for complete `Packet`, buffers encoded outgoing packets, writes output on
+`EPOLLOUT`, supports cross-thread `sendPacket()` through the owning `EventLoop`, closes the
+channel/fd in the loop thread, and maintains `last_active_time`.
+
+It does not implement `TcpServer`, `EventLoopThread`, `EventLoopThreadPool`, business
+thread pool, MySQL, Redis, login/chat routing, heartbeat timeout, or output-buffer
+high-water-mark policy.
+
+Step 14 verification:
+
+```bash
+cmake -S . -B build
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+```
+
+Expected new tests:
+
+- `TEST(ReactorInterfaceTest, SessionHeaderIsSelfContained)`
+- `TEST(SessionTest, CompletePacketInvokesMessageCallback)`
+- `TEST(SessionTest, HalfPacketDoesNotInvokeMessageCallback)`
+- `TEST(SessionTest, StickyPacketsInvokeCallbackForEachPacket)`
+- `TEST(SessionTest, PeerCloseInvokesCloseCallback)`
+- `TEST(SessionTest, SendPacketFromOtherThreadDeliversEncodedPacket)`
+- `TEST(SessionTest, LargePacketLeavesPendingOutputWhenPeerDoesNotRead)`
+- `TEST(SessionTest, LastActiveTimeIsInitialized)`
+
+Next Step: `Step 15: implement EventLoopThread and EventLoopThreadPool`.
 
 ## Persistent Requirements
 

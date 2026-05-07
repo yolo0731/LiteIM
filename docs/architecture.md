@@ -1,6 +1,6 @@
 # LiteIM Architecture
 
-本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 13 review hardening round 3 后，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil`、RAII fd 包装 `UniqueFd`、`Epoller` 系统调用封装、`Channel` 事件分发 / `tie()` 生命周期保护、`EventLoop` 事件循环 / `eventfd` 任务投递和非阻塞监听器 `Acceptor`。当前还没有 `Session` 或 `TcpServer` 实现。
+本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 14 后，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil`、RAII fd 包装 `UniqueFd`、`Epoller` 系统调用封装、`Channel` 事件分发 / `tie()` 生命周期保护、`EventLoop` 事件循环 / `eventfd` 任务投递、非阻塞监听器 `Acceptor` 和单连接 owner `Session`。当前还没有 `TcpServer` 或多 Reactor 线程池实现。
 
 ## Target Data Flow
 
@@ -130,7 +130,7 @@ liteim_protocol
 
 ## Current Network Layer
 
-当前 Step 13 已经实现 `Epoller` 系统调用层、`Channel` 回调分发、`EventLoop` 阻塞循环、`eventfd` 任务投递和 `Acceptor` 非阻塞监听，但还没有 `Session` / `TcpServer`：
+当前 Step 14 已经实现 `Epoller` 系统调用层、`Channel` 回调分发、`EventLoop` 阻塞循环、`eventfd` 任务投递、`Acceptor` 非阻塞监听和 `Session` 单连接读写，但还没有 `TcpServer` / `EventLoopThreadPool`：
 
 ```text
 liteim_net
@@ -163,6 +163,14 @@ liteim_net
        -> port()
        -> listening()
        -> close()
+  -> Session
+       -> start()
+       -> sendPacket()
+       -> close()
+       -> setMessageCallback()
+       -> setCloseCallback()
+       -> pendingOutputBytes()
+       -> lastActiveTimeMilliseconds()
   -> Channel
        -> fd()
        -> events()
@@ -231,10 +239,16 @@ liteim_net
 - `Acceptor::NewConnectionCallback` 把已连接 fd 和 peer address 交给后续 `TcpServer`；如果没有 callback，`Acceptor` 会立即关闭 accepted fd，避免泄漏。
 - `Acceptor::close()` 可以从非 loop 线程请求关闭；loop 未启动或仍运行时实际 `removeChannel()` 和 listen fd 关闭会回到所属 loop 线程完成，loop 已停止时才走 fallback 直接释放 `Channel`、listen fd 和 idle fd，避免永久等待 queued task。
 - `Acceptor` fd 用尽 helper 保持 `noexcept`，但 warn 日志通过内部 no-throw wrapper 写入，避免 `spdlog` sink 或格式化异常在 `EMFILE` / `ENFILE` 路径触发 `std::terminate()`。
-- 后续 `Session` 会持有输入 `Buffer` 和输出 `Buffer`，I/O 线程负责把 socket 字节读入输入缓冲区，再交给 `FrameDecoder`。
-- 输出缓冲区高水位回压会在后续慢客户端保护 Step 中实现；当前只提供可复用的缓冲区底座。
+- `Session` 是单个已连接 fd 的 owner，持有 fd、`Channel`、输入 `Buffer`、输出 `Buffer` 和 `FrameDecoder`。
+- `Session::start()` 必须在 `shared_ptr` 管理下调用；它通过 `Channel::tie()` 把 owner 生命周期绑定到事件分发期间。
+- `Session::handleRead()` 在 I/O loop 中循环 `read()` 到 `EAGAIN` / `EWOULDBLOCK`，把读到的字节放进输入 `Buffer`，再交给 `FrameDecoder` 产出完整 `Packet`。
+- `Session::sendPacket()` 先编码 Packet；如果从其他线程调用，会通过 `EventLoop::queueInLoop()` 回到所属 I/O loop，再写入输出 `Buffer` 并启用写事件。
+- `Session::handleWrite()` 在 `EPOLLOUT` 到来时尽量写出 output buffer，写完后关闭写兴趣；没有写完的数据留在 output buffer，后续继续由写事件驱动。
+- `Session::close()` 在所属 loop 中移除 `Channel`、关闭 fd、清空缓冲并触发 close callback；`Channel` 的释放被延迟到当前 `handleEvent()` 栈帧之后，避免在回调中销毁正在执行的 `Channel`。
+- `Session` 维护 `lastActiveTimeMilliseconds()`，后续 heartbeat / timeout Step 会基于它判断连接活跃度。
+- 输出缓冲区高水位回压会在后续慢客户端保护 Step 中实现；当前 Step 14 只记录 pending output bytes，不主动限流或踢慢客户端。
 - `retrieve()` 越界返回 `InvalidArgument`，避免网络异常输入触发进程级崩溃。
 
 ## Current Step
 
-Step 13 implements nonblocking `Acceptor` in `liteim_net` and the post-review hardening needed before `Session`: `UniqueFd`, `Channel::tie()`, EventLoop exception isolation and precise stopped state, Acceptor idle-fd fd-exhaustion handling, no-throw logging on `noexcept` accept-error helpers, and loop-thread close cleanup. `Session`, `TcpServer`, `EventLoopThreadPool`, and backpressure policy stay in later steps.
+Step 14 implements `Session` in `liteim_net`: a single connected fd owner with `Channel`, input/output `Buffer`, `FrameDecoder`, packet callbacks, cross-thread `sendPacket()`, close cleanup, and `last_active_time` tracking. `TcpServer`, `EventLoopThreadPool`, business routing, and high-water-mark backpressure policy stay in later steps.

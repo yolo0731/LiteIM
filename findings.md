@@ -7,6 +7,32 @@
 - 当前路线是 `LiteIM High Performance + Qt Client + PersonaAgent Authorized Style RAG Edition`。
 - 如果 `README.md`、`task_plan.md`、`progress.md`、教程或源码与 `PROJECT_MEMORY.md` 冲突，统一改回 `PROJECT_MEMORY.md` 的路线。
 
+## 2026-05-07 Step 14 Session Findings
+
+本次进入 Step 14，实现单个已连接 fd 的 `Session` 生命周期，不启动 Step 15 多 Reactor 线程池，也不实现 `TcpServer`。
+
+已经确认并采用的设计：
+
+- `Session` 是连接 owner：持有 fd、`Channel`、输入 `Buffer`、输出 `Buffer` 和 `FrameDecoder`。
+- `Session` 必须由 `std::shared_ptr` 管理，并继承 `std::enable_shared_from_this`；`start()` 时用 `Channel::tie()` 把 owner 生命周期锁到事件分发期间。
+- `handleRead()` 循环 `read()` 到 `EAGAIN` / `EWOULDBLOCK`，把读到的字节追加到输入 `Buffer`，再交给 `FrameDecoder` 产出完整 `Packet`。
+- 半包不会触发 message callback；粘包会按顺序触发多次 message callback。
+- `sendPacket()` 先调用 `encodePacket()`；跨线程调用时只把发送任务投递回所属 `EventLoop`，不在调用线程直接操作 fd 或 output buffer。
+- `handleWrite()` 只在 loop 线程中写 output buffer，写完后关闭写兴趣，未写完的字节保留在 output buffer。
+- `closeInLoop()` 会先从 `Epoller` 删除 `Channel` 并关闭 fd；`Channel` 对象本身延迟到当前事件回调栈帧之后释放，避免在 `Channel::handleEvent()` 运行期间销毁当前 `Channel`。
+- 当前 Step 只记录 `pendingOutputBytes()`；慢客户端高水位回压策略留给后续专门 Step。
+
+新增回归测试：
+
+- `ReactorInterfaceTest.SessionHeaderIsSelfContained`
+- `SessionTest.CompletePacketInvokesMessageCallback`
+- `SessionTest.HalfPacketDoesNotInvokeMessageCallback`
+- `SessionTest.StickyPacketsInvokeCallbackForEachPacket`
+- `SessionTest.PeerCloseInvokesCloseCallback`
+- `SessionTest.SendPacketFromOtherThreadDeliversEncodedPacket`
+- `SessionTest.LargePacketLeavesPendingOutputWhenPeerDoesNotRead`
+- `SessionTest.LastActiveTimeIsInitialized`
+
 ## 2026-05-07 Step 13 Hardening Round 3 Findings
 
 本次继续处理 Step 13 hardening round 2 后的代码审阅反馈，不启动 Step 14 `Session`。
