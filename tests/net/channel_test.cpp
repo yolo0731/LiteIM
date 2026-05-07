@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -141,4 +142,39 @@ TEST(ChannelTest, TiedOwnerStaysAliveDuringCallback) {
 
     EXPECT_EQ(read_count, 1);
     EXPECT_TRUE(weak_owner.expired());
+}
+
+TEST(ChannelTest, HandleEventDoesNotCopyStoredCallbacks) {
+    struct CopyCountingCallback {
+        int* copies;
+        int* calls;
+
+        CopyCountingCallback(int* copy_count, int* call_count) : copies(copy_count), calls(call_count) {}
+
+        CopyCountingCallback(const CopyCountingCallback& other) : copies(other.copies), calls(other.calls) {
+            ++(*copies);
+        }
+
+        CopyCountingCallback(CopyCountingCallback&& other) noexcept
+            : copies(std::exchange(other.copies, nullptr)), calls(std::exchange(other.calls, nullptr)) {}
+
+        CopyCountingCallback& operator=(const CopyCountingCallback&) = delete;
+        CopyCountingCallback& operator=(CopyCountingCallback&&) = delete;
+
+        void operator()() const {
+            ++(*calls);
+        }
+    };
+
+    liteim::Channel channel(nullptr, 10);
+    int copies = 0;
+    int calls = 0;
+    channel.setReadCallback(CopyCountingCallback(&copies, &calls));
+    copies = 0;
+
+    channel.setRevents(EPOLLIN);
+    channel.handleEvent();
+
+    EXPECT_EQ(calls, 1);
+    EXPECT_EQ(copies, 0);
 }

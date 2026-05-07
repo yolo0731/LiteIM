@@ -1,5 +1,91 @@
 # LiteIM Progress
 
+## 2026-05-07 Step 13 Hardening Round 3
+
+本次任务继续复核 Step 13 hardening round 2 后的审阅反馈，仍然限定在 `EventLoop` / `Acceptor` / `Channel` 网络层边界内，不启动 Step 14。
+
+采纳并修复：
+
+- `EventLoop::isStopped()` 从 `!looping_` 推断改为显式 `loop_exited_` 状态，区分“尚未启动”和“已经退出”，也覆盖 `quit()` 早于第一次 `loop()` 的场景。
+- 新增 `EventLoopTest.IsStoppedIsFalseBeforeLoopEverStarts`，覆盖 loop 刚构造但尚未进入 `loop()` 的状态语义。
+- 新增 `EventLoopTest.IsStoppedIsFalseAfterQuitBeforeLoopEverStarts`，覆盖 `quit()` 早于第一次 `loop()` 时不能误判 stopped。
+- 新增 `EventLoopTest.LoopRunsQueuedTaskWhenQuitWasRequestedBeforeStart`，覆盖 `quit()` 早于第一次 `loop()` 时仍要先执行已排队清理任务。
+- 新增 `AcceptorTest.CloseFromOtherThreadBeforeLoopStartsStillRemovesChannel`，覆盖 loop 尚未启动时跨线程 close 仍必须回到 owner loop 删除 listen channel。
+- `Acceptor` fd 用尽 helper 保持 `noexcept`，但 warn 日志改走内部 no-throw wrapper，避免 `spdlog` 异常触发 `std::terminate()`。
+- `Channel.hpp`、Step 11 教程和 findings 补充 callback 不复制后的契约：未 `tie()` 的 callback 不能销毁当前 `Channel` 或重置正在执行的 callback；可能释放 owner 的场景必须调用 `tie()`。
+
+定向 RED 已确认：
+
+```bash
+ctest --test-dir build --output-on-failure -R "EventLoopTest.IsStoppedIsFalseBeforeLoopEverStarts|AcceptorTest.CloseFromOtherThreadBeforeLoopStartsStillRemovesChannel"
+ctest --test-dir build --output-on-failure -R "EventLoopTest.IsStoppedIsFalseAfterQuitBeforeLoopEverStarts"
+ctest --test-dir build --output-on-failure -R "EventLoopTest.LoopRunsQueuedTaskWhenQuitWasRequestedBeforeStart"
+```
+
+旧实现下新增回归会失败：未启动状态和提前 `quit()` 状态下 `isStopped()` 返回 true，提前 `quit()` 后启动 loop 时 pending task 不执行，Acceptor close-before-loop-start 测试抛出 `fd already belongs to a different channel`。
+
+定向验证已通过：
+
+```bash
+cmake --build build
+ctest --test-dir build --output-on-failure -R "EventLoopTest.IsStoppedIsFalseBeforeLoopEverStarts|EventLoopTest.IsStoppedIsFalseAfterQuitBeforeLoopEverStarts|EventLoopTest.LoopRunsQueuedTaskWhenQuitWasRequestedBeforeStart|AcceptorTest.CloseFromOtherThreadBeforeLoopStartsStillRemovesChannel"
+ctest --test-dir build --output-on-failure -R "EventLoopTest|AcceptorTest|ChannelTest|LoggerTest"
+```
+
+全量验证已通过：
+
+```bash
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+git diff --check
+```
+
+结果：116/116 tests passed，server scaffold 正常输出监听配置，diff whitespace check 无输出。
+
+## 2026-05-07 Step 13 Hardening Round 2
+
+本次任务来自外部代码评价复核，目标是在不启动 Step 14 `Session` 的前提下，继续收口 Step 13 已暴露的网络层健壮性问题。
+
+采纳并修复：
+
+- `Logger::get()` 不再重置日志级别；新增回归测试覆盖 `init(Debug)` 和 `setLevel(Debug)` 后多次 `get()` 仍保持 Debug。
+- `Epoller` 构造时如果 `epoll_create1()` 失败，直接抛出 `std::runtime_error`，避免半初始化对象继续参与 `EventLoop` 构造。
+- `EventLoop` 的 wakeup fd 改为 `UniqueFd` 持有；`looping_` 改为原子状态并由 RAII guard 复位。
+- `EventLoop::loop()` 捕获 `Channel` 回调和 pending task 异常并记录日志，单个业务回调不再直接杀死 loop。
+- 新增 `EventLoop::isStopped()`，供停止后的跨线程资源清理判断。
+- `Acceptor` 增加 idle fd 保护，`EMFILE` / `ENFILE` 时拒绝一个 pending connection，避免 LT 模式 busy loop。
+- `Acceptor::close()` 在 loop 已停止时不再等待 queued task，改走直接释放资源的 fallback。
+- `Channel::handleEventWithGuard()` 不再复制四个 `std::function`，依靠 `Channel::tie()` 保证 owner 生命周期。未 `tie()` 的 `Channel` 必须保证 callback 不会销毁自身或重置当前 callback。
+
+未采纳：
+
+- 暂不把 `EventLoop::updateChannel()` / `removeChannel()` 改成返回 `Status`，避免扩大接口迁移；当前本地系统/编程错误仍通过异常暴露。
+- `FrameDecoder::feed()` 的 `vector::erase()` 继续留到 Step 14 `Session` 输入路径使用 `Buffer` 时处理。
+
+新增/更新测试：
+
+- `LoggerTest.GetDoesNotResetConfiguredLevel`
+- `LoggerTest.SetLevelSurvivesLaterGetCalls`
+- `ChannelTest.HandleEventDoesNotCopyStoredCallbacks`
+- `EventLoopTest.ChannelCallbackExceptionDoesNotEscapeLoop`
+- `EventLoopTest.IsStoppedBecomesTrueAfterLoopReturns`
+- `AcceptorTest.CloseFromOtherThreadAfterLoopStopsDoesNotBlock`
+- `AcceptorTest.FdExhaustionRejectsPendingConnectionWithoutLaterCallback`
+
+定向验证已通过：
+
+```bash
+cmake --build build && ctest --test-dir build --output-on-failure -R "AcceptorTest.FdExhaustionRejectsPendingConnectionWithoutLaterCallback|AcceptorTest.CloseFromOtherThreadAfterLoopStopsDoesNotBlock|AcceptorTest.AcceptedFdIsClosedWhenCallbackThrowsBeforeTakingOwnership|EventLoopTest.ChannelCallbackExceptionDoesNotEscapeLoop|LoggerTest.GetDoesNotResetConfiguredLevel|ChannelTest.HandleEventDoesNotCopyStoredCallbacks"
+```
+
+全量验证已通过：
+
+```bash
+cmake -S . -B build && cmake --build build && ./build/server/liteim_server && ctest --test-dir build --output-on-failure
+```
+
+结果：112/112 tests passed。
+
 ## 2026-05-07 Step 13 Review Hardening
 
 本次任务来自外部代码评价核对，目标是在不启动 Step 14 `Session` 的前提下，修复 Step 13 网络层中已经确认的局部风险。
@@ -9,7 +95,7 @@
 - `Acceptor::close()` 非 loop 线程调用时没有从 `Epoller` 删除 `listen_channel_`，存在 stale `Channel*` 风险，需要回到 loop 线程执行关闭清理。
 - `Acceptor::handleRead()` 中 accepted fd 缺少 RAII 所有权保护，callback 抛异常时可能泄漏 fd。
 - `Channel` 需要补 `tie(std::shared_ptr<void>)` / `weak_ptr` 机制，为后续 `Session` 生命周期管理打基础。
-- `EventLoop` 异常策略和 `FrameDecoder` 高吞吐输入消费方式留到后续 `Session` / `TcpServer` 设计中处理。
+- `EventLoop` 异常策略已在 hardening round 2 中收口；`FrameDecoder` 高吞吐输入消费方式留到后续 `Session` / `TcpServer` 设计中处理。
 
 实施计划：
 
@@ -29,7 +115,7 @@
 - 全量验证已通过：`cmake -S . -B build && cmake --build build && ./build/server/liteim_server && ctest --test-dir build --output-on-failure`，105/105 passed。
 - 路径级旧路线残留检查无输出：没有 `server/net`、`server/protocol`、SQLite、InMemoryStorage 或 `step15_sqlite` 文件路径。
 - README/docs/tutorials 仓库外 `PROJECT_MEMORY` 链接检查无输出；公开入口已改为 `docs/roadmap.md`。
-- 最终 diff review 未发现需要继续修改的代码逻辑；`EventLoop` 异常策略和 `FrameDecoder` 输入 Buffer 化仍记录为后续 `Session` / `TcpServer` 设计事项。
+- 最终 diff review 未发现需要继续修改的代码逻辑；`FrameDecoder` 输入 Buffer 化仍记录为后续 `Session` / `TcpServer` 设计事项。
 
 ## 2026-05-05 Step 0 Reset
 
@@ -622,7 +708,7 @@ TDD RED：
 
 - 更新 `src/net/Channel.cpp`，实现 `handleEvent()` 和私有 `update()`。
 - `handleEvent()` 处理 `EPOLLHUP`、`EPOLLERR`、`EPOLLIN`、`EPOLLPRI`、`EPOLLRDHUP` 和 `EPOLLOUT`。
-- `handleEvent()` 先拷贝 active events 和 callbacks，降低回调中关闭连接或修改状态带来的成员访问风险。
+- `handleEvent()` 只拷贝 active events，不复制 callbacks；owner 生命周期由 Step 13 的 `Channel::tie()` 接管，未 `tie()` 的 callback 必须保证不会销毁当前 `Channel` 或重置正在执行的 callback。
 - `enableReading()`、`disableReading()`、`enableWriting()`、`disableWriting()` 和 `disableAll()` 修改 `events_` 后调用 `update()`。
 - 新增 `src/net/EventLoop.cpp`，只实现 `updateChannel()` / `removeChannel()` 到 `Epoller` 的桥接、`quit()` 和线程归属检查。
 - 更新 `src/net/CMakeLists.txt`，把 `EventLoop.cpp` 加入 `liteim_net`。

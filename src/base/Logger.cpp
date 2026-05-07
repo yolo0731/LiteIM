@@ -14,15 +14,15 @@ namespace liteim
 
         spdlog::level::level_enum toSpdlogLevel(LogLevel level);
 
-        void createLoggerIfNeeded(LogLevel level)
+        void createLoggerIfNeeded(LogLevel initial_level)
         {
             if (!g_logger)
             {
                 g_logger = spdlog::stdout_color_mt("liteim");
                 g_logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] %v");
+                g_logger->set_level(toSpdlogLevel(initial_level));
                 spdlog::set_default_logger(g_logger);
             }
-            g_logger->set_level(toSpdlogLevel(level));
         }
 
         spdlog::level::level_enum toSpdlogLevel(LogLevel level)
@@ -83,6 +83,7 @@ namespace liteim
     {
         std::lock_guard<std::mutex> lock(g_logger_mutex);
         createLoggerIfNeeded(level);
+        g_logger->set_level(toSpdlogLevel(level));
     }
 
     std::shared_ptr<spdlog::logger> Logger::get()
@@ -94,7 +95,9 @@ namespace liteim
 
     void Logger::setLevel(LogLevel level)
     {
-        get()->set_level(toSpdlogLevel(level));
+        std::lock_guard<std::mutex> lock(g_logger_mutex);
+        createLoggerIfNeeded(LogLevel::Info);
+        g_logger->set_level(toSpdlogLevel(level));
     }
 
 } // namespace liteim

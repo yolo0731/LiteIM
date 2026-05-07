@@ -4,6 +4,7 @@
 #include "liteim/net/Channel.hpp"
 
 #include <cerrno>
+#include <stdexcept>
 #include <string>
 #include <unistd.h>
 
@@ -43,7 +44,11 @@ epoll_event makeEpollEvent(Channel* channel) {
 }  // namespace
 
 Epoller::Epoller(EventLoop* owner_loop)
-    : owner_loop_(owner_loop), epoll_fd_(::epoll_create1(EPOLL_CLOEXEC)), events_(kInitialEventListSize) {}
+    : owner_loop_(owner_loop), epoll_fd_(::epoll_create1(EPOLL_CLOEXEC)), events_(kInitialEventListSize) {
+    if (epoll_fd_ < 0) {
+        throw std::runtime_error("epoll_create1 failed with errno " + std::to_string(errno));
+    }
+}
 
 Epoller::~Epoller() {
     if (epoll_fd_ >= 0) {

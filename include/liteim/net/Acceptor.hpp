@@ -34,9 +34,13 @@ public:
 private:
     void closeInLoop() noexcept;
     void handleRead();
+    void handleAcceptError(int error_number) noexcept;
+    void rejectOneConnectionAfterFdExhaustion() noexcept;
+    void refillIdleFd() noexcept;
 
     EventLoop* loop_;
     UniqueFd listen_fd_;
+    UniqueFd idle_fd_;
     std::unique_ptr<Channel> listen_channel_;
     std::uint16_t port_{0};
     bool listening_{false};

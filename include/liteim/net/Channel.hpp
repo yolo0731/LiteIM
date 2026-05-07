@@ -39,6 +39,11 @@ public:
     void disableAll();
 
     EventLoop* ownerLoop() const noexcept;
+
+    // handleEvent() does not copy callbacks before invoking them. A callback must
+    // not destroy this Channel or reset the callback object currently being run.
+    // If callback execution can drop the owning object, call tie() first so the
+    // owner stays alive for the duration of handleEvent().
     void setReadCallback(EventCallback callback);
     void setWriteCallback(EventCallback callback);
     void setCloseCallback(EventCallback callback);

@@ -107,19 +107,17 @@ Channel::enableReading()
 | `EPOLLIN` / `EPOLLPRI` / `EPOLLRDHUP` | `readCallback` |
 | `EPOLLOUT` | `writeCallback` |
 
-实现上先把 `revents_` 和 callbacks 拷贝到局部变量：
+实现上只把 `revents_` 保存到局部变量，callback 直接从成员调用：
 
 ```cpp
 const auto active_events = revents_;
-auto read_callback = read_callback_;
-auto write_callback = write_callback_;
-auto close_callback = close_callback_;
-auto error_callback = error_callback_;
 ```
 
-这样做是为了降低回调期间对象状态变化带来的风险。比如后续 `Session::handleRead()` 读到对端关闭后，可能会关闭连接；`Channel` 不应该在某个回调返回后继续依赖已经变化的成员状态。
+Step 13 review hardening 后，`Channel::tie()` 已经用 `weak_ptr` 管理 owner 生命周期：事件分发前先 lock owner，回调执行期间用局部 `shared_ptr` 保持 owner 存活。因此 `handleEventWithGuard()` 不再每次事件都复制四个 `std::function`，避免高频 `EPOLLIN` 路径上产生不必要的回调对象复制和潜在堆分配。
 
-本 Step 还没有引入 `shared_ptr` / `weak_ptr` 的连接生命周期保护。真正的 `Session` / `TcpConnection` 生命周期会在后续 Step 单独实现。
+后续 `Session` / `TcpConnection` 仍然要把 owner `shared_ptr` 传给 `tie()`，这样回调里关闭连接或释放外部引用时，事件分发期间对象仍然是稳定的。
+
+这个优化带来一个明确契约：`Channel` 不会用局部 `std::function` 副本保护未 `tie()` 的回调。未 `tie()` 的轻量 `Channel` 只能用于 `Acceptor::listen_channel_`、`EventLoop::wakeup_channel_` 这类 owner 生命周期明确的场景；callback 内部不得直接或间接析构当前 `Channel`，也不得重置正在执行的 callback。只要 callback 可能释放 owner，就必须先调用 `tie()`。
 
 ## 6. close 和 error 为什么优先处理
 
@@ -172,6 +170,9 @@ TEST(ChannelTest, ReadWriteEventInvokesCallbacksInStableOrder)
 TEST(ChannelTest, HangupWithoutReadableEventInvokesCloseOnly)
 TEST(ChannelTest, ErrorEventInvokesErrorCallback)
 TEST(ChannelTest, HandleEventToleratesMissingCallbacks)
+TEST(ChannelTest, TiedExpiredOwnerSkipsCallbacks)
+TEST(ChannelTest, TiedOwnerStaysAliveDuringCallback)
+TEST(ChannelTest, HandleEventDoesNotCopyStoredCallbacks)
 ```
 
 这些测试分别验证：
@@ -183,6 +184,9 @@ TEST(ChannelTest, HandleEventToleratesMissingCallbacks)
 - 只有 `EPOLLHUP` 时触发 close callback，不触发 read callback。
 - `EPOLLERR` 触发 error callback。
 - 没有设置 callback 时，`handleEvent()` 不应该崩溃。
+- `tie()` 后 owner 已释放时跳过回调。
+- 回调执行期间局部 `shared_ptr` 会让 tied owner 保持存活。
+- 事件分发不复制已存储的 callback。
 
 TDD RED 阶段，新增测试后构建失败在：
 
@@ -209,7 +213,7 @@ ctest --test-dir build --output-on-failure
 ctest --test-dir build -R ChannelTest --output-on-failure
 ```
 
-当前 Step 11 预期 CTest 通过 88 个测试，其中 7 个是新增的 `ChannelTest`。
+当前 Step 11 初次完成时 CTest 通过 88 个测试，其中 7 个是新增的 `ChannelTest`。Step 13 review hardening 后又补充了 `tie()` 和 callback no-copy 回归测试。
 
 ## 10. 面试时怎么讲
 
@@ -237,9 +241,13 @@ ctest --test-dir build -R ChannelTest --output-on-failure
 
 因为对端半关闭时，socket 里可能还有剩余数据。让 read callback 处理，可以由后续 `Session::handleRead()` 统一读到 `0` 或读完剩余数据后关闭连接。
 
-**为什么回调要先拷贝到局部变量？**
+**为什么现在不再拷贝 callback 到局部变量？**
 
-回调里可能关闭连接或修改对象状态。先拷贝 `revents` 和 callback，可以避免分发过程中反复读取变化中的成员。
+当前实现只拷贝 `revents_`。owner 生命周期由 `Channel::tie()` 的 `weak_ptr` / `shared_ptr` 保护，callback 直接调用成员，避免每次 epoll 事件都复制四个 `std::function`。
+
+**不拷贝 callback 会不会有风险？**
+
+有边界要求。已 `tie()` 的连接类 owner 会在 `handleEvent()` 期间被局部 `shared_ptr` 保住；未 `tie()` 的 `Channel` 必须保证 callback 不会销毁当前 `Channel`，也不会重置正在执行的 callback。后续 `Session` / `TcpConnection` 必须使用 `tie()`。
 
 **Step 11 为什么新增了 `EventLoop.cpp`，但不实现 `loop()`？**
 

@@ -54,6 +54,7 @@ void queueInLoop(Functor task);
 void updateChannel(Channel* channel);
 void removeChannel(Channel* channel);
 bool isInLoopThread() const noexcept;
+bool isStopped() const noexcept;
 void assertInLoopThread() const;
 ```
 
@@ -66,6 +67,7 @@ void assertInLoopThread() const;
 - `updateChannel()`：把 `Channel` 的关注事件更新给 `Epoller`。
 - `removeChannel()`：把 `Channel` 从 `Epoller` 移除。
 - `isInLoopThread()`：判断当前调用是否发生在 loop 所属线程。
+- `isStopped()`：判断 `loop()` 是否已经进入并返回，用于 `Acceptor::close()` 等跨线程清理判断 fallback 路径。刚构造但尚未进入 `loop()` 的对象不算 stopped，即使提前调用过 `quit()` 也不算 stopped。
 - `assertInLoopThread()`：跨线程误用时抛出异常，尽早暴露问题。
 
 ## 4. loop() 怎么运行
@@ -77,14 +79,27 @@ while (!quit_) {
     doPendingTasks()
     Epoller::poll(-1)
     for each active channel:
-        channel->handleEvent()
+        try channel->handleEvent()
     doPendingTasks()
 }
 ```
 
-开头先执行一次 `doPendingTasks()`，是为了处理“任务已经在 loop 启动前进入队列”的情况，避免一上来就阻塞在 `epoll_wait()`。
+开头先执行一次 `doPendingTasks()`，是为了处理“任务已经在 loop 启动前进入队列”的情况，避免一上来就阻塞在 `epoll_wait()`。Step 13 hardening round 3 后，即使 `quit()` 早于第一次 `loop()`，`loop()` 也会先执行已经排队的 pending task，再退出；这保证了 Acceptor 这类关闭清理任务不会因为预先 quit 而永远没人执行。
 
 `poll(-1)` 表示没有事件时一直阻塞。跨线程任务靠 `eventfd` 唤醒它。
+
+Step 13 hardening round 2 后，`loop()` 用 RAII guard 管理 `looping_` 状态：即使 `poll()` 或内部逻辑抛异常，`looping_` 也会复位。活跃 `Channel` 回调和 pending task 会被逐个 `try/catch` 隔离并写日志，单个业务回调抛异常不会直接杀死整个 I/O loop。
+
+Step 13 hardening round 3 进一步明确 `isStopped()` 的语义：它不是“当前没在 `loop()` 里”，而是“`loop()` 已经进入并退出”。这能区分几种状态：
+
+| 状态 | `loop_exited_` | `looping_` | `isStopped()` |
+| --- | --- | --- | --- |
+| 刚构造，还没启动 | false | false | false |
+| 第一次 `loop()` 前已经调用 `quit()` | false | false | false |
+| `loop()` 正在运行 | false | true | false |
+| `loop()` 已返回 | true | false | true |
+
+这个区分服务于 `Acceptor::close()`：loop 还没启动但马上会启动时，close 仍应投递回 owner loop 删除 `Channel`；只有 loop 已经退出后，才走直接释放资源的 fallback。
 
 ## 5. 为什么需要 eventfd
 
@@ -159,6 +174,8 @@ wakeup_channel_->enableReading();
 
 这样 eventfd 和普通 socket fd 一样，都通过 epoll 管理。区别是 eventfd 只服务于内部任务唤醒，不代表客户端连接。
 
+`wakeup_fd_` 使用 `UniqueFd` 持有，保证 `EventLoop` 构造或注册 wakeup channel 过程中出现异常时，已经创建出来的 eventfd 也有明确关闭责任。
+
 ## 9. 测试设计
 
 本 Step 新增：
@@ -168,6 +185,11 @@ TEST(EventLoopTest, RunInLoopExecutesImmediatelyOnOwnerThread)
 TEST(EventLoopTest, QueueInLoopFromOtherThreadWakesAndExecutesTask)
 TEST(EventLoopTest, LoopHandlesRegisteredFdEvent)
 TEST(EventLoopTest, QueueInLoopRunsMultipleTasksAfterWakeup)
+TEST(EventLoopTest, ChannelCallbackExceptionDoesNotEscapeLoop)
+TEST(EventLoopTest, IsStoppedIsFalseBeforeLoopEverStarts)
+TEST(EventLoopTest, IsStoppedIsFalseAfterQuitBeforeLoopEverStarts)
+TEST(EventLoopTest, LoopRunsQueuedTaskWhenQuitWasRequestedBeforeStart)
+TEST(EventLoopTest, IsStoppedBecomesTrueAfterLoopReturns)
 ```
 
 这些测试覆盖：
@@ -176,6 +198,11 @@ TEST(EventLoopTest, QueueInLoopRunsMultipleTasksAfterWakeup)
 - 其他线程调用 `queueInLoop()` 能通过 eventfd 唤醒 loop 并执行任务。
 - loop 能处理普通 pipe fd 可读事件，并分发到 `Channel` read callback。
 - 多个跨线程任务不会因为 wakeup 合并而丢失。
+- 单个 `Channel` 回调抛异常不会逃出并终止 `EventLoop::loop()`。
+- `loop()` 启动前 `isStopped()` 为 false，避免上层误认为 loop 已经结束。
+- 第一次 `loop()` 前即使调用过 `quit()`，`isStopped()` 仍然为 false。
+- 第一次 `loop()` 前如果已经有 pending task 且已经调用过 `quit()`，`loop()` 仍会先执行 pending task 再退出。
+- `loop()` 返回后 `isStopped()` 为 true，方便上层对象判断停止后的清理路径。
 
 TDD RED 阶段，新增接口测试后构建失败在：
 
@@ -204,13 +231,13 @@ ctest --test-dir build --output-on-failure
 ctest --test-dir build -R EventLoop --output-on-failure
 ```
 
-Step 12 预期 CTest 通过 92 个测试，其中 4 个是新增的 `EventLoopTest`。
+Step 12 初次完成时 CTest 通过 92 个测试，其中 4 个是新增的 `EventLoopTest`。Step 13 hardening round 2 又补充了 2 个 `EventLoopTest`，用于验证回调异常隔离和 `isStopped()` 停止状态。Step 13 hardening round 3 追加 `IsStoppedIsFalseBeforeLoopEverStarts`、`IsStoppedIsFalseAfterQuitBeforeLoopEverStarts` 和 `LoopRunsQueuedTaskWhenQuitWasRequestedBeforeStart`，防止把“尚未启动”和“已经停止”混成同一种状态，并确保预先 quit 时仍执行已排队清理任务。
 
 ## 11. 面试时怎么讲
 
 可以这样讲：
 
-> 我把 `EventLoop` 作为 Reactor 的调度层：它持有 `Epoller`，在 `loop()` 中阻塞等待 fd 事件，拿到活跃 `Channel` 后调用 `handleEvent()`。为了支持跨线程任务投递，我给每个 `EventLoop` 内置一个 `eventfd`，并把它也注册成 `Channel`。其他线程调用 `queueInLoop()` 时，先把任务放进 mutex 保护的队列，再写 eventfd 唤醒 epoll。这样业务线程不会直接修改连接，而是把操作投递回连接所属 I/O 线程执行。
+> 我把 `EventLoop` 作为 Reactor 的调度层：它持有 `Epoller`，在 `loop()` 中阻塞等待 fd 事件，拿到活跃 `Channel` 后调用 `handleEvent()`。为了支持跨线程任务投递，我给每个 `EventLoop` 内置一个由 `UniqueFd` 管理的 `eventfd`，并把它也注册成 `Channel`。其他线程调用 `queueInLoop()` 时，先把任务放进 mutex 保护的队列，再写 eventfd 唤醒 epoll。`loop()` 会隔离单个回调异常并保持自身状态可恢复，这样业务线程不会直接修改连接，而是把操作投递回连接所属 I/O 线程执行。
 
 要强调三个边界：
 

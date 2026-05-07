@@ -103,34 +103,30 @@ void Channel::handleEvent() {
 
 void Channel::handleEventWithGuard() {
     const auto active_events = revents_;
-    auto read_callback = read_callback_;
-    auto write_callback = write_callback_;
-    auto close_callback = close_callback_;
-    auto error_callback = error_callback_;
 
     if ((active_events & EPOLLHUP) != 0 && (active_events & EPOLLIN) == 0) {
-        if (close_callback) {
-            close_callback();
+        if (close_callback_) {
+            close_callback_();
         }
         return;
     }
 
     if ((active_events & EPOLLERR) != 0) {
-        if (error_callback) {
-            error_callback();
+        if (error_callback_) {
+            error_callback_();
         }
         return;
     }
 
     if ((active_events & (EPOLLIN | EPOLLPRI | EPOLLRDHUP)) != 0) {
-        if (read_callback) {
-            read_callback();
+        if (read_callback_) {
+            read_callback_();
         }
     }
 
     if ((active_events & EPOLLOUT) != 0) {
-        if (write_callback) {
-            write_callback();
+        if (write_callback_) {
+            write_callback_();
         }
     }
 }

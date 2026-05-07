@@ -262,6 +262,16 @@ parseLogLevel("verbose") == LogLevel::Info
 
 职责：返回当前 logger。如果还没有显式调用 `init()`，它会按 `Info` 级别创建默认 logger。
 
+`get()` 只保证 logger 存在，不改变已经配置好的日志级别。也就是说：
+
+```text
+Logger::init(Debug)
+Logger::get()
+Logger::get()
+```
+
+后续多次 `get()` 仍然保持 `Debug`。否则任何模块拿 logger 打日志都会把全局级别重置回 `Info`，压测或排查问题时很难稳定打开 debug 日志。
+
 ### `Logger::setLevel()`
 
 职责：运行时调整日志级别。
@@ -373,6 +383,8 @@ TEST(StatusTest, ErrorStatusCarriesCodeAndMessage)
 TEST(LoggerTest, ParseLogLevelReturnsExpectedLevel)
 TEST(LoggerTest, UnknownLogLevelFallsBackToInfo)
 TEST(LoggerTest, InitCreatesReusableLogger)
+TEST(LoggerTest, GetDoesNotResetConfiguredLevel)
+TEST(LoggerTest, SetLevelSurvivesLaterGetCalls)
 ```
 
 覆盖点：
@@ -380,6 +392,8 @@ TEST(LoggerTest, InitCreatesReusableLogger)
 - 常见日志级别字符串能正确解析。
 - 未知日志级别回退到 `Info`。
 - `Logger::init()` 后能拿到名为 `liteim` 的 logger。
+- `Logger::get()` 不会把已经配置好的日志级别重置成 `Info`。
+- `Logger::setLevel()` 设置后的级别能经受后续 `get()` 调用。
 
 ### `tests/base/timestamp_test.cpp`
 

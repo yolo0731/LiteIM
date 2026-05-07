@@ -1,11 +1,13 @@
 #include "liteim/net/Acceptor.hpp"
 
+#include "liteim/base/Logger.hpp"
 #include "liteim/net/Channel.hpp"
 #include "liteim/net/EventLoop.hpp"
 
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cstring>
+#include <fcntl.h>
 #include <future>
 #include <memory>
 #include <stdexcept>
@@ -51,9 +53,25 @@ std::uint16_t boundPort(int fd) {
     return ntohs(address.sin_port);
 }
 
+int openIdleFd() {
+    const int fd = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) {
+        throw std::runtime_error("open(/dev/null) failed with errno " + std::to_string(errno));
+    }
+    return fd;
+}
+
+void logWarnNoexcept(const char* format, int error_number) noexcept {
+    try {
+        Logger::get()->warn(format, error_number);
+    } catch (...) {
+    }
+}
+
 }  // namespace
 
-Acceptor::Acceptor(EventLoop* loop, const std::string& listen_ip, std::uint16_t port) : loop_(loop) {
+Acceptor::Acceptor(EventLoop* loop, const std::string& listen_ip, std::uint16_t port)
+    : loop_(loop) {
     if (loop_ == nullptr) {
         throw std::invalid_argument("Acceptor requires a valid EventLoop");
     }
@@ -64,12 +82,12 @@ Acceptor::Acceptor(EventLoop* loop, const std::string& listen_ip, std::uint16_t 
         int fd = kInvalidFd;
         throwIfError(createNonBlockingSocket(fd));
         listen_fd_.reset(fd);
+        idle_fd_.reset(openIdleFd());
         throwIfError(setReuseAddr(listen_fd_.fd()));
         throwIfError(setReusePort(listen_fd_.fd()));
 
         const auto listen_address = makeListenAddress(listen_ip, port);
-        if (::bind(listen_fd_.fd(),
-                   reinterpret_cast<const sockaddr*>(&listen_address),
+        if (::bind(listen_fd_.fd(), reinterpret_cast<const sockaddr*>(&listen_address),
                    static_cast<socklen_t>(sizeof(listen_address))) < 0) {
             throw std::runtime_error("bind failed with errno " + std::to_string(errno));
         }
@@ -111,7 +129,13 @@ bool Acceptor::listening() const noexcept {
 
 void Acceptor::close() noexcept {
     if (loop_ != nullptr && !loop_->isInLoopThread()) {
+        if (loop_->isStopped()) {
+            closeInLoop();
+            return;
+        }
+
         try {
+            // promise/future 用于跨线程等待 closeInLoop() 完成，避免调用线程提前释放资源。
             auto done = std::make_shared<std::promise<void>>();
             auto future = done->get_future();
             loop_->queueInLoop([this, done]() noexcept {
@@ -131,7 +155,7 @@ void Acceptor::closeInLoop() noexcept {
     listening_ = false;
 
     if (listen_channel_ != nullptr) {
-        if (loop_ != nullptr) {
+        if (loop_ != nullptr && loop_->isInLoopThread()) {
             try {
                 loop_->removeChannel(listen_channel_.get());
             } catch (...) {
@@ -141,15 +165,14 @@ void Acceptor::closeInLoop() noexcept {
     }
 
     listen_fd_.reset();
+    idle_fd_.reset();
 }
 
 void Acceptor::handleRead() {
     while (listen_fd_) {
         sockaddr_in peer_address{};
         socklen_t len = static_cast<socklen_t>(sizeof(peer_address));
-        const int fd = ::accept4(listen_fd_.fd(),
-                                 reinterpret_cast<sockaddr*>(&peer_address),
-                                 &len,
+        const int fd = ::accept4(listen_fd_.fd(), reinterpret_cast<sockaddr*>(&peer_address), &len,
                                  SOCK_NONBLOCK | SOCK_CLOEXEC);
         if (fd >= 0) {
             UniqueFd accepted_fd(fd);
@@ -160,14 +183,59 @@ void Acceptor::handleRead() {
             continue;
         }
 
-        if (errno == EINTR) {
+        const int error_number = errno;
+        if (error_number == EINTR) {
             continue;
         }
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        if (error_number == EAGAIN || error_number == EWOULDBLOCK) {
             return;
+        }
+        handleAcceptError(error_number);
+        if (error_number == ECONNABORTED) {
+            continue;
         }
         return;
     }
+}
+
+void Acceptor::handleAcceptError(int error_number) noexcept {
+    if (error_number == ECONNABORTED) {
+        logWarnNoexcept("accept4 aborted a pending connection with errno {}", error_number);
+        return;
+    }
+
+    if (error_number == EMFILE || error_number == ENFILE) {
+        logWarnNoexcept("accept4 hit fd exhaustion with errno {}", error_number);
+        rejectOneConnectionAfterFdExhaustion();
+        return;
+    }
+
+    logWarnNoexcept("accept4 failed with errno {}", error_number);
+}
+
+void Acceptor::rejectOneConnectionAfterFdExhaustion() noexcept {
+    idle_fd_.reset();
+
+    sockaddr_in peer_address{};
+    socklen_t len = static_cast<socklen_t>(sizeof(peer_address));
+    const int fd = ::accept4(listen_fd_.fd(), reinterpret_cast<sockaddr*>(&peer_address), &len,
+                             SOCK_NONBLOCK | SOCK_CLOEXEC);
+    if (fd >= 0) {
+        UniqueFd rejected_fd(fd);
+    } else {
+        logWarnNoexcept("accept4 retry after fd exhaustion failed with errno {}", errno);
+    }
+
+    refillIdleFd();
+}
+
+void Acceptor::refillIdleFd() noexcept {
+    const int fd = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) {
+        logWarnNoexcept("failed to refill Acceptor idle fd with errno {}", errno);
+        return;
+    }
+    idle_fd_.reset(fd);
 }
 
 }  // namespace liteim

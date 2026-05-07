@@ -94,9 +94,9 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 12 verification | done | CMake configure/build, server smoke, CTest 92/92, diff check, `.gitkeep`, and stale-route path checks passed. |
 | Step 12 commit | done | Commit message: `feat(net): add event loop with eventfd task queue`. |
 | Step 13 concept | done | Step 13 implements the nonblocking listen socket and accept loop boundary. |
-| Step 13 tests | done | Added `Acceptor` interface and real localhost connection tests. |
-| Step 13 code | done | Implemented `Acceptor` with bind/listen, listen `Channel`, `accept4()` loop, callback, and close cleanup. |
-| Step 13 docs | done | Synced README, docs, findings, progress, tutorials, and PROJECT_MEMORY for Acceptor behavior. |
+| Step 13 tests | done | Added `Acceptor` interface, real localhost connection tests, and `UniqueFd` ownership regression tests. |
+| Step 13 code | done | Implemented `Acceptor` with bind/listen, listen `Channel`, `accept4()` loop, callback, close cleanup, and `UniqueFd` fd ownership protection. |
+| Step 13 docs | done | Synced README, docs, findings, progress, tutorials, and PROJECT_MEMORY for Acceptor behavior and `UniqueFd` ownership semantics. |
 | Step 13 verification | done | CMake configure/build, server smoke, CTest 97/97, diff check, `.gitkeep`, and stale-route path checks passed. |
 | Step 13 commit | done | Commit message: `feat(net): implement nonblocking acceptor`. |
 | Step 13 review hardening concept | done | Verified external review points and only fixed confirmed local net-layer issues before Step 14. |
@@ -104,6 +104,16 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 13 review hardening code | done | Added `UniqueFd`, made Acceptor close cleanup run on the loop thread, and added Channel weak tie support. |
 | Step 13 review hardening docs | done | Synced README/docs/tutorials/planning files and moved public roadmap link inside the repo. |
 | Step 13 review hardening verification | done | CMake configure/build, server smoke, CTest 105/105, path stale-route checks, README external-link check, and final diff review passed. |
+| Step 13 hardening round 2 concept | done | Evaluated external review points and accepted Logger, Epoller, EventLoop, Acceptor, and Channel hardening within the current Step 13 boundary. |
+| Step 13 hardening round 2 tests | done | Added regressions for Logger level stability, EventLoop exception isolation/stopped state, Acceptor stopped close/fd exhaustion, and Channel no-copy callback dispatch. |
+| Step 13 hardening round 2 code | done | Fixed Logger level reset, Epoller constructor failure semantics, EventLoop RAII wakeup/stopped/exception handling, Acceptor idle-fd close fallback, and Channel callback dispatch copies. |
+| Step 13 hardening round 2 docs | done | Synced README, docs, findings, progress, task plan, and Step 2/10/11/12/13 tutorials for hardening round 2 behavior. |
+| Step 13 hardening round 2 verification | done | CMake configure/build, server smoke, targeted hardening tests, and full CTest 112/112 passed. |
+| Step 13 hardening round 3 concept | done | Evaluated follow-up review points and accepted the precise EventLoop stopped-state, Acceptor no-throw logging, and Channel no-copy callback contract fixes. |
+| Step 13 hardening round 3 tests | done | Added regressions for `isStopped()` before first `loop()`, `quit()` before first `loop()`, queued tasks when quit predates loop startup, and cross-thread Acceptor close before loop startup. |
+| Step 13 hardening round 3 code | done | Fixed `EventLoop::isStopped()` to use explicit loop-exited state, made loop drain pending tasks before honoring pre-start quit, protected Acceptor noexcept logging, and documented Channel callback lifetime requirements in the header. |
+| Step 13 hardening round 3 docs | done | Synced README, docs, findings, progress, task plan, and Step 11/12/13 tutorials for hardening round 3 behavior. |
+| Step 13 hardening round 3 verification | done | CMake build, targeted hardening tests, server smoke, full CTest 116/116, and diff whitespace check passed. |
 
 ## Current Decision
 
@@ -680,7 +690,7 @@ Next Step: `Step 13: implement Acceptor`.
 
 ## Step 13 Target
 
-Step 13 implements the nonblocking `Acceptor` listen socket and new-connection callback boundary:
+Step 13 implements the nonblocking `Acceptor` listen socket and new-connection callback boundary. It also introduces `UniqueFd`, a small RAII owner for Linux fd lifetime, because `Acceptor` needs explicit ownership for both the long-lived listen fd and the short-lived accepted fd before the callback takes over.
 
 ```text
 LiteIM/
@@ -709,7 +719,7 @@ LiteIM/
     └── unique_fd_test.cpp
 ```
 
-Step 13 intentionally implements only listen socket creation, socket options, bind/listen, listen fd registration in `EventLoop`, `accept4()` loop to `EAGAIN`, new-connection callback, fd RAII cleanup, and listen fd cleanup. It does not implement `Session`, `TcpServer`, `EventLoopThread`, `EventLoopThreadPool`, business thread pool, MySQL, or Redis.
+Step 13 intentionally implements only listen socket creation, socket options, bind/listen, listen fd registration in `EventLoop`, `accept4()` loop to `EAGAIN`, new-connection callback, fd RAII cleanup through `UniqueFd`, and listen fd cleanup. `UniqueFd` exists to make fd ownership explicit: destructor closes the owned fd, `release()` hands ownership to the next layer without closing, move transfers ownership, and `reset()` closes the old fd before taking a new one. It does not implement `Session`, `TcpServer`, `EventLoopThread`, `EventLoopThreadPool`, business thread pool, MySQL, or Redis.
 
 Step 13 verification:
 
@@ -729,12 +739,19 @@ Expected new tests:
 - `TEST(AcceptorTest, ClosedListenSocketRejectsNewConnections)`
 - `TEST(AcceptorTest, CloseFromOtherThreadRemovesChannelBeforeClosingFd)`
 - `TEST(AcceptorTest, AcceptedFdIsClosedWhenCallbackThrowsBeforeTakingOwnership)`
+- `TEST(AcceptorTest, CloseFromOtherThreadAfterLoopStopsDoesNotBlock)`
+- `TEST(AcceptorTest, FdExhaustionRejectsPendingConnectionWithoutLaterCallback)`
 - `TEST(UniqueFdTest, DestructorClosesOwnedFd)`
 - `TEST(UniqueFdTest, ReleaseReturnsFdWithoutClosing)`
 - `TEST(UniqueFdTest, MoveTransfersOwnership)`
 - `TEST(UniqueFdTest, ResetClosesPreviousFd)`
 - `TEST(ChannelTest, TiedExpiredOwnerSkipsCallbacks)`
 - `TEST(ChannelTest, TiedOwnerStaysAliveDuringCallback)`
+- `TEST(ChannelTest, HandleEventDoesNotCopyStoredCallbacks)`
+- `TEST(EventLoopTest, ChannelCallbackExceptionDoesNotEscapeLoop)`
+- `TEST(EventLoopTest, IsStoppedBecomesTrueAfterLoopReturns)`
+- `TEST(LoggerTest, GetDoesNotResetConfiguredLevel)`
+- `TEST(LoggerTest, SetLevelSurvivesLaterGetCalls)`
 
 Next Step: `Step 14: implement Session`.
 

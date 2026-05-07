@@ -69,6 +69,8 @@ epoll_create1(EPOLL_CLOEXEC)
 
 `EPOLL_CLOEXEC` 的作用是设置 close-on-exec，避免进程执行新程序时意外继承 epoll fd。
 
+如果 `epoll_create1()` 返回失败，构造函数会直接抛出 `std::runtime_error`。原因是 `Epoller` 没有有效 epoll fd 时无法提供任何可用能力，让对象“半初始化”存在反而会把错误延迟到 `EventLoop` 注册 wakeup channel 时才暴露，还可能让已经创建的其他 fd 缺少 RAII 清理边界。
+
 析构时关闭 epoll fd：
 
 ```cpp

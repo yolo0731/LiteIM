@@ -7,6 +7,8 @@
 #include <thread>
 #include <vector>
 
+#include "liteim/net/UniqueFd.hpp"
+
 namespace liteim
 {
 
@@ -33,6 +35,7 @@ namespace liteim
         void removeChannel(Channel *channel);
 
         bool isInLoopThread() const noexcept;
+        bool isStopped() const noexcept;
         void assertInLoopThread() const;
 
     private:
@@ -40,11 +43,12 @@ namespace liteim
         void handleWakeup() noexcept;
         void doPendingTasks();
 
-        bool looping_{false};
+        std::atomic_bool looping_{false};
         std::atomic_bool quit_{false};
+        std::atomic_bool loop_exited_{false}; // true only after loop() has entered and returned
         const std::thread::id thread_id_;
         std::unique_ptr<Epoller> epoller_;
-        int wakeup_fd_{-1};
+        UniqueFd wakeup_fd_;
         std::unique_ptr<Channel> wakeup_channel_; // 用于唤醒 loop 所在线程的 Channel,当其他线程向 wakeup_fd_ 写入数据时，wakeup_channel_ 就会变成可读状态，loop 所在线程就会被唤醒
         std::mutex mutex_;
         std::vector<Functor> pending_tasks_;            // 由 loop() 线程以后要执行的任务函数
