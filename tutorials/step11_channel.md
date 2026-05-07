@@ -113,7 +113,7 @@ Channel::enableReading()
 const auto active_events = revents_;
 ```
 
-Step 13 review hardening 后，`Channel::tie()` 已经用 `weak_ptr` 管理 owner 生命周期：事件分发前先 lock owner，回调执行期间用局部 `shared_ptr` 保持 owner 存活。因此 `handleEventWithGuard()` 不再每次事件都复制四个 `std::function`，避免高频 `EPOLLIN` 路径上产生不必要的回调对象复制和潜在堆分配。
+Step 13 review hardening 后，`Channel::tie()` 已经用 `weak_ptr` 管理 owner 生命周期：`handleEvent()` 事件分发前先 lock owner，回调执行期间用局部 `shared_ptr` 保持 owner 存活。guard 和事件分发 body 在同一个栈帧里，因此可以直接看出 owner 会活到 `handleEvent()` 返回。同时 `handleEvent()` 不再每次事件都复制四个 `std::function`，避免高频 `EPOLLIN` 路径上产生不必要的回调对象复制和潜在堆分配。
 
 后续 `Session` / `TcpConnection` 仍然要把 owner `shared_ptr` 传给 `tie()`，这样回调里关闭连接或释放外部引用时，事件分发期间对象仍然是稳定的。
 

@@ -210,7 +210,7 @@ liteim_net
 - `Channel::events()` 表示想监听的事件，`Channel::revents()` 表示本轮 epoll 实际返回的事件。
 - `Channel::handleEvent()` 把 `EPOLLIN` / `EPOLLPRI` / `EPOLLRDHUP` 分发给 read callback，把 `EPOLLOUT` 分发给 write callback，把 `EPOLLHUP` 和 `EPOLLERR` 分发给 close/error callback。
 - `Channel::tie()` 保存 owner 的 `weak_ptr`；事件分发前会先 lock，owner 已释放时跳过回调，owner 仍存在时用局部 `shared_ptr` 保证回调执行期间对象不被销毁。
-- `Channel::handleEventWithGuard()` 只保留 `revents_` 快照，不复制 callback；owner 生命周期由 `tie()` 保护，减少高频事件路径上的 `std::function` 复制。未 `tie()` 的 `Channel` 必须保证 callback 执行期间不会销毁当前 `Channel`，也不会重置正在执行的 callback。
+- `Channel::handleEvent()` 先在本栈帧内 lock `tie()` 保存的 owner，再保留 `revents_` 快照并直接调用 callback，不复制 callback；owner 生命周期由局部 `shared_ptr` guard 保护，减少高频事件路径上的 `std::function` 复制。未 `tie()` 的 `Channel` 必须保证 callback 执行期间不会销毁当前 `Channel`，也不会重置正在执行的 callback。
 - `Channel` 修改关注事件后通过所属 `EventLoop::updateChannel()` 交给 `Epoller` 更新 epoll 注册状态。
 - `Epoller` 是 epoll 系统调用封装边界，负责 `epoll_create1(EPOLL_CLOEXEC)`、`epoll_ctl(ADD/MOD/DEL)` 和 `epoll_wait()`。
 - `Epoller` 构造时如果 `epoll_create1()` 失败会直接抛异常，避免半初始化对象进入 `EventLoop`。

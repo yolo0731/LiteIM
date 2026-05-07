@@ -13,6 +13,8 @@
 - 新增 `AcceptorTest.CloseFromOtherThreadBeforeLoopStartsStillRemovesChannel`，覆盖 loop 尚未启动时跨线程 close 仍必须回到 owner loop 删除 listen channel。
 - `Acceptor` fd 用尽 helper 保持 `noexcept`，但 warn 日志改走内部 no-throw wrapper，避免 `spdlog` 异常触发 `std::terminate()`。
 - `Channel.hpp`、Step 11 教程和 findings 补充 callback 不复制后的契约：未 `tie()` 的 callback 不能销毁当前 `Channel` 或重置正在执行的 callback；可能释放 owner 的场景必须调用 `tie()`。
+- `Acceptor::rejectOneConnectionAfterFdExhaustion()` 内联 idle fd 重建逻辑，删除只被单点调用的 private helper，让 fd 用尽后的“腾 fd、拒绝连接、补回 idle fd”流程连续可读。
+- `Channel::handleEvent()` 合并事件分发 private helper，让 `tie()` 得到的局部 `shared_ptr` guard 和事件分发 body 保持在同一个栈帧，生命周期边界更直观。
 
 定向 RED 已确认：
 
@@ -55,7 +57,7 @@ git diff --check
 - 新增 `EventLoop::isStopped()`，供停止后的跨线程资源清理判断。
 - `Acceptor` 增加 idle fd 保护，`EMFILE` / `ENFILE` 时拒绝一个 pending connection，避免 LT 模式 busy loop。
 - `Acceptor::close()` 在 loop 已停止时不再等待 queued task，改走直接释放资源的 fallback。
-- `Channel::handleEventWithGuard()` 不再复制四个 `std::function`，依靠 `Channel::tie()` 保证 owner 生命周期。未 `tie()` 的 `Channel` 必须保证 callback 不会销毁自身或重置当前 callback。
+- `Channel::handleEvent()` 不再复制四个 `std::function`，依靠 `Channel::tie()` 保证 owner 生命周期。未 `tie()` 的 `Channel` 必须保证 callback 不会销毁自身或重置当前 callback。
 
 未采纳：
 

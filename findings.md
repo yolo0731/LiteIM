@@ -39,7 +39,7 @@
 - `EventLoop::isStopped()` 表示 `loop()` 已经进入并返回，供 `Acceptor::close()` 在 loop 已退出后选择 fallback 清理路径。
 - `Acceptor::handleRead()` 对 `ECONNABORTED`、`EMFILE`、`ENFILE` 和未知 errno 做区分处理；fd 用尽时使用 idle fd 套路拒绝一个 pending connection，避免 LT 模式下反复 `EPOLLIN` 触发 busy loop。
 - `Acceptor::close()` 跨线程调用时，如果 loop 仍运行则投递回 owner loop；如果 loop 已停止，则不再 `future.wait()`，直接释放 `Channel`、listen fd 和 idle fd。
-- `Channel::handleEventWithGuard()` 不再每次事件复制四个 `std::function`；owner 生命周期由 `Channel::tie()` 的 `weak_ptr` / `shared_ptr` 保证，事件分发只保留 `revents_` 快照。未 `tie()` 的轻量 `Channel` 必须保证 callback 不会销毁自身或重置当前 callback。
+- `Channel::handleEvent()` 不再拆出单点 private helper，也不再每次事件复制四个 `std::function`；owner 生命周期由 `Channel::tie()` 的 `weak_ptr` / `shared_ptr` 保证，事件分发只保留 `revents_` 快照。未 `tie()` 的轻量 `Channel` 必须保证 callback 不会销毁自身或重置当前 callback。
 
 已经评估但未在本轮采用的点：
 

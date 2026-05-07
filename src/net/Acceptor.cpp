@@ -87,7 +87,8 @@ Acceptor::Acceptor(EventLoop* loop, const std::string& listen_ip, std::uint16_t 
         throwIfError(setReusePort(listen_fd_.fd()));
 
         const auto listen_address = makeListenAddress(listen_ip, port);
-        if (::bind(listen_fd_.fd(), reinterpret_cast<const sockaddr*>(&listen_address),
+        if (::bind(listen_fd_.fd(),
+                   reinterpret_cast<const sockaddr*>(&listen_address),
                    static_cast<socklen_t>(sizeof(listen_address))) < 0) {
             throw std::runtime_error("bind failed with errno " + std::to_string(errno));
         }
@@ -135,7 +136,7 @@ void Acceptor::close() noexcept {
         }
 
         try {
-            // promise/future 用于跨线程等待 closeInLoop() 完成，避免调用线程提前释放资源。
+            // promise是跨线程通知器，它和 future 配合使用，promise用于在一个线程里设置一个值，future 用于在另一个线程里获取这个值。当promise 设置了值之后，future 就能获取到这个值，并且 future.wait()，会被唤醒继续执行，void表示不需要传数据
             auto done = std::make_shared<std::promise<void>>();
             auto future = done->get_future();
             loop_->queueInLoop([this, done]() noexcept {
@@ -172,7 +173,9 @@ void Acceptor::handleRead() {
     while (listen_fd_) {
         sockaddr_in peer_address{};
         socklen_t len = static_cast<socklen_t>(sizeof(peer_address));
-        const int fd = ::accept4(listen_fd_.fd(), reinterpret_cast<sockaddr*>(&peer_address), &len,
+        const int fd = ::accept4(listen_fd_.fd(),
+                                 reinterpret_cast<sockaddr*>(&peer_address),
+                                 &len,
                                  SOCK_NONBLOCK | SOCK_CLOEXEC);
         if (fd >= 0) {
             UniqueFd accepted_fd(fd);
@@ -198,13 +201,16 @@ void Acceptor::handleRead() {
     }
 }
 
+// 处理 accept4() 失败时的错误类型
 void Acceptor::handleAcceptError(int error_number) noexcept {
     if (error_number == ECONNABORTED) {
+        // 这个错误表示 accept4() 接受了一个连接，但在 accept4() 返回之前，这个连接就被对端关闭了
         logWarnNoexcept("accept4 aborted a pending connection with errno {}", error_number);
         return;
     }
 
     if (error_number == EMFILE || error_number == ENFILE) {
+        // 这两个错误都表示 fd 已经耗尽了，无法再 accept 新连接了，EMFILE 是针对进程的 fd 而言的，ENFILE 是针对整个系统的 fd 而言的
         logWarnNoexcept("accept4 hit fd exhaustion with errno {}", error_number);
         rejectOneConnectionAfterFdExhaustion();
         return;
@@ -213,12 +219,15 @@ void Acceptor::handleAcceptError(int error_number) noexcept {
     logWarnNoexcept("accept4 failed with errno {}", error_number);
 }
 
+// 当 fd 已经耗尽了，无法再 accept 新连接时，先关闭 idle_fd_，腾出一个 fd 来 accept 连接，然后立即关闭这个被 accept 的连接，最后再重新打开 idle_fd_，保证下次 accept 失败时还能正确地处理
 void Acceptor::rejectOneConnectionAfterFdExhaustion() noexcept {
     idle_fd_.reset();
 
     sockaddr_in peer_address{};
     socklen_t len = static_cast<socklen_t>(sizeof(peer_address));
-    const int fd = ::accept4(listen_fd_.fd(), reinterpret_cast<sockaddr*>(&peer_address), &len,
+    const int fd = ::accept4(listen_fd_.fd(),
+                             reinterpret_cast<sockaddr*>(&peer_address),
+                             &len,
                              SOCK_NONBLOCK | SOCK_CLOEXEC);
     if (fd >= 0) {
         UniqueFd rejected_fd(fd);
@@ -226,16 +235,12 @@ void Acceptor::rejectOneConnectionAfterFdExhaustion() noexcept {
         logWarnNoexcept("accept4 retry after fd exhaustion failed with errno {}", errno);
     }
 
-    refillIdleFd();
-}
-
-void Acceptor::refillIdleFd() noexcept {
-    const int fd = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
-    if (fd < 0) {
+    const int idle_fd = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
+    if (idle_fd < 0) {
         logWarnNoexcept("failed to refill Acceptor idle fd with errno {}", errno);
         return;
     }
-    idle_fd_.reset(fd);
+    idle_fd_.reset(idle_fd);
 }
 
 }  // namespace liteim

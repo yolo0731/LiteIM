@@ -83,25 +83,22 @@ void Channel::setErrorCallback(EventCallback callback) {
     error_callback_ = std::move(callback);
 }
 
-void Channel::tie(const std::shared_ptr<void>& owner) {
+void Channel::tie(const std::shared_ptr<void>& owner) {  // void表示不关心 owner 类型
     tie_ = owner;
     tied_ = true;
 }
 
 void Channel::handleEvent() {
+    std::shared_ptr<void> guard;
     if (tied_) {
-        auto guard = tie_.lock();
+        guard = tie_.lock();  // std::weak_ptr 的成员函数 lock() 将 weak_ptr 转换为
+                              // shared_ptr，如果原来的对象已经被销毁了，那么 lock()
+                              // 返回一个空的 shared_ptr
         if (guard == nullptr) {
             return;
         }
-        handleEventWithGuard();
-        return;
     }
 
-    handleEventWithGuard();
-}
-
-void Channel::handleEventWithGuard() {
     const auto active_events = revents_;
 
     if ((active_events & EPOLLHUP) != 0 && (active_events & EPOLLIN) == 0) {

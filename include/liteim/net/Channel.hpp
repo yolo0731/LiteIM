@@ -40,20 +40,21 @@ public:
 
     EventLoop* ownerLoop() const noexcept;
 
-    // handleEvent() does not copy callbacks before invoking them. A callback must
-    // not destroy this Channel or reset the callback object currently being run.
-    // If callback execution can drop the owning object, call tie() first so the
-    // owner stays alive for the duration of handleEvent().
     void setReadCallback(EventCallback callback);
     void setWriteCallback(EventCallback callback);
     void setCloseCallback(EventCallback callback);
     void setErrorCallback(EventCallback callback);
 
     void tie(const std::shared_ptr<void>& owner);
+
+    // handleEvent() keeps a local shared_ptr guard when tied, then dispatches
+    // callbacks directly without copying them. A callback must not destroy this
+    // Channel or reset the callback object currently being run. If callback
+    // execution can drop the owning object, call tie() first so the owner stays
+    // alive for the duration of handleEvent().
     void handleEvent();
 
 private:
-    void handleEventWithGuard();
     void update();
 
     EventLoop* owner_loop_;

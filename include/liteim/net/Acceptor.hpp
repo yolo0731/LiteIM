@@ -36,7 +36,6 @@ private:
     void handleRead();
     void handleAcceptError(int error_number) noexcept;
     void rejectOneConnectionAfterFdExhaustion() noexcept;
-    void refillIdleFd() noexcept;
 
     EventLoop* loop_;
     UniqueFd listen_fd_;
