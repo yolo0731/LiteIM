@@ -98,7 +98,6 @@ Acceptor::Acceptor(EventLoop* loop, const std::string& listen_ip, std::uint16_t 
         }
 
         port_ = boundPort(listen_fd_.fd());
-        listening_ = true;
         listen_channel_ = std::make_unique<Channel>(loop_, listen_fd_.fd());
         listen_channel_->setReadCallback([this]() { handleRead(); });
         listen_channel_->enableReading();
@@ -125,7 +124,7 @@ std::uint16_t Acceptor::port() const noexcept {
 }
 
 bool Acceptor::listening() const noexcept {
-    return listening_;
+    return static_cast<bool>(listen_fd_);
 }
 
 void Acceptor::close() noexcept {
@@ -136,7 +135,6 @@ void Acceptor::close() noexcept {
         }
 
         try {
-            // promise是跨线程通知器，它和 future 配合使用，promise用于在一个线程里设置一个值，future 用于在另一个线程里获取这个值。当promise 设置了值之后，future 就能获取到这个值，并且 future.wait()，会被唤醒继续执行，void表示不需要传数据
             auto done = std::make_shared<std::promise<void>>();
             auto future = done->get_future();
             loop_->queueInLoop([this, done]() noexcept {
@@ -153,8 +151,6 @@ void Acceptor::close() noexcept {
 }
 
 void Acceptor::closeInLoop() noexcept {
-    listening_ = false;
-
     if (listen_channel_ != nullptr) {
         if (loop_ != nullptr && loop_->isInLoopThread()) {
             try {
@@ -180,8 +176,7 @@ void Acceptor::handleRead() {
         if (fd >= 0) {
             UniqueFd accepted_fd(fd);
             if (new_connection_callback_) {
-                new_connection_callback_(accepted_fd.fd(), peer_address);
-                (void)accepted_fd.release();
+                new_connection_callback_(std::move(accepted_fd), peer_address);
             }
             continue;
         }
@@ -201,16 +196,13 @@ void Acceptor::handleRead() {
     }
 }
 
-// 处理 accept4() 失败时的错误类型
 void Acceptor::handleAcceptError(int error_number) noexcept {
     if (error_number == ECONNABORTED) {
-        // 这个错误表示 accept4() 接受了一个连接，但在 accept4() 返回之前，这个连接就被对端关闭了
         logWarnNoexcept("accept4 aborted a pending connection with errno {}", error_number);
         return;
     }
 
     if (error_number == EMFILE || error_number == ENFILE) {
-        // 这两个错误都表示 fd 已经耗尽了，无法再 accept 新连接了，EMFILE 是针对进程的 fd 而言的，ENFILE 是针对整个系统的 fd 而言的
         logWarnNoexcept("accept4 hit fd exhaustion with errno {}", error_number);
         rejectOneConnectionAfterFdExhaustion();
         return;
@@ -219,7 +211,6 @@ void Acceptor::handleAcceptError(int error_number) noexcept {
     logWarnNoexcept("accept4 failed with errno {}", error_number);
 }
 
-// 当 fd 已经耗尽了，无法再 accept 新连接时，先关闭 idle_fd_，腾出一个 fd 来 accept 连接，然后立即关闭这个被 accept 的连接，最后再重新打开 idle_fd_，保证下次 accept 失败时还能正确地处理
 void Acceptor::rejectOneConnectionAfterFdExhaustion() noexcept {
     idle_fd_.reset();
 

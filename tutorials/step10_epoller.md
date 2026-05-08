@@ -126,6 +126,15 @@ std::unordered_map<int, Channel*> channels_;
 
 `removeChannel()` 是显式删除入口。它会检查 fd 是否真的注册过，未注册则返回错误。
 
+Step 16 前代码清理后，`Epoller` 还会检查 `Channel::ownerLoop()`：
+
+```text
+Epoller owner_loop_ != nullptr
+Channel ownerLoop() 必须等于 owner_loop_
+```
+
+这样可以防止一个 `Channel` 被错误注册到其他 `EventLoop` 的 epoll 实例里，维护 one-loop-per-thread 边界。
+
 ## 7. 为什么第一版使用 LT 模式
 
 本项目当前使用 LT，也就是 level-triggered 模式。
@@ -146,6 +155,7 @@ LT 的特点是：
 
 - `nullptr` channel 返回 `InvalidArgument`。
 - 负 fd channel 返回 `InvalidArgument`。
+- owner loop 不匹配返回 `InvalidArgument`。
 - 没有关注事件的新 channel 不能 add，返回 `InvalidArgument`。
 - 删除未注册 channel 返回 `InvalidArgument`。
 - 系统调用失败返回 `IoError`。
@@ -189,6 +199,7 @@ TEST(EpollerTest, ModifyChannelToWriteInterestTakesEffect)
 TEST(EpollerTest, RemoveChannelStopsEvents)
 TEST(EpollerTest, PollTimeoutReturnsEmptyActiveList)
 TEST(EpollerTest, InvalidChannelOperationsReturnError)
+TEST(EpollerTest, RejectsChannelOwnedByDifferentEventLoop)
 ```
 
 这些测试使用真实 `pipe()` fd，而不是 mock。

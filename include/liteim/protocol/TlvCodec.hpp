@@ -20,15 +20,15 @@ namespace liteim
     using TlvValues = std::vector<TlvValue>;
     using TlvMap = std::unordered_map<TlvType, TlvValues>;
 
-    Status appendString(TlvType type, const std::string &value, Bytes &output); // 将一个字符串类型的 TLV 字段追加到 output 里
-    Status appendUint64(TlvType type, std::uint64_t value, Bytes &output);      // 将一个 uint64 类型的 TLV 字段追加到 output 里
+    Status appendString(TlvType type, const std::string &value, Bytes &output);
+    Status appendUint64(TlvType type, std::uint64_t value, Bytes &output);
 
-    Status parseTlvMap(const Byte *data, std::size_t len, TlvMap &output); // 负责从 body 字节流里循环读取 TLV 字段，检查格式和长度是否合法，然后按 TlvType 把每个 value 保存到 TlvMap 里
-    Status parseTlvMap(const Bytes &body, TlvMap &output);                 // 直接传 Bytes，调用方不用手动传 data() 和 size()
+    Status parseTlvMap(const Byte *data, std::size_t len, TlvMap &output);
+    Status parseTlvMap(const Bytes &body, TlvMap &output);
 
-    Status getString(const TlvMap &map, TlvType type, std::string &output); // 从 TlvMap 里取出某个 type 对应的第一个 value，并转成 std::string。
+    Status getString(const TlvMap &map, TlvType type, std::string &output);
     Status getUint64(const TlvMap &map, TlvType type, std::uint64_t &output);
-    Status getRepeatedString(const TlvMap &map, TlvType type, std::vector<std::string> &output); // 从TlvMap里取出某个type对应的所有value，转成std::vector<std::string>
+    Status getRepeatedString(const TlvMap &map, TlvType type, std::vector<std::string> &output);
     Status getRepeatedUint64(const TlvMap &map, TlvType type, std::vector<std::uint64_t> &output);
 
 } // namespace liteim

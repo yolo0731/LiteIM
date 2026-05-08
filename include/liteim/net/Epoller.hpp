@@ -13,7 +13,7 @@ class Channel;
 class EventLoop;
 
 class Epoller {
-public:
+  public:
     using ChannelList = std::vector<Channel*>;
 
     explicit Epoller(EventLoop* owner_loop);
@@ -26,7 +26,9 @@ public:
     Status updateChannel(Channel* channel);
     Status removeChannel(Channel* channel);
 
-private:
+  private:
+    Status validateChannelOwner(Channel* channel) const;
+
     EventLoop* owner_loop_;
     int epoll_fd_{-1};
     std::vector<epoll_event> events_;

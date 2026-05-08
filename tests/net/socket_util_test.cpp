@@ -1,5 +1,7 @@
 #include "liteim/net/SocketUtil.hpp"
 
+#include "liteim/net/UniqueFd.hpp"
+
 #include <cerrno>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -9,24 +11,6 @@
 #include <gtest/gtest.h>
 
 namespace {
-
-class FdGuard {
-public:
-    explicit FdGuard(int fd) : fd_(fd) {}
-
-    FdGuard(const FdGuard&) = delete;
-    FdGuard& operator=(const FdGuard&) = delete;
-
-    ~FdGuard() {
-        if (fd_ >= 0) {
-            const auto status = liteim::closeFd(fd_);
-            (void)status;
-        }
-    }
-
-private:
-    int fd_;
-};
 
 int getSocketFlag(int fd) {
     return ::fcntl(fd, F_GETFL, 0);
@@ -50,7 +34,7 @@ TEST(SocketUtilTest, CreateNonBlockingSocketReturnsNonblockingFd) {
     int fd = liteim::kInvalidFd;
 
     const auto status = liteim::createNonBlockingSocket(fd);
-    FdGuard guard(fd);
+    liteim::UniqueFd guard(fd);
 
     ASSERT_TRUE(status.isOk()) << status.message();
     ASSERT_GE(fd, 0);
@@ -61,7 +45,7 @@ TEST(SocketUtilTest, CreateNonBlockingSocketReturnsNonblockingFd) {
 TEST(SocketUtilTest, SetNonBlockingMarksPlainSocketNonblocking) {
     const int raw_fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
     ASSERT_GE(raw_fd, 0);
-    FdGuard guard(raw_fd);
+    liteim::UniqueFd guard(raw_fd);
 
     ASSERT_EQ(getSocketFlag(raw_fd) & O_NONBLOCK, 0);
 
@@ -74,7 +58,7 @@ TEST(SocketUtilTest, SetNonBlockingMarksPlainSocketNonblocking) {
 TEST(SocketUtilTest, SocketOptionsCanBeEnabled) {
     int fd = liteim::kInvalidFd;
     ASSERT_TRUE(liteim::createNonBlockingSocket(fd).isOk());
-    FdGuard guard(fd);
+    liteim::UniqueFd guard(fd);
 
     ASSERT_TRUE(liteim::setReuseAddr(fd).isOk());
     ASSERT_TRUE(liteim::setReusePort(fd).isOk());
@@ -121,7 +105,7 @@ TEST(SocketUtilTest, CloseFdInvalidatesDescriptorAndCanBeRepeated) {
 TEST(SocketUtilTest, GetSocketErrorReturnsCurrentSoError) {
     int fd = liteim::kInvalidFd;
     ASSERT_TRUE(liteim::createNonBlockingSocket(fd).isOk());
-    FdGuard guard(fd);
+    liteim::UniqueFd guard(fd);
 
     int socket_error = -1;
 

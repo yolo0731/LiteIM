@@ -1,5 +1,52 @@
 # LiteIM Progress
 
+## 2026-05-08 Pre-Step 16 Code Cleanup
+
+本次继续上轮未完成收尾，目标是在 `Step 16: implement TcpServer multi-Reactor version` 前完成接口和代码卫生清理，不启动 TcpServer 实现。
+
+已确认采用的清理项：
+
+- `Epoller::owner_loop_` 不能闲置，必须用于检查 `Channel` 是否属于同一个 `EventLoop`。
+- Packet/TLV 的大端读写 helper 有明确复用价值，应抽到协议层通用头文件。
+- `Acceptor::NewConnectionCallback` 应接收 `UniqueFd`，用类型表达 accepted fd 所有权。
+- `Acceptor::listening_` 是重复状态，可以由 `listen_fd_` 推导。
+- 测试里的自制 `FdGuard` 应替换成生产 `UniqueFd`。
+- 生产代码中过长教学注释应移到教程，源码只保留必要契约说明。
+
+已完成代码：
+
+- 新增 `include/liteim/protocol/ByteOrder.hpp`，提供 `appendUint16BE()`、`appendUint32BE()`、`appendUint64BE()`、`readUint16BE()`、`readUint32BE()`、`readUint64BE()`。
+- `src/protocol/Packet.cpp` 和 `src/protocol/TlvCodec.cpp` 改为复用 `ByteOrder.hpp`，删除重复 helper，wire format 不变。
+- `Epoller::updateChannel()` / `removeChannel()` 新增 owner-loop 校验，跨 `EventLoop` 的 `Channel` 返回 `InvalidArgument`。
+- `Acceptor::NewConnectionCallback` 改为 `std::function<void(UniqueFd, const sockaddr_in&)>`。
+- `Acceptor::handleRead()` 使用 `std::move(accepted_fd)` 把 accepted fd 所有权交给 callback，不再靠裸 fd 和手动 `release()` 表达。
+- `Acceptor::listening_` 已删除，`listening()` 直接检查 `listen_fd_`。
+- `tests/net/acceptor_test.cpp` 和 `tests/net/socket_util_test.cpp` 删除自制 `FdGuard`，统一使用 `liteim::UniqueFd`。
+- 生产代码里明显的教学型长注释已清理，保留 `Channel` callback 生命周期契约这类必要注释。
+
+新增/更新测试：
+
+- `tests/protocol/byte_order_test.cpp`
+- `ByteOrderTest.AppendsUnsignedIntegersAsBigEndianBytes`
+- `ByteOrderTest.ReadsUnsignedIntegersFromBigEndianBytes`
+- `EpollerTest.RejectsChannelOwnedByDifferentEventLoop`
+- `ReactorInterfaceTest.AcceptorHeaderIsSelfContained` 更新为 `UniqueFd` callback 签名。
+- Acceptor callback 测试均改为接收 `UniqueFd`。
+
+已完成文档同步：
+
+- README、docs/architecture.md、docs/project_layout.md、docs/roadmap.md、Step 4/5/10/13/15 tutorials、task_plan、findings、progress 和 PROJECT_MEMORY 已同步本次清理。
+
+验证结果：
+
+```bash
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+```
+
+结果：build 通过；server scaffold 正常输出 `LiteIM server scaffold is running on 0.0.0.0:9000`；CTest 136/136 通过。
+
 ## 2026-05-08 Step 15 EventLoopThreadPool
 
 本次进入 `Step 15: implement EventLoopThread and EventLoopThreadPool`，目标是实现 one-loop-per-thread 多 Reactor 的线程基础，不启动 Step 16 `TcpServer`。

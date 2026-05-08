@@ -7,6 +7,36 @@
 - 当前路线是 `LiteIM High Performance + Qt Client + PersonaAgent Authorized Style RAG Edition`。
 - 如果 `README.md`、`task_plan.md`、`progress.md`、教程或源码与 `PROJECT_MEMORY.md` 冲突，统一改回 `PROJECT_MEMORY.md` 的路线。
 
+## 2026-05-08 Pre-Step 16 Code Cleanup Findings
+
+本次清理在 Step 16 `TcpServer` 之前完成，不实现 `TcpServer`，只处理会影响 Step 16 ownership / one-loop-per-thread 边界的代码卫生问题。
+
+已经确认并采用的设计：
+
+- 新增 `include/liteim/protocol/ByteOrder.hpp`，统一提供 `appendUint16BE()`、`appendUint32BE()`、`appendUint64BE()`、`readUint16BE()`、`readUint32BE()`、`readUint64BE()`。
+- `Packet.cpp` 和 `TlvCodec.cpp` 删除各自重复的大端读写 helper，统一复用 `ByteOrder.hpp`；协议 wire format 不变。
+- `Epoller::owner_loop_` 不再闲置。`updateChannel()` / `removeChannel()` 会拒绝 `Channel::ownerLoop()` 与 `owner_loop_` 不一致的 channel，维护 one-loop-per-thread 注册边界。
+- `Acceptor::NewConnectionCallback` 从 `std::function<void(int, const sockaddr_in&)>` 改为 `std::function<void(UniqueFd, const sockaddr_in&)>`，accepted fd 所有权通过 move-only RAII 类型表达。
+- `Acceptor::handleRead()` 不再在 callback 成功返回后手动 `release()`，而是把 `UniqueFd` move 给 callback；没有 callback 或 callback 抛异常时，`UniqueFd` 自动关闭 accepted fd。
+- `Acceptor::listening_` 删除，`listening()` 直接由 `listen_fd_` 是否有效推导，避免重复状态。
+- `tests/net/acceptor_test.cpp` 和 `tests/net/socket_util_test.cpp` 删除测试专用 `FdGuard`，改用生产 `liteim::UniqueFd`。
+- 生产源码中过长的教学注释已移到教程语境，源码只保留必要契约说明。
+
+新增/更新测试：
+
+- `ByteOrderTest.AppendsUnsignedIntegersAsBigEndianBytes`
+- `ByteOrderTest.ReadsUnsignedIntegersFromBigEndianBytes`
+- `EpollerTest.RejectsChannelOwnedByDifferentEventLoop`
+- `ReactorInterfaceTest.AcceptorHeaderIsSelfContained` 更新为 `UniqueFd` callback 签名。
+- `AcceptorTest` callback 用例全部改为接收 `UniqueFd`。
+
+本次不采用/不改：
+
+- 不删除 `Config::defaults()`，保留教学语义。
+- 不改短期诊断有用的 `EventLoopThreadPool::loops()` 和 `EventLoopThread::running()`，等 Step 16 `TcpServer` 完成后再评估。
+- 不改 `MessageType` 分类函数实现，避免本轮混入无关协议语义改动。
+- 不把 `Byte` / `Bytes` 换成 `std::byte`。
+
 ## 2026-05-08 Pre-Step 15 Byte/Bytes API Cleanup Findings
 
 进入 Step 15 之前，先收口原始字节类型，避免后续 `EventLoopThreadPool` / `TcpServer` 继续扩散 `std::vector<char>`、`std::vector<std::uint8_t>` 和 `std::string_view` 公共接口。

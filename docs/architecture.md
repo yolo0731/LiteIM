@@ -1,6 +1,6 @@
 # LiteIM Architecture
 
-本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 15 后，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil`、RAII fd 包装 `UniqueFd`、`Epoller` 系统调用封装、`Channel` 事件分发 / `tie()` 生命周期保护、`EventLoop` 事件循环 / `eventfd` 任务投递、非阻塞监听器 `Acceptor`、单连接 owner `Session` 和多 Reactor 子线程基础 `EventLoopThreadPool`。当前还没有 `TcpServer` 实现。
+本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 15 后、Step 16 前，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / ByteOrder / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil`、RAII fd 包装 `UniqueFd`、`Epoller` 系统调用封装、`Channel` 事件分发 / `tie()` 生命周期保护、`EventLoop` 事件循环 / `eventfd` 任务投递、非阻塞监听器 `Acceptor`、单连接 owner `Session` 和多 Reactor 子线程基础 `EventLoopThreadPool`。当前还没有 `TcpServer` 实现。
 
 ## Target Data Flow
 
@@ -82,6 +82,13 @@ liteim_base
 
 ```text
 liteim_protocol
+  -> ByteOrder
+       -> appendUint16BE(Bytes, value)
+       -> appendUint32BE(Bytes, value)
+       -> appendUint64BE(Bytes, value)
+       -> readUint16BE(bytes)
+       -> readUint32BE(bytes)
+       -> readUint64BE(bytes)
   -> MessageType
        -> toString(MessageType)
        -> isRequestType(MessageType)
@@ -113,6 +120,7 @@ liteim_protocol
 
 - `MessageType` 只定义消息类型编号，例如登录请求、私聊请求、群聊推送、Bot 消息和错误响应。
 - `TlvType` 只定义 body 里的字段类型编号，例如用户名、密码、消息文本、群组 ID、错误信息和 Persona ID。
+- `ByteOrder` 是协议层通用网络字节序工具，Packet header 和 TLV header/value 统一复用它，避免 Packet/TLV 各自维护重复的大端读写 helper。
 - `toString()` 只用于日志、测试和调试，不参与网络字节序转换。
 - `isRequestType()` / `isResponseType()` / `isPushType()` 只做类型分类，后续 `MessageRouter`、Qt 客户端和 Python BotClient 会基于这个分类处理请求、响应和服务端推送。
 - `PacketHeader` 固定为 20 字节：`magic` 4 字节、`version` 1 字节、`flags` 1 字节、`msg_type` 2 字节、`seq_id` 8 字节、`body_len` 4 字节。
@@ -222,8 +230,8 @@ liteim_net
 - `getSocketError()` 读取 `SO_ERROR`，后续非阻塞连接、写事件和连接异常处理会复用。
 - `UniqueFd` 是轻量 RAII fd 包装，只表达独占所有权和关闭责任，不隐藏 socket 的业务语义。
 - `UniqueFd` 禁止拷贝、允许移动，避免多个 owner 同时以为自己负责关闭同一个 fd。
-- `UniqueFd::release()` 用于把 fd 所有权交给上层；如果 callback 抛异常而没有成功接管，局部 `UniqueFd` 会自动关闭 fd。
-- Step 13 引入 `UniqueFd` 是因为 `Acceptor` 同时管理长期 listen fd 和临时 accepted fd：listen fd 随 `Acceptor` 关闭，accepted fd 只有在 callback 正常返回后才转交给后续 `TcpServer` / `Session`。
+- `UniqueFd::release()` 用于少数必须手动交出 fd 的场景；默认所有权转移优先用 move 表达。
+- Step 13 引入 `UniqueFd` 是因为 `Acceptor` 同时管理长期 listen fd 和临时 accepted fd：listen fd 随 `Acceptor` 关闭，accepted fd 通过 `NewConnectionCallback(UniqueFd, peer)` 移动交给后续 `TcpServer` / `Session`。
 - `Channel` 只代表一个 fd 的事件代理，不拥有 fd，不关闭 fd。
 - `Channel::events()` 表示想监听的事件，`Channel::revents()` 表示本轮 epoll 实际返回的事件。
 - `Channel::handleEvent()` 把 `EPOLLIN` / `EPOLLPRI` / `EPOLLRDHUP` 分发给 read callback，把 `EPOLLOUT` 分发给 write callback，把 `EPOLLHUP` 和 `EPOLLERR` 分发给 close/error callback。
@@ -234,6 +242,7 @@ liteim_net
 - `Epoller` 构造时如果 `epoll_create1()` 失败会直接抛异常，避免半初始化对象进入 `EventLoop`。
 - `Epoller` 当前使用 LT 模式，不设置 `EPOLLET`。
 - `Epoller` 用 `fd -> Channel*` 映射判断 add/mod/del，并通过 `epoll_event.data.ptr` 在 `poll()` 返回时找回活跃 `Channel`。
+- `Epoller` 会拒绝更新或删除属于其他 `EventLoop` 的 `Channel`，避免一个 fd 事件代理跨 loop 注册，维护 one-loop-per-thread 边界。
 - `EventLoop` 是 Reactor 调度层，持有一个 `Epoller`，在 `loop()` 中等待活跃 `Channel` 并调用 `Channel::handleEvent()`。
 - `EventLoop` 内部使用 `eventfd` 作为 wakeup fd，由 `UniqueFd` 管理，并把它包装成内部 `Channel` 注册到 epoll。
 - `runInLoop()` 在所属线程直接执行任务，跨线程调用时转入 `queueInLoop()`。
@@ -246,7 +255,7 @@ liteim_net
 - `Acceptor` 构造时创建非阻塞 TCP listen fd，设置 `SO_REUSEADDR` / `SO_REUSEPORT`，完成 bind/listen，并把 listen fd 包装成 `Channel` 注册到所属 `EventLoop`。
 - listen fd 可读时，`Acceptor` 使用 `accept4(SOCK_NONBLOCK | SOCK_CLOEXEC)` 循环接收新连接，直到 `EAGAIN` / `EWOULDBLOCK`。
 - `Acceptor` 持有一个 `/dev/null` idle fd；当 `accept4()` 遇到 `EMFILE` / `ENFILE` 时，会释放 idle fd、accept 并立即关闭一个 pending connection，再尝试恢复 idle fd，避免 LT 模式 busy loop。
-- `Acceptor::NewConnectionCallback` 把已连接 fd 和 peer address 交给后续 `TcpServer`；如果没有 callback，`Acceptor` 会立即关闭 accepted fd，避免泄漏。
+- `Acceptor::NewConnectionCallback` 把 `UniqueFd` 和 peer address 交给后续 `TcpServer`；如果没有 callback 或 callback 抛异常，局部 `UniqueFd` 会立即关闭 accepted fd，避免泄漏。
 - `Acceptor::close()` 可以从非 loop 线程请求关闭；loop 未启动或仍运行时实际 `removeChannel()` 和 listen fd 关闭会回到所属 loop 线程完成，loop 已停止时才走 fallback 直接释放 `Channel`、listen fd 和 idle fd，避免永久等待 queued task。
 - `Acceptor` fd 用尽 helper 保持 `noexcept`，但 warn 日志通过内部 no-throw wrapper 写入，避免 `spdlog` sink 或格式化异常在 `EMFILE` / `ENFILE` 路径触发 `std::terminate()`。
 - `Session` 是单个已连接 fd 的 owner，持有 fd、`Channel`、输入 `Buffer`、输出 `Buffer` 和 `FrameDecoder`。
@@ -261,4 +270,6 @@ liteim_net
 
 ## Current Step
 
-Step 15 implements `EventLoopThread` and `EventLoopThreadPool` in `liteim_net`: each child I/O thread owns one `EventLoop`, the pool starts N child loops, `getNextLoop()` assigns loops by round-robin, and the zero-thread case falls back to the base loop. `TcpServer`, business routing, and high-water-mark backpressure policy stay in later steps.
+Step 15 implements `EventLoopThread` and `EventLoopThreadPool` in `liteim_net`: each child I/O thread owns one `EventLoop`, the pool starts N child loops, `getNextLoop()` assigns loops by round-robin, and the zero-thread case falls back to the base loop.
+
+Step 16 前清理已经完成：Packet/TLV 共享 `ByteOrder.hpp`，`Epoller` 使用 `owner_loop_` 校验 `Channel` 归属，`Acceptor` callback 通过 `UniqueFd` 表达 accepted fd 所有权，`listening()` 由 `listen_fd_` 推导。`TcpServer`、business routing 和 high-water-mark backpressure policy stay in later steps.

@@ -10,8 +10,8 @@ namespace liteim
 {
     namespace
     {
-        std::shared_ptr<spdlog::logger> g_logger; // 整个 LiteIM 共用的日志器
-        std::mutex g_logger_mutex;                // 保护 g_logger 的互斥锁
+        std::shared_ptr<spdlog::logger> g_logger;
+        std::mutex g_logger_mutex;
 
         spdlog::level::level_enum toSpdlogLevel(LogLevel level);
 

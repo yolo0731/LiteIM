@@ -19,6 +19,8 @@ Step 12 的 `EventLoop` 只能在创建它的线程里运行。Step 14 的 `Sess
 
 ```text
 main EventLoop
+  epoll 监听 listen fd
+  listen fd 可读
   -> Acceptor
   -> accept new fd
   -> choose one child EventLoop
@@ -222,7 +224,7 @@ ctest --test-dir build --output-on-failure
 ctest --test-dir build --output-on-failure -R "EventLoopThread|EventLoopThreadPool|ReactorInterfaceTest.EventLoopThread"
 ```
 
-当前 Step 15 完成后，CTest 预期通过 133 个测试，其中 9 个是新增的 Step 15 测试。
+Step 15 完成时，CTest 通过 133 个测试，其中 9 个是新增的 Step 15 测试。Step 16 前代码清理补充 ByteOrder / Epoller owner-loop / Acceptor UniqueFd callback 回归测试后，当前全量 CTest 为 136 个测试。
 
 ## 8. 面试时怎么讲
 

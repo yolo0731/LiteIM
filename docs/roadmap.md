@@ -24,13 +24,15 @@ LiteIM 的目标是实现一个 C++17 高性能即时通讯服务端：
 
 ## Current State
 
-当前仓库处于 Step 15 后：
+当前仓库处于 Step 15 后、Step 16 前：
 
 - `liteim_base` 已提供 `Config`、`Logger`、`ErrorCode`、`Status` 和 `Timestamp`。
-- `liteim_protocol` 已提供 `MessageType`、`TlvType`、`Packet`、`TlvCodec` 和 `FrameDecoder`。
+- `liteim_protocol` 已提供 `MessageType`、`TlvType`、`ByteOrder`、`Packet`、`TlvCodec` 和 `FrameDecoder`。
 - `liteim_net` 已提供 `Buffer`、`SocketUtil`、`UniqueFd`、`Channel`、`Epoller`、`EventLoop`、`Acceptor`、`Session`、`EventLoopThread` 和 `EventLoopThreadPool`。
 - `Acceptor` 可以创建非阻塞 listen socket，注册到 `EventLoop`，并用 `accept4(SOCK_NONBLOCK | SOCK_CLOEXEC)` 循环接收新连接。
+- `Acceptor::NewConnectionCallback` 通过 `UniqueFd` 移动交出 accepted fd 所有权，避免裸 `int` fd 所有权不清。
 - `Acceptor::close()` 的清理会回到所属 loop 线程执行，避免 `Epoller` 保留 stale `Channel*`。
+- `Epoller` 会校验 `Channel` 的 owner loop，维护 one-loop-per-thread 注册边界。
 - `Session` 已接管单个已连接 fd，负责非阻塞读写、Packet 解码、输出缓冲、跨线程发送和关闭清理。
 - `EventLoopThreadPool` 已能启动指定数量的子 I/O loops，并用 round-robin 给后续连接分配 loop；线程数为 0 时可回退到 base loop。
 - `Channel::tie()` 已用于 `Session`，事件分发期间会锁住 owner，避免连接对象在回调中提前销毁。

@@ -11,7 +11,7 @@ namespace liteim {
 class EventLoop;
 
 class EventLoopThreadPool {
-public:
+  public:
     EventLoopThreadPool(EventLoop* base_loop, std::size_t thread_count);
     ~EventLoopThreadPool();
 
@@ -26,7 +26,7 @@ public:
     std::size_t threadCount() const noexcept;
     bool started() const noexcept;
 
-private:
+  private:
     EventLoop* base_loop_;
     std::size_t thread_count_;
     std::size_t next_{0};

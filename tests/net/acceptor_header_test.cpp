@@ -13,7 +13,7 @@ TEST(ReactorInterfaceTest, AcceptorHeaderIsSelfContained) {
     static_assert(!std::is_copy_assignable_v<liteim::Acceptor>);
 
     using Acceptor = liteim::Acceptor;
-    using Callback = std::function<void(int, const sockaddr_in&)>;
+    using Callback = std::function<void(liteim::UniqueFd, const sockaddr_in&)>;
     static_assert(std::is_same_v<Acceptor::NewConnectionCallback, Callback>);
     static_assert(std::is_same_v<decltype(&Acceptor::setNewConnectionCallback),
                                  void (Acceptor::*)(Callback)>);

@@ -18,7 +18,7 @@ namespace liteim {
 class EventLoop;
 
 class Session : public std::enable_shared_from_this<Session> {
-public:
+  public:
     using Ptr = std::shared_ptr<Session>;
     using MessageCallback = std::function<void(const Ptr&, const Packet&)>;
     using CloseCallback = std::function<void(const Ptr&)>;
@@ -42,7 +42,7 @@ public:
     Status sendPacket(const Packet& packet);
     void close();
 
-private:
+  private:
     void startInLoop();
     void sendEncodedInLoop(Bytes encoded);
     void handleRead();

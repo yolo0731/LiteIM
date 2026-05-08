@@ -98,14 +98,20 @@ type    len            value
 - C++ struct 可能有 padding。
 - Python BotClient、Qt 客户端和 C++ 服务端必须看到同一套 wire format。
 
-所以 `TlvCodec.cpp` 内部手写：
+所以 `TlvCodec.cpp` 通过协议层共享的 `ByteOrder.hpp` 写：
 
 ```cpp
-appendUint16(output, static_cast<std::uint16_t>(type));
-appendUint32(output, static_cast<std::uint32_t>(len));
+appendUint16BE(output, static_cast<std::uint16_t>(type));
+appendUint32BE(output, static_cast<std::uint32_t>(len));
 ```
 
 `uint64` 和 `int64` 的 value 也按大端序写入。
+
+Step 16 前代码清理后，TLV 和 Packet 共用同一个大端工具头：
+
+```text
+include/liteim/protocol/ByteOrder.hpp
+```
 
 ## 5. `TlvMap` 的设计
 

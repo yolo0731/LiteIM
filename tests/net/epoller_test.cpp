@@ -1,6 +1,7 @@
 #include "liteim/net/Epoller.hpp"
 
 #include "liteim/net/Channel.hpp"
+#include "liteim/net/EventLoop.hpp"
 #include "liteim/net/SocketUtil.hpp"
 
 #include <cerrno>
@@ -130,4 +131,21 @@ TEST(EpollerTest, InvalidChannelOperationsReturnError) {
     EXPECT_FALSE(epoller.removeChannel(&invalid_channel).isOk());
     EXPECT_FALSE(epoller.updateChannel(&unregistered_channel).isOk());
     EXPECT_FALSE(epoller.removeChannel(&unregistered_channel).isOk());
+}
+
+TEST(EpollerTest, RejectsChannelOwnedByDifferentEventLoop) {
+    liteim::EventLoop owner_loop;
+    liteim::EventLoop other_loop;
+    liteim::Epoller epoller(&owner_loop);
+    PipePair pipe;
+    liteim::Channel channel(&other_loop, pipe.readFd());
+    channel.enableReading();
+
+    const auto update_status = epoller.updateChannel(&channel);
+    const auto remove_status = epoller.removeChannel(&channel);
+
+    EXPECT_FALSE(update_status.isOk());
+    EXPECT_EQ(update_status.code(), liteim::ErrorCode::InvalidArgument);
+    EXPECT_FALSE(remove_status.isOk());
+    EXPECT_EQ(remove_status.code(), liteim::ErrorCode::InvalidArgument);
 }

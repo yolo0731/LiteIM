@@ -10,7 +10,7 @@
 namespace liteim {
 
 class FrameDecoder {
-public:
+  public:
     Status feed(const Byte* data, std::size_t len, std::vector<Packet>& output);
     Status feed(const Bytes& data, std::vector<Packet>& output);
 
@@ -18,7 +18,7 @@ public:
     std::size_t bufferedBytes() const noexcept;
     void reset();
 
-private:
+  private:
     Bytes buffer_;
     bool error_{false};
 };

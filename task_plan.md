@@ -129,6 +129,11 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 15 code | done | Added `EventLoopThread` and `EventLoopThreadPool`, wired them into `liteim_net`, and passed the targeted Step 15 tests. |
 | Step 15 docs | done | Synced README, docs, findings, progress, tutorials, task plan, and PROJECT_MEMORY for Step 15. |
 | Step 15 verification | done | Build, server smoke, targeted tests, full CTest 133/133, diff check, stale-route checks, and final diff review passed. |
+| Pre-Step 16 code cleanup concept | done | Accepted external review points that strengthen Step 16 boundaries without implementing TcpServer. |
+| Pre-Step 16 code cleanup tests | done | Added ByteOrder tests, Epoller owner-loop regression, and updated Acceptor callback tests to use `UniqueFd`. |
+| Pre-Step 16 code cleanup code | done | Added protocol `ByteOrder.hpp`, reused it from Packet/TLV, enforced Epoller owner-loop checks, moved accepted fd ownership through `UniqueFd`, removed Acceptor duplicate listening state, replaced test-only fd guards with `UniqueFd`, and trimmed long teaching comments from production code. |
+| Pre-Step 16 code cleanup docs | done | Synced README, docs, tutorials, findings, progress, task plan, and PROJECT_MEMORY with the cleanup result. |
+| Pre-Step 16 code cleanup verification | done | Build, server smoke, full CTest 136/136, diff check, stale-route checks, and final diff review passed. |
 
 ## Current Decision
 
@@ -607,6 +612,7 @@ Expected new tests:
 - `TEST(EpollerTest, RemoveChannelStopsEvents)`
 - `TEST(EpollerTest, PollTimeoutReturnsEmptyActiveList)`
 - `TEST(EpollerTest, InvalidChannelOperationsReturnError)`
+- `TEST(EpollerTest, RejectsChannelOwnedByDifferentEventLoop)`
 
 Next Step: `Step 11: implement Channel`.
 
@@ -816,6 +822,23 @@ Expected new tests:
 - `TEST(SessionTest, LastActiveTimeIsInitialized)`
 
 Step 15 completed `EventLoopThread` and `EventLoopThreadPool` with worker-thread loop startup, safe stop/join behavior, round-robin loop selection, and zero-thread base-loop fallback.
+
+Pre-Step 16 cleanup completed the code hygiene items needed before `TcpServer` takes ownership of accepted connections:
+
+- `include/liteim/protocol/ByteOrder.hpp` now holds shared big-endian read/write helpers for Packet and TLV wire data.
+- `Epoller::owner_loop_` is active: `updateChannel()` and `removeChannel()` reject channels owned by a different `EventLoop`.
+- `Acceptor::NewConnectionCallback` now receives `UniqueFd` by value, so accepted fd ownership is expressed in the callback type instead of through a bare `int` plus manual `release()`.
+- `Acceptor::listening()` is derived from `listen_fd_`, so the duplicate `listening_` flag is gone.
+- `tests/net/acceptor_test.cpp` and `tests/net/socket_util_test.cpp` use production `UniqueFd` instead of old test-only `FdGuard` helpers.
+- Long teaching comments were removed from production source and left for tutorials/docs.
+
+Pre-Step 16 cleanup verification baseline:
+
+- `TEST(ByteOrderTest, AppendsUnsignedIntegersAsBigEndianBytes)`
+- `TEST(ByteOrderTest, ReadsUnsignedIntegersFromBigEndianBytes)`
+- `TEST(EpollerTest, RejectsChannelOwnedByDifferentEventLoop)`
+- Acceptor callback tests now assert the `UniqueFd` ownership signature.
+- Full CTest count is now 136 tests.
 
 Next Step: `Step 16: implement TcpServer multi-Reactor version`.
 

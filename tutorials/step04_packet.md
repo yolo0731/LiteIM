@@ -98,16 +98,22 @@ inline constexpr std::size_t kPacketHeaderSize = 20;
 
 > 多字节字段全部按网络字节序，也就是大端序写入。
 
-因此 `Packet.cpp` 里没有直接把结构体 `memcpy` 到网络缓冲区，而是手动写：
+因此 `Packet.cpp` 里没有直接把结构体 `memcpy` 到网络缓冲区，而是通过协议层共享的 `ByteOrder.hpp` 写：
 
 ```cpp
-appendUint32(output, header.magic);
-appendUint16(output, static_cast<std::uint16_t>(header.msg_type));
-appendUint64(output, header.seq_id);
-appendUint32(output, header.body_len);
+appendUint32BE(output, header.magic);
+appendUint16BE(output, static_cast<std::uint16_t>(header.msg_type));
+appendUint64BE(output, header.seq_id);
+appendUint32BE(output, header.body_len);
 ```
 
 这样可以避免结构体 padding、对齐方式和本机字节序影响协议格式。
+
+Step 16 前代码清理后，Packet 和 TLV 不再各自维护一套大端读写 helper，而是统一复用：
+
+```text
+include/liteim/protocol/ByteOrder.hpp
+```
 
 ## 5. `validateHeader()`
 

@@ -93,7 +93,7 @@ namespace liteim
                 break;
             }
 
-            const auto status = epoller_->poll(-1, active_channels); // -1表示无限等待直到有事件发生
+            const auto status = epoller_->poll(-1, active_channels);
             if (!status.isOk())
             {
                 throw std::runtime_error(status.message());
@@ -216,8 +216,8 @@ namespace liteim
 
         eventfd_t value = 1;
         while (::eventfd_write(wakeup_fd_.fd(), value) < 0)
-        {                       // 给 wakeup_fd_ 对应的 eventfd 内部计数器加 1,只要计数器大于 0，这个 fd 就会变成可读状态，唤醒 epoll_wait
-            if (errno == EINTR) // 如果被信号中断了，就继续写入, EINTR 不代表 fd 出错，只表示这次系统调用被信号打断了
+        {
+            if (errno == EINTR)
             {
                 continue;
             }
@@ -233,7 +233,7 @@ namespace liteim
         }
 
         eventfd_t value = 0;
-        while (::eventfd_read(wakeup_fd_.fd(), &value) < 0) // 读出 wakeup_fd_ 内部计数器的值,如果计数器的值大于 0，读出后就会将计数器减 1, 存放到 value 里，当计数器的值变为 0 时，wakeup_fd_ 就会变为不可读状态
+        while (::eventfd_read(wakeup_fd_.fd(), &value) < 0)
         {
             if (errno == EINTR)
             {

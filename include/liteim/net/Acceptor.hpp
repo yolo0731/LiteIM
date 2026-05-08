@@ -15,8 +15,8 @@ class Channel;
 class EventLoop;
 
 class Acceptor {
-public:
-    using NewConnectionCallback = std::function<void(int, const sockaddr_in&)>;
+  public:
+    using NewConnectionCallback = std::function<void(UniqueFd, const sockaddr_in&)>;
 
     Acceptor(EventLoop* loop, const std::string& listen_ip, std::uint16_t port);
     ~Acceptor();
@@ -31,7 +31,7 @@ public:
     bool listening() const noexcept;
     void close() noexcept;
 
-private:
+  private:
     void closeInLoop() noexcept;
     void handleRead();
     void handleAcceptError(int error_number) noexcept;
@@ -42,7 +42,6 @@ private:
     UniqueFd idle_fd_;
     std::unique_ptr<Channel> listen_channel_;
     std::uint16_t port_{0};
-    bool listening_{false};
     NewConnectionCallback new_connection_callback_;
 };
 

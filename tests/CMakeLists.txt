@@ -22,6 +22,7 @@ add_executable(liteim_tests
     net/session_test.cpp
     net/socket_util_test.cpp
     protocol/frame_decoder_test.cpp
+    protocol/byte_order_test.cpp
     protocol/message_type_test.cpp
     protocol/packet_test.cpp
     protocol/tlv_codec_test.cpp

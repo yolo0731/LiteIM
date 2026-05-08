@@ -15,7 +15,7 @@ namespace liteim
     {
 
         std::string trim(std::string value)
-        { // 去掉字符串两边空白
+        {
             const auto not_space = [](unsigned char ch)
             {
                 return !std::isspace(ch);
@@ -27,7 +27,7 @@ namespace liteim
         }
 
         Status parseUint32(const std::string &value, std::uint32_t &output)
-        { // 把字符串解析成无符号 32 位整数
+        {
             try
             {
                 std::size_t parsed = 0;
@@ -46,7 +46,7 @@ namespace liteim
         }
 
         Status parsePort(const std::string &value, std::uint16_t &output)
-        { // 把字符串解析成端口号
+        {
             std::uint32_t port = 0;
             auto status = parseUint32(value, port);
             if (!status.isOk())
@@ -64,7 +64,7 @@ namespace liteim
     } // namespace
 
     Config Config::defaults()
-    { // 创建一个默认初始化的 Config 对象并返回
+    {
         return Config{};
     }
 

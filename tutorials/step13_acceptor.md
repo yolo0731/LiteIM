@@ -65,7 +65,7 @@ enableReading()
 
 本次 review hardening 后，`Acceptor::close()` 可以从非 loop 线程发起，但真正的 `removeChannel()` 和 listen fd 关闭仍然回到所属 loop 线程执行。这样 `Epoller` 的 `fd -> Channel*` 映射不会留下旧 fd 对应的旧 `Channel*`。
 
-`UniqueFd` 是一个很小的 RAII 工具：对象析构时关闭自己持有的 fd，`release()` 表示所有权成功交给上层。`Acceptor` 用它保护 listen fd 和 accepted fd，尤其是 callback 抛异常时，accepted fd 不会泄漏。
+`UniqueFd` 是一个很小的 RAII 工具：对象析构时关闭自己持有的 fd，move 表示把所有权交给另一个 owner。`Acceptor` 用它保护 listen fd 和 accepted fd，尤其是 callback 抛异常时，accepted fd 不会泄漏。
 
 Step 13 hardening round 2 后，`Acceptor` 还会额外持有一个指向 `/dev/null` 的 idle fd。它平时什么也不做，只在进程 fd 用尽时临时释放一个 fd 槽位，用来 accept 并立即关闭一个 pending connection，让客户端明确感知连接被拒绝，同时避免 listen fd 在 LT 模式下因 `EMFILE` / `ENFILE` 反复唤醒导致 busy loop。
 
@@ -80,15 +80,15 @@ listen fd
 
 accepted fd
     -> accept4() 刚返回时由 Acceptor 临时拥有
-    -> callback 正常返回后交给上层 TcpServer / Session
+    -> 通过 NewConnectionCallback(UniqueFd, peer) 移动交给上层 TcpServer / Session
     -> callback 抛异常或没有 callback 时由 UniqueFd 自动关闭
 ```
 
 `UniqueFd` 的接口正好对应这几个动作：
 
 - 析构：关闭当前持有的 fd。
-- `release()`：把 fd 交出去，不关闭它；调用后当前 `UniqueFd` 变成空 owner。
 - move 构造 / move 赋值：把 fd 所有权转给另一个 `UniqueFd`，避免两个对象同时关闭同一个 fd。
+- `release()`：少数必须交出裸 fd 的底层场景使用；调用后当前 `UniqueFd` 变成空 owner。
 - `reset()`：先关闭旧 fd，再接管新 fd。
 
 所以 `UniqueFd.cpp` 是 Step 13 的必要新增文件，不是额外业务功能。它是 `Acceptor` 的资源安全底座，专门解决异常路径和所有权转移问题。
@@ -103,7 +103,7 @@ listen fd 可读只表示“现在至少可能有连接可以 accept”，不等
 while true:
     fd = accept4()
     if fd >= 0:
-        callback(fd)
+        callback(UniqueFd(fd), peer_address)
         continue
     if errno == EINTR:
         continue
@@ -135,19 +135,19 @@ SOCK_CLOEXEC
 `Acceptor` 的 callback 类型是：
 
 ```cpp
-std::function<void(int, const sockaddr_in&)>
+std::function<void(UniqueFd, const sockaddr_in&)>
 ```
 
 含义是：
 
 ```text
-int              accepted fd，所有权交给 callback
+UniqueFd         accepted fd 的独占所有权
 sockaddr_in      对端地址
 ```
 
 如果没有设置 callback，`Acceptor` 会立即关闭 accepted fd，避免文件描述符泄漏。
 
-如果设置了 callback，`Acceptor` 会先用局部 `UniqueFd` 持有 accepted fd，callback 正常返回后才 `release()`。如果 callback 抛异常，局部 `UniqueFd` 析构会关闭 accepted fd，避免“上层还没接管所有权就异常退出”造成泄漏。
+如果设置了 callback，`Acceptor` 会把局部 `UniqueFd` move 给 callback。callback 抛异常时，`UniqueFd` 会在栈展开过程中自动关闭 accepted fd，避免“上层还没接管所有权就异常退出”造成泄漏。
 
 ## close 的边界
 

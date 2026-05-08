@@ -53,6 +53,14 @@ Epoller::~Epoller() {
     }
 }
 
+Status Epoller::validateChannelOwner(Channel* channel) const {
+    if (owner_loop_ != nullptr && channel != nullptr && channel->ownerLoop() != owner_loop_) {
+        return Status::error(ErrorCode::InvalidArgument, "channel belongs to a different EventLoop");
+    }
+
+    return Status::ok();
+}
+
 Status Epoller::poll(int timeout_ms, ChannelList& active_channels) {
     active_channels.clear();
     if (epoll_fd_ < 0) {
@@ -92,6 +100,10 @@ Status Epoller::updateChannel(Channel* channel) {
     const auto validation = validateChannel("updateChannel", channel);
     if (!validation.isOk()) {
         return validation;
+    }
+    const auto owner_validation = validateChannelOwner(channel);
+    if (!owner_validation.isOk()) {
+        return owner_validation;
     }
     if (epoll_fd_ < 0) {
         return invalidEpollStatus("epoll_ctl");
@@ -137,6 +149,10 @@ Status Epoller::removeChannel(Channel* channel) {
     const auto validation = validateChannel("removeChannel", channel);
     if (!validation.isOk()) {
         return validation;
+    }
+    const auto owner_validation = validateChannelOwner(channel);
+    if (!owner_validation.isOk()) {
+        return owner_validation;
     }
     if (epoll_fd_ < 0) {
         return invalidEpollStatus("epoll_ctl");

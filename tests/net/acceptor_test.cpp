@@ -3,6 +3,7 @@
 #include "liteim/net/Channel.hpp"
 #include "liteim/net/EventLoop.hpp"
 #include "liteim/net/SocketUtil.hpp"
+#include "liteim/net/UniqueFd.hpp"
 
 #include <arpa/inet.h>
 #include <cerrno>
@@ -28,52 +29,6 @@
 #include <gtest/gtest.h>
 
 namespace {
-
-class FdGuard {
-public:
-    explicit FdGuard(int fd = liteim::kInvalidFd) : fd_(fd) {}
-
-    FdGuard(const FdGuard&) = delete;
-    FdGuard& operator=(const FdGuard&) = delete;
-
-    FdGuard(FdGuard&& other) noexcept : fd_(other.fd_) {
-        other.fd_ = liteim::kInvalidFd;
-    }
-
-    FdGuard& operator=(FdGuard&& other) noexcept {
-        if (this != &other) {
-            reset();
-            fd_ = other.fd_;
-            other.fd_ = liteim::kInvalidFd;
-        }
-        return *this;
-    }
-
-    ~FdGuard() {
-        reset();
-    }
-
-    int fd() const noexcept {
-        return fd_;
-    }
-
-    void reset(int fd = liteim::kInvalidFd) noexcept {
-        if (fd_ >= 0) {
-            const auto status = liteim::closeFd(fd_);
-            (void)status;
-        }
-        fd_ = fd;
-    }
-
-    int release() noexcept {
-        const int fd = fd_;
-        fd_ = liteim::kInvalidFd;
-        return fd;
-    }
-
-private:
-    int fd_;
-};
 
 class SoftFdLimitGuard {
 public:
@@ -136,8 +91,8 @@ sockaddr_in loopbackAddress(std::uint16_t port) {
     return address;
 }
 
-FdGuard connectTo(std::uint16_t port) {
-    FdGuard client(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0));
+liteim::UniqueFd connectTo(std::uint16_t port) {
+    liteim::UniqueFd client(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0));
     EXPECT_GE(client.fd(), 0);
     if (client.fd() < 0) {
         return client;
@@ -192,9 +147,9 @@ TEST(AcceptorTest, ClientConnectionTriggersNewConnectionCallback) {
         liteim::EventLoop loop;
         liteim::Acceptor acceptor(&loop, "127.0.0.1", 0);
         acceptor.setNewConnectionCallback(
-            [&loop, &accepted, &accepted_fd_nonblocking, &accepted_fd_cloexec](int fd,
+            [&loop, &accepted, &accepted_fd_nonblocking, &accepted_fd_cloexec](liteim::UniqueFd accepted_fd,
                                                                                const sockaddr_in& peer) {
-                FdGuard accepted_fd(fd);
+                const int fd = accepted_fd.fd();
                 EXPECT_EQ(peer.sin_family, AF_INET);
                 accepted_fd_nonblocking = (getSocketFlag(fd) & O_NONBLOCK) != 0;
                 accepted_fd_cloexec = (getFdFlag(fd) & FD_CLOEXEC) != 0;
@@ -228,8 +183,8 @@ TEST(AcceptorTest, MultiplePendingConnectionsAreAccepted) {
     std::thread loop_thread([&handle, &accepted_count]() {
         liteim::EventLoop loop;
         liteim::Acceptor acceptor(&loop, "127.0.0.1", 0);
-        acceptor.setNewConnectionCallback([&loop, &accepted_count](int fd, const sockaddr_in&) {
-            FdGuard accepted_fd(fd);
+        acceptor.setNewConnectionCallback([&loop, &accepted_count](liteim::UniqueFd accepted_fd, const sockaddr_in&) {
+            EXPECT_GE(accepted_fd.fd(), 0);
             const int count = ++accepted_count;
             if (count == kConnectionCount) {
                 loop.quit();
@@ -246,7 +201,7 @@ TEST(AcceptorTest, MultiplePendingConnectionsAreAccepted) {
     });
 
     const auto port = waitForPort(handle);
-    std::vector<FdGuard> clients;
+    std::vector<liteim::UniqueFd> clients;
     for (int index = 0; index < kConnectionCount; ++index) {
         clients.push_back(connectTo(port));
         ASSERT_GE(clients.back().fd(), 0);
@@ -266,7 +221,7 @@ TEST(AcceptorTest, ClosedListenSocketRejectsNewConnections) {
     EXPECT_FALSE(acceptor.listening());
     EXPECT_EQ(acceptor.listenFd(), liteim::kInvalidFd);
 
-    FdGuard client(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0));
+    liteim::UniqueFd client(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0));
     ASSERT_GE(client.fd(), 0);
     const auto address = loopbackAddress(port);
     errno = 0;
@@ -318,9 +273,9 @@ TEST(AcceptorTest, CloseFromOtherThreadRemovesChannelBeforeClosingFd) {
 
     int fds[2] = {liteim::kInvalidFd, liteim::kInvalidFd};
     ASSERT_EQ(::pipe(fds), 0);
-    FdGuard pipe_read(fds[0]);
-    FdGuard pipe_write(fds[1]);
-    FdGuard reused_fd;
+    liteim::UniqueFd pipe_read(fds[0]);
+    liteim::UniqueFd pipe_write(fds[1]);
+    liteim::UniqueFd reused_fd;
 
     if (pipe_read.fd() != old_listen_fd) {
         ASSERT_EQ(::dup2(pipe_read.fd(), old_listen_fd), old_listen_fd);
@@ -355,8 +310,8 @@ TEST(AcceptorTest, AcceptedFdIsClosedWhenCallbackThrowsBeforeTakingOwnership) {
     std::thread loop_thread([&handle, &callback_fd, &callback_exception_escaped]() {
         liteim::EventLoop loop;
         liteim::Acceptor acceptor(&loop, "127.0.0.1", 0);
-        acceptor.setNewConnectionCallback([&callback_fd](int fd, const sockaddr_in&) {
-            callback_fd = fd;
+        acceptor.setNewConnectionCallback([&callback_fd](liteim::UniqueFd accepted_fd, const sockaddr_in&) {
+            callback_fd = accepted_fd.fd();
             throw std::runtime_error("callback failed before taking fd ownership");
         });
 
@@ -528,9 +483,9 @@ TEST(AcceptorTest, CloseFromOtherThreadBeforeLoopStartsStillRemovesChannel) {
 
     int fds[2] = {liteim::kInvalidFd, liteim::kInvalidFd};
     ASSERT_EQ(::pipe(fds), 0);
-    FdGuard pipe_read(fds[0]);
-    FdGuard pipe_write(fds[1]);
-    FdGuard reused_fd;
+    liteim::UniqueFd pipe_read(fds[0]);
+    liteim::UniqueFd pipe_write(fds[1]);
+    liteim::UniqueFd reused_fd;
 
     if (pipe_read.fd() != old_listen_fd) {
         ASSERT_EQ(::dup2(pipe_read.fd(), old_listen_fd), old_listen_fd);
@@ -568,8 +523,8 @@ TEST(AcceptorTest, FdExhaustionRejectsPendingConnectionWithoutLaterCallback) {
     std::thread loop_thread([&handle, &accepted_count, &start_loop, &start_mutex, &start_ready]() {
         liteim::EventLoop loop;
         liteim::Acceptor acceptor(&loop, "127.0.0.1", 0);
-        acceptor.setNewConnectionCallback([&accepted_count](int fd, const sockaddr_in&) {
-            FdGuard accepted_fd(fd);
+        acceptor.setNewConnectionCallback([&accepted_count](liteim::UniqueFd accepted_fd, const sockaddr_in&) {
+            EXPECT_GE(accepted_fd.fd(), 0);
             ++accepted_count;
         });
 
@@ -608,7 +563,7 @@ TEST(AcceptorTest, FdExhaustionRejectsPendingConnectionWithoutLaterCallback) {
         GTEST_SKIP() << "cannot lower RLIMIT_NOFILE for fd-exhaustion regression";
     }
 
-    std::vector<FdGuard> filler_fds;
+    std::vector<liteim::UniqueFd> filler_fds;
     while (true) {
         errno = 0;
         const int fd = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
