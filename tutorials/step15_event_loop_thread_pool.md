@@ -224,7 +224,7 @@ ctest --test-dir build --output-on-failure
 ctest --test-dir build --output-on-failure -R "EventLoopThread|EventLoopThreadPool|ReactorInterfaceTest.EventLoopThread"
 ```
 
-Step 15 完成时，CTest 通过 133 个测试，其中 9 个是新增的 Step 15 测试。Step 16 前代码清理补充 ByteOrder / Epoller owner-loop / Acceptor UniqueFd callback 回归测试后，当前全量 CTest 为 136 个测试。
+Step 15 完成时，CTest 通过 133 个测试，其中 9 个是新增的 Step 15 测试。Step 16 前代码清理补充 ByteOrder / Epoller owner-loop / Acceptor UniqueFd callback 回归测试后，全量 CTest 为 136 个测试；Step 16 `TcpServer` 完成后，项目总测试数更新为 142。
 
 ## 8. 面试时怎么讲
 

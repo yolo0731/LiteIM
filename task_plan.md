@@ -134,6 +134,12 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Pre-Step 16 code cleanup code | done | Added protocol `ByteOrder.hpp`, reused it from Packet/TLV, enforced Epoller owner-loop checks, moved accepted fd ownership through `UniqueFd`, removed Acceptor duplicate listening state, replaced test-only fd guards with `UniqueFd`, and trimmed long teaching comments from production code. |
 | Pre-Step 16 code cleanup docs | done | Synced README, docs, tutorials, findings, progress, task plan, and PROJECT_MEMORY with the cleanup result. |
 | Pre-Step 16 code cleanup verification | done | Build, server smoke, full CTest 136/136, diff check, stale-route checks, and final diff review passed. |
+| Step 16 concept | done | Step 16 implements the multi-Reactor `TcpServer` network coordinator above `Acceptor`, `EventLoopThreadPool`, and `Session`. |
+| Step 16 tests | done | Added RED tests for the `TcpServer` header, echo, multi-loop connection distribution, disconnect cleanup, cross-thread `sendToSession()`, and base `sendToUser()` behavior. |
+| Step 16 code | done | Added `TcpServer.hpp` / `TcpServer.cpp`, wired them into `liteim_net`, and passed targeted Step 16 tests. |
+| Step 16 docs | done | Synced README, docs, tutorial index, Step 16 tutorial, findings, progress, task plan, and PROJECT_MEMORY for the new `TcpServer` boundary. |
+| Step 16 verification | done | Build, server smoke, full CTest 142/142, diff check, `.gitkeep` check, stale-route path check, and final diff review passed. |
+| Step 16 commit | done | Commit message: `feat(net): implement multi reactor tcp server`. |
 
 ## Current Decision
 

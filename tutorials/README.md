@@ -26,5 +26,6 @@ concept -> handwritten code -> tests -> commit
 | Step 13 | [`step13_acceptor.md`](step13_acceptor.md) | done |
 | Step 14 | [`step14_session.md`](step14_session.md) | done |
 | Step 15 | [`step15_event_loop_thread_pool.md`](step15_event_loop_thread_pool.md) | done |
+| Step 16 | [`step16_tcp_server.md`](step16_tcp_server.md) | done |
 
 旧 Step 1-15 教程已删除，后续会按新的高性能路线逐步重写。目录也会按 Step 的实际需求逐步创建。

@@ -8,6 +8,7 @@ add_library(liteim_net
     Epoller.cpp
     Session.cpp
     SocketUtil.cpp
+    TcpServer.cpp
     UniqueFd.cpp
 )
 

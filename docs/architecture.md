@@ -1,6 +1,6 @@
 # LiteIM Architecture
 
-本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 15 后、Step 16 前，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / ByteOrder / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil`、RAII fd 包装 `UniqueFd`、`Epoller` 系统调用封装、`Channel` 事件分发 / `tie()` 生命周期保护、`EventLoop` 事件循环 / `eventfd` 任务投递、非阻塞监听器 `Acceptor`、单连接 owner `Session` 和多 Reactor 子线程基础 `EventLoopThreadPool`。当前还没有 `TcpServer` 实现。
+本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 16 完成状态，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / ByteOrder / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil`、RAII fd 包装 `UniqueFd`、`Epoller` 系统调用封装、`Channel` 事件分发 / `tie()` 生命周期保护、`EventLoop` 事件循环 / `eventfd` 任务投递、非阻塞监听器 `Acceptor`、单连接 owner `Session`、多 Reactor 子线程基础 `EventLoopThreadPool` 和多 Reactor echo `TcpServer`。
 
 ## Target Data Flow
 
@@ -138,7 +138,7 @@ liteim_protocol
 
 ## Current Network Layer
 
-当前 Step 15 已经实现 `Epoller` 系统调用层、`Channel` 回调分发、`EventLoop` 阻塞循环、`eventfd` 任务投递、`Acceptor` 非阻塞监听、`Session` 单连接读写以及 `EventLoopThreadPool` 子 Reactor 线程池，但还没有 `TcpServer`：
+当前 Step 16 已经实现 `Epoller` 系统调用层、`Channel` 回调分发、`EventLoop` 阻塞循环、`eventfd` 任务投递、`Acceptor` 非阻塞监听、`Session` 单连接读写、`EventLoopThreadPool` 子 Reactor 线程池以及多 Reactor `TcpServer`：
 
 ```text
 liteim_net
@@ -189,6 +189,15 @@ liteim_net
        -> getNextLoop()
        -> loops()
        -> threadCount()
+  -> TcpServer
+       -> setMessageCallback()
+       -> start()
+       -> stop()
+       -> port()
+       -> sessionCount()
+       -> started()
+       -> sendToSession()
+       -> sendToUser()
   -> Channel
        -> fd()
        -> events()
@@ -266,10 +275,20 @@ liteim_net
 - `Session::close()` 在所属 loop 中移除 `Channel`、关闭 fd、清空缓冲并触发 close callback；`Channel` 的释放被延迟到当前 `handleEvent()` 栈帧之后，避免在回调中销毁正在执行的 `Channel`。
 - `Session` 维护 `lastActiveTimeMilliseconds()`，后续 heartbeat / timeout Step 会基于它判断连接活跃度。
 - 输出缓冲区高水位回压会在后续慢客户端保护 Step 中实现；当前 Step 14 只记录 pending output bytes，不主动限流或踢慢客户端。
+- `EventLoopThread` 在线程函数内部构造 `EventLoop`，保证 loop 的 `thread_id_` 绑定到真正的 I/O 线程。
+- `EventLoopThreadPool` 启动指定数量的子 I/O loops，并用 round-robin 为后续连接选择所属 loop；线程数为 0 时返回 base loop，保留单 Reactor 调试模式。
+- `TcpServer` 是当前网络层协调器：base loop 持有 `Acceptor`，子 I/O loops 负责连接读写和 Packet 编解码。
+- `TcpServer::start()` 在 base loop 线程中启动 I/O 线程池、创建 `Acceptor` 并记录实际监听端口。
+- `TcpServer` 从 `Acceptor` 接收 `UniqueFd`，选择一个 I/O loop 后通过 `queueInLoop()` 在目标 loop 中创建 `Session`，避免在 base loop 中直接管理连接 I/O。
+- `TcpServer` 用 mutex 保护 `sessions_`，close callback 触发时从表中删除对应 session，`sessionCount()` 可用于测试和诊断。
+- `TcpServer::sendToSession()` 可以从其他线程调用；它只在线程安全表里找到 `Session`，真正的发送仍由 `Session::sendPacket()` 回到连接所属 I/O loop。
+- `TcpServer::sendToUser()` 当前只提供基础接口并返回 `NotFound`，因为登录态和 user-session 绑定要等后续业务 Step。
+- 未设置 `MessageCallback` 时，`TcpServer` 默认 echo 收到的 `Packet`；设置 callback 后由上层业务决定如何响应。
+- 当前 `TcpServer` 不执行 MySQL / Redis、不做登录态、不做 MessageRouter，也不实现慢客户端高水位策略；这些留给后续业务线程池、业务服务和 backpressure Step。
 - `retrieve()` 越界返回 `InvalidArgument`，避免网络异常输入触发进程级崩溃。
 
 ## Current Step
 
-Step 15 implements `EventLoopThread` and `EventLoopThreadPool` in `liteim_net`: each child I/O thread owns one `EventLoop`, the pool starts N child loops, `getNextLoop()` assigns loops by round-robin, and the zero-thread case falls back to the base loop.
+Step 16 implements the first multi-Reactor `TcpServer` in `liteim_net`: the main `EventLoop` owns `Acceptor`, accepted fds are assigned to child I/O loops through `EventLoopThreadPool`, `Session` objects are created on their owning loops, and `sendToSession()` can be called cross-thread while actual socket writes still happen in the session loop.
 
-Step 16 前清理已经完成：Packet/TLV 共享 `ByteOrder.hpp`，`Epoller` 使用 `owner_loop_` 校验 `Channel` 归属，`Acceptor` callback 通过 `UniqueFd` 表达 accepted fd 所有权，`listening()` 由 `listen_fd_` 推导。`TcpServer`、business routing 和 high-water-mark backpressure policy stay in later steps.
+Step 17 will add the business `ThreadPool`. MySQL / Redis blocking calls, login routing, user-session binding, MessageRouter, heartbeat timeout and high-water-mark backpressure remain later steps.

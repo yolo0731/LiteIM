@@ -7,6 +7,37 @@
 - 当前路线是 `LiteIM High Performance + Qt Client + PersonaAgent Authorized Style RAG Edition`。
 - 如果 `README.md`、`task_plan.md`、`progress.md`、教程或源码与 `PROJECT_MEMORY.md` 冲突，统一改回 `PROJECT_MEMORY.md` 的路线。
 
+## 2026-05-08 Step 16 TcpServer Findings
+
+本次进入 `Step 16: implement TcpServer multi-Reactor version`，目标是在不引入业务线程池、MySQL、Redis 或登录态的前提下，把 `Acceptor`、`EventLoopThreadPool` 和 `Session` 串成第一个多 Reactor echo server。
+
+已经确认并采用的设计：
+
+- `TcpServer` 是网络层协调器，不替代 `Acceptor`、`Session` 或 `EventLoopThreadPool` 的职责。
+- base `EventLoop` 持有 `Acceptor`，只负责 listen fd 事件和 accept。
+- `Acceptor` 通过 `NewConnectionCallback(UniqueFd, peer)` 把 accepted fd 所有权 move 给 `TcpServer`。
+- `TcpServer::handleNewConnection()` 在 base loop 中选择一个 I/O loop，然后通过 `queueInLoop()` 把 `Session` 创建投递到目标 loop。
+- `Session` 在所属 I/O loop 中创建和启动，避免跨 loop 注册 `Channel`。
+- `sessions_` 使用 mutex 保护，覆盖 I/O loop close callback 删除、外部线程 `sendToSession()` 查询和测试诊断 `sessionCount()`。
+- 未设置业务 callback 时，`TcpServer` 默认 echo 收到的 `Packet`，用于验证网络底座。
+- `sendToSession()` 可以从其他线程调用，但真实 socket 写入仍由 `Session::sendPacket()` 投递回 session 所属 I/O loop。
+- `sendToUser()` 当前保留基础接口并返回 `NotFound`，因为 user-session 绑定属于后续登录业务 Step。
+
+新增测试：
+
+- `ReactorInterfaceTest.TcpServerHeaderIsSelfContained`
+- `TcpServerTest.EchoesPacketToClient`
+- `TcpServerTest.DistributesConnectionsAcrossIoLoops`
+- `TcpServerTest.RemovesSessionAfterClientDisconnects`
+- `TcpServerTest.SendToSessionFromOtherThreadDeliversPacket`
+- `TcpServerTest.SendToUnknownUserReturnsNotFound`
+
+本次不采用/不改：
+
+- 不实现 business `ThreadPool`，它属于 Step 17。
+- 不实现登录态、用户路由、`MessageRouter`、MySQL、Redis、心跳或慢客户端高水位策略。
+- 不把 I/O loop 线程用于数据库或缓存阻塞调用。
+
 ## 2026-05-08 Pre-Step 16 Code Cleanup Findings
 
 本次清理在 Step 16 `TcpServer` 之前完成，不实现 `TcpServer`，只处理会影响 Step 16 ownership / one-loop-per-thread 边界的代码卫生问题。

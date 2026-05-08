@@ -1,5 +1,78 @@
 # LiteIM Progress
 
+## 2026-05-08 Step 16 TcpServer
+
+本次进入 `Step 16: implement TcpServer multi-Reactor version`，目标是实现第一个多 Reactor echo server。
+
+概念边界：
+
+- base `EventLoop` 持有 `Acceptor`，负责监听和 accept。
+- `EventLoopThreadPool` 提供子 I/O loops，新连接按 round-robin 分配。
+- `Session` 在被选中的 I/O loop 中创建，后续读写固定在该 loop。
+- `TcpServer` 维护线程安全的 `sessions_` 表，并提供 `sendToSession()` / 基础 `sendToUser()`。
+- 第一版业务只做 echo，不进入 business `ThreadPool`、MySQL、Redis、登录态或 MessageRouter。
+
+TDD RED 已确认：
+
+```bash
+cmake --build build
+```
+
+新增测试先失败于 `fatal error: liteim/net/TcpServer.hpp: No such file or directory`，证明测试覆盖了当前 Step 缺失的 `TcpServer` 接口。
+
+已完成代码：
+
+- 新增 `include/liteim/net/TcpServer.hpp`。
+- 新增 `src/net/TcpServer.cpp`。
+- `TcpServer::start()` 在 base loop 线程启动 I/O 线程池、创建 `Acceptor` 并记录实际端口。
+- `Acceptor` accept 到的 `UniqueFd` 由 `TcpServer` 分配到子 I/O loop。
+- `TcpServer::createSessionInLoop()` 在目标 loop 中创建 `Session`、设置 message/close callback、写入 `sessions_` 表并启动读事件。
+- 默认 message callback 为空时执行 echo。
+- `sendToSession()` 支持从其他线程调用，实际发送仍回到 session 所属 loop。
+- `sendToUser()` 当前返回 `NotFound`，等待后续登录态和 user-session 绑定。
+- `src/net/CMakeLists.txt` 已接入 `TcpServer.cpp`。
+
+新增测试：
+
+- `tests/net/tcp_server_header_test.cpp`
+- `tests/net/tcp_server_test.cpp`
+- `ReactorInterfaceTest.TcpServerHeaderIsSelfContained`
+- `TcpServerTest.EchoesPacketToClient`
+- `TcpServerTest.DistributesConnectionsAcrossIoLoops`
+- `TcpServerTest.RemovesSessionAfterClientDisconnects`
+- `TcpServerTest.SendToSessionFromOtherThreadDeliversPacket`
+- `TcpServerTest.SendToUnknownUserReturnsNotFound`
+
+定向验证已通过：
+
+```bash
+cmake --build build
+ctest --test-dir build --output-on-failure -R "TcpServer|ReactorInterfaceTest.TcpServer"
+```
+
+结果：6/6 Step 16 tests passed。
+
+已完成文档同步：
+
+- README、docs/architecture.md、docs/project_layout.md、docs/roadmap.md、tutorials/README.md、Step 16 tutorial、task_plan、findings、progress 和 PROJECT_MEMORY 已同步 Step 16 结果。
+
+全量验证已通过：
+
+```bash
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+git diff --check
+find . -path ./build -prune -o -path ./.git -prune -o -name .gitkeep -print
+find . -path ./build -prune -o -path ./.git -prune -o \( -path ./server/net -o -path ./server/protocol -o -name '*SQLite*' -o -name '*InMemory*' -o -name '*step15_sqlite*' \) -print
+```
+
+结果：build 通过；server scaffold 正常输出 `LiteIM server scaffold is running on 0.0.0.0:9000`；CTest 142/142 通过；`git diff --check` 无输出；`.gitkeep` 检查无输出；旧路线路径检查无输出。
+
+提交状态：
+
+- 已按 `PROJECT_MEMORY.md` 使用提交信息 `feat(net): implement multi reactor tcp server` 完成 Step 16 commit。
+
 ## 2026-05-08 Pre-Step 16 Code Cleanup
 
 本次继续上轮未完成收尾，目标是在 `Step 16: implement TcpServer multi-Reactor version` 前完成接口和代码卫生清理，不启动 TcpServer 实现。
