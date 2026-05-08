@@ -124,6 +124,11 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Pre-Step 15 byte API cleanup code | done | Added `include/liteim/base/Types.hpp`; updated Packet, TLV, FrameDecoder, Buffer, Session, and tests to use `Byte` / `Bytes`. |
 | Pre-Step 15 byte API cleanup docs | done | Synced README, docs, tutorials, findings, progress, task plan, and PROJECT_MEMORY with the normalized byte API. |
 | Pre-Step 15 byte API cleanup verification | done | Build, server smoke, full CTest 124/124, diff check, stale-route check, and API stale-reference scan passed. |
+| Step 15 concept | done | Step 15 implements one-loop-per-thread I/O foundations, not TcpServer or business pools. |
+| Step 15 tests | done | Added RED tests for EventLoopThread headers, worker-thread loop startup/stop, EventLoopThreadPool startup, round-robin, zero-thread fallback, and distinct child loop threads. |
+| Step 15 code | done | Added `EventLoopThread` and `EventLoopThreadPool`, wired them into `liteim_net`, and passed the targeted Step 15 tests. |
+| Step 15 docs | done | Synced README, docs, findings, progress, tutorials, task plan, and PROJECT_MEMORY for Step 15. |
+| Step 15 verification | done | Build, server smoke, targeted tests, full CTest 133/133, diff check, stale-route checks, and final diff review passed. |
 
 ## Current Decision
 
@@ -810,7 +815,9 @@ Expected new tests:
 - `TEST(SessionTest, LargePacketLeavesPendingOutputWhenPeerDoesNotRead)`
 - `TEST(SessionTest, LastActiveTimeIsInitialized)`
 
-Next Step: `Step 15: implement EventLoopThread and EventLoopThreadPool`.
+Step 15 completed `EventLoopThread` and `EventLoopThreadPool` with worker-thread loop startup, safe stop/join behavior, round-robin loop selection, and zero-thread base-loop fallback.
+
+Next Step: `Step 16: implement TcpServer multi-Reactor version`.
 
 ## Persistent Requirements
 

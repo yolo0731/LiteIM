@@ -1,6 +1,6 @@
 # LiteIM Architecture
 
-本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 14 后，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil`、RAII fd 包装 `UniqueFd`、`Epoller` 系统调用封装、`Channel` 事件分发 / `tie()` 生命周期保护、`EventLoop` 事件循环 / `eventfd` 任务投递、非阻塞监听器 `Acceptor` 和单连接 owner `Session`。当前还没有 `TcpServer` 或多 Reactor 线程池实现。
+本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 15 后，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil`、RAII fd 包装 `UniqueFd`、`Epoller` 系统调用封装、`Channel` 事件分发 / `tie()` 生命周期保护、`EventLoop` 事件循环 / `eventfd` 任务投递、非阻塞监听器 `Acceptor`、单连接 owner `Session` 和多 Reactor 子线程基础 `EventLoopThreadPool`。当前还没有 `TcpServer` 实现。
 
 ## Target Data Flow
 
@@ -130,7 +130,7 @@ liteim_protocol
 
 ## Current Network Layer
 
-当前 Step 14 已经实现 `Epoller` 系统调用层、`Channel` 回调分发、`EventLoop` 阻塞循环、`eventfd` 任务投递、`Acceptor` 非阻塞监听和 `Session` 单连接读写，但还没有 `TcpServer` / `EventLoopThreadPool`：
+当前 Step 15 已经实现 `Epoller` 系统调用层、`Channel` 回调分发、`EventLoop` 阻塞循环、`eventfd` 任务投递、`Acceptor` 非阻塞监听、`Session` 单连接读写以及 `EventLoopThreadPool` 子 Reactor 线程池，但还没有 `TcpServer`：
 
 ```text
 liteim_net
@@ -171,6 +171,16 @@ liteim_net
        -> setCloseCallback()
        -> pendingOutputBytes()
        -> lastActiveTimeMilliseconds()
+  -> EventLoopThread
+       -> startLoop()
+       -> stop()
+       -> running()
+  -> EventLoopThreadPool
+       -> start()
+       -> stop()
+       -> getNextLoop()
+       -> loops()
+       -> threadCount()
   -> Channel
        -> fd()
        -> events()
@@ -251,4 +261,4 @@ liteim_net
 
 ## Current Step
 
-Step 14 implements `Session` in `liteim_net`: a single connected fd owner with `Channel`, input/output `Buffer`, `FrameDecoder`, packet callbacks, cross-thread `sendPacket()`, close cleanup, and `last_active_time` tracking. `TcpServer`, `EventLoopThreadPool`, business routing, and high-water-mark backpressure policy stay in later steps.
+Step 15 implements `EventLoopThread` and `EventLoopThreadPool` in `liteim_net`: each child I/O thread owns one `EventLoop`, the pool starts N child loops, `getNextLoop()` assigns loops by round-robin, and the zero-thread case falls back to the base loop. `TcpServer`, business routing, and high-water-mark backpressure policy stay in later steps.

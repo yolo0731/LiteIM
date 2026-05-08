@@ -1,5 +1,67 @@
 # LiteIM Progress
 
+## 2026-05-08 Step 15 EventLoopThreadPool
+
+本次进入 `Step 15: implement EventLoopThread and EventLoopThreadPool`，目标是实现 one-loop-per-thread 多 Reactor 的线程基础，不启动 Step 16 `TcpServer`。
+
+概念边界：
+
+- `EventLoopThread` 表示“一个线程拥有一个 `EventLoop`”。
+- `EventLoopThreadPool` 表示“多个 I/O loops 的管理器”。
+- 主 Reactor 后续继续负责 accept；子 Reactor 后续负责已连接 `Session` 的 I/O。
+- 本 Step 不创建 `TcpServer`，不做连接分发，也不进入业务线程池、MySQL 或 Redis。
+
+TDD RED 已确认：
+
+```bash
+cmake --build build
+```
+
+新增测试先失败于 `fatal error: liteim/net/EventLoopThread.hpp: No such file or directory`，证明测试覆盖了当前 Step 缺失的线程接口。
+
+已完成代码：
+
+- 新增 `include/liteim/net/EventLoopThread.hpp` 和 `src/net/EventLoopThread.cpp`。
+- 新增 `include/liteim/net/EventLoopThreadPool.hpp` 和 `src/net/EventLoopThreadPool.cpp`。
+- `EventLoopThread::startLoop()` 启动工作线程，等待线程内 `EventLoop` 构造完成后返回观察指针。
+- `EventLoopThread::stop()` 通过 `EventLoop::quit()` 唤醒并退出 loop，然后 join 线程；析构自动 stop。
+- `EventLoopThreadPool::start()` 启动指定数量的子 loops。
+- `EventLoopThreadPool::getNextLoop()` round-robin 返回子 loop；线程数为 0 时返回 base loop。
+- `src/net/CMakeLists.txt` 已接入 Step 15 新源码。
+
+新增测试：
+
+- `ReactorInterfaceTest.EventLoopThreadHeaderIsSelfContained`
+- `ReactorInterfaceTest.EventLoopThreadPoolHeaderIsSelfContained`
+- `EventLoopThreadTest.StartLoopCreatesLoopOnWorkerThread`
+- `EventLoopThreadTest.StopWithoutStartIsNoop`
+- `EventLoopThreadTest.DestructorStopsRunningLoop`
+- `EventLoopThreadPoolTest.StartCreatesRequestedNumberOfLoops`
+- `EventLoopThreadPoolTest.GetNextLoopUsesRoundRobinOrder`
+- `EventLoopThreadPoolTest.ZeroThreadsReturnsBaseLoop`
+- `EventLoopThreadPoolTest.ChildLoopsRunTasksOnDistinctThreads`
+
+定向验证已通过：
+
+```bash
+cmake --build build
+ctest --test-dir build --output-on-failure -R "EventLoopThread|EventLoopThreadPool|ReactorInterfaceTest.EventLoopThread"
+```
+
+结果：9/9 Step 15 tests passed。
+
+全量验证已通过：
+
+```bash
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+git diff --check
+find . \( -path './server/net' -o -path './server/protocol' -o -name '*SQLite*' -o -name '*InMemory*' -o -name '*step15_sqlite*' \) -print
+```
+
+结果：build 通过；server scaffold 正常输出 `LiteIM server scaffold is running on 0.0.0.0:9000`；CTest 133/133 通过；`git diff --check` 无输出；旧路线路径检查无输出。
+
 ## 2026-05-08 Pre-Step 15 Byte/Bytes API Cleanup
 
 本次在进入 `Step 15: implement EventLoopThread and EventLoopThreadPool` 前，先收口上次未完成的字节类型清理，目标是不让后续网络线程池和 `TcpServer` 继续扩散混用 `std::vector<char>` / `std::vector<std::uint8_t>` / `std::string_view` 的公共接口。

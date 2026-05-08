@@ -3,6 +3,8 @@ add_library(liteim_net
     Buffer.cpp
     Channel.cpp
     EventLoop.cpp
+    EventLoopThread.cpp
+    EventLoopThreadPool.cpp
     Epoller.cpp
     Session.cpp
     SocketUtil.cpp

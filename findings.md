@@ -21,6 +21,32 @@
 
 本次清理不改变协议二进制格式，不改变 Packet/TLV 网络字节序，也不启动 Step 15 线程池实现。
 
+## 2026-05-08 Step 15 EventLoopThreadPool Findings
+
+本次进入 `Step 15: implement EventLoopThread and EventLoopThreadPool`，目标是建立 one-loop-per-thread 的子 Reactor 线程基础，不实现 `TcpServer`、连接分发、业务线程池、MySQL 或 Redis。
+
+已经确认并采用的设计：
+
+- `EventLoopThread` 在工作线程内部构造局部 `EventLoop`，保证 `EventLoop::thread_id_` 绑定到真正的 I/O 线程；`startLoop()` 等待 loop 初始化完成后返回观察指针。
+- `EventLoopThread::stop()` 在持有自身 mutex 时调用 `loop_->quit()`，避免 loop 线程刚退出时裸指针失效；随后 join 线程，析构时自动 stop。
+- `EventLoopThreadPool` 持有多个 `EventLoopThread`，`start()` 启动指定数量的子 loops，`getNextLoop()` 用 round-robin 返回下一个子 loop。
+- `thread_count == 0` 时，线程池不创建子线程，`getNextLoop()` 返回 base loop，作为后续 `TcpServer` 的单 Reactor fallback。
+- `EventLoopThreadPool::getNextLoop()` 要求先 `start()`，避免误把未启动的多 Reactor 配置静默退化成 base loop。
+
+新增测试：
+
+- `ReactorInterfaceTest.EventLoopThreadHeaderIsSelfContained`
+- `ReactorInterfaceTest.EventLoopThreadPoolHeaderIsSelfContained`
+- `EventLoopThreadTest.StartLoopCreatesLoopOnWorkerThread`
+- `EventLoopThreadTest.StopWithoutStartIsNoop`
+- `EventLoopThreadTest.DestructorStopsRunningLoop`
+- `EventLoopThreadPoolTest.StartCreatesRequestedNumberOfLoops`
+- `EventLoopThreadPoolTest.GetNextLoopUsesRoundRobinOrder`
+- `EventLoopThreadPoolTest.ZeroThreadsReturnsBaseLoop`
+- `EventLoopThreadPoolTest.ChildLoopsRunTasksOnDistinctThreads`
+
+TDD RED 已确认：新增测试后构建失败于 `fatal error: liteim/net/EventLoopThread.hpp: No such file or directory`，证明测试覆盖了 Step 15 缺失接口。
+
 ## 2026-05-07 Step 14 Session Findings
 
 本次进入 Step 14，实现单个已连接 fd 的 `Session` 生命周期，不启动 Step 15 多 Reactor 线程池，也不实现 `TcpServer`。

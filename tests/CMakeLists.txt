@@ -12,6 +12,10 @@ add_executable(liteim_tests
     net/epoller_test.cpp
     net/event_loop_header_test.cpp
     net/event_loop_test.cpp
+    net/event_loop_thread_header_test.cpp
+    net/event_loop_thread_pool_header_test.cpp
+    net/event_loop_thread_test.cpp
+    net/event_loop_thread_pool_test.cpp
     net/acceptor_header_test.cpp
     net/acceptor_test.cpp
     net/session_header_test.cpp
