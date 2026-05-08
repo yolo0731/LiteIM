@@ -7,7 +7,8 @@
 
 namespace liteim {
 
-Buffer::Buffer(std::size_t initial_size) : buffer_(initial_size == 0 ? 1 : initial_size) {}
+Buffer::Buffer(std::size_t initial_size) : buffer_(initial_size == 0 ? 1 : initial_size) {
+}
 
 std::size_t Buffer::readableBytes() const noexcept {
     return write_index_ - read_index_;
@@ -75,8 +76,7 @@ void Buffer::ensureWritableBytes(std::size_t len) {
     const auto readable = readableBytes();
     if (read_index_ + writableBytes() >= len) {
         std::move(buffer_.begin() + static_cast<std::ptrdiff_t>(read_index_),
-                  buffer_.begin() + static_cast<std::ptrdiff_t>(write_index_),
-                  buffer_.begin());
+                  buffer_.begin() + static_cast<std::ptrdiff_t>(write_index_), buffer_.begin());
         read_index_ = 0;
         write_index_ = readable;
         return;
@@ -84,8 +84,7 @@ void Buffer::ensureWritableBytes(std::size_t len) {
 
     if (read_index_ != 0) {
         std::move(buffer_.begin() + static_cast<std::ptrdiff_t>(read_index_),
-                  buffer_.begin() + static_cast<std::ptrdiff_t>(write_index_),
-                  buffer_.begin());
+                  buffer_.begin() + static_cast<std::ptrdiff_t>(write_index_), buffer_.begin());
         read_index_ = 0;
         write_index_ = readable;
     }
@@ -93,4 +92,4 @@ void Buffer::ensureWritableBytes(std::size_t len) {
     buffer_.resize(write_index_ + len);
 }
 
-}  // namespace liteim
+} // namespace liteim

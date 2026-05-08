@@ -14,4 +14,4 @@ enum class ErrorCode {
 
 const char* toString(ErrorCode code) noexcept;
 
-}  // namespace liteim
+} // namespace liteim

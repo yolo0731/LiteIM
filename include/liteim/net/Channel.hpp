@@ -69,4 +69,4 @@ private:
     EventCallback error_callback_;
 };
 
-}  // namespace liteim
+} // namespace liteim

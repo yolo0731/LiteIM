@@ -25,4 +25,4 @@ private:
     std::string message_;
 };
 
-}  // namespace liteim
+} // namespace liteim

@@ -31,10 +31,8 @@ inline std::uint16_t readUint16BE(const Byte* data) {
 }
 
 inline std::uint32_t readUint32BE(const Byte* data) {
-    return (static_cast<std::uint32_t>(data[0]) << 24U) |
-           (static_cast<std::uint32_t>(data[1]) << 16U) |
-           (static_cast<std::uint32_t>(data[2]) << 8U) |
-           static_cast<std::uint32_t>(data[3]);
+    return (static_cast<std::uint32_t>(data[0]) << 24U) | (static_cast<std::uint32_t>(data[1]) << 16U) |
+           (static_cast<std::uint32_t>(data[2]) << 8U) | static_cast<std::uint32_t>(data[3]);
 }
 
 inline std::uint64_t readUint64BE(const Byte* data) {
@@ -45,4 +43,4 @@ inline std::uint64_t readUint64BE(const Byte* data) {
     return value;
 }
 
-}  // namespace liteim
+} // namespace liteim

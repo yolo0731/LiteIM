@@ -33,7 +33,7 @@ Status setSocketOption(int fd, int level, int option, bool enabled, const char* 
     return Status::ok();
 }
 
-}  // namespace
+} // namespace
 
 Status createNonBlockingSocket(int& fd) {
     fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
@@ -116,4 +116,4 @@ Status getSocketError(int fd, int& error_code) {
     return Status::ok();
 }
 
-}  // namespace liteim
+} // namespace liteim

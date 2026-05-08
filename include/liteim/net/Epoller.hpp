@@ -13,7 +13,7 @@ class Channel;
 class EventLoop;
 
 class Epoller {
-  public:
+public:
     using ChannelList = std::vector<Channel*>;
 
     explicit Epoller(EventLoop* owner_loop);
@@ -26,7 +26,7 @@ class Epoller {
     Status updateChannel(Channel* channel);
     Status removeChannel(Channel* channel);
 
-  private:
+private:
     Status validateChannelOwner(Channel* channel) const;
 
     EventLoop* owner_loop_;
@@ -35,4 +35,4 @@ class Epoller {
     std::unordered_map<int, Channel*> channels_;
 };
 
-}  // namespace liteim
+} // namespace liteim

@@ -5,7 +5,7 @@
 namespace liteim {
 
 class UniqueFd {
-  public:
+public:
     UniqueFd() noexcept = default;
     explicit UniqueFd(int fd) noexcept;
     ~UniqueFd();
@@ -22,8 +22,8 @@ class UniqueFd {
     int release() noexcept;
     void reset(int fd = kInvalidFd) noexcept;
 
-  private:
+private:
     int fd_{kInvalidFd};
 };
 
-}  // namespace liteim
+} // namespace liteim

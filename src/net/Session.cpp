@@ -17,12 +17,10 @@ namespace {
 
 constexpr std::size_t kReadBufferSize = 4096;
 
-}  // namespace
+} // namespace
 
 Session::Session(EventLoop* loop, int fd)
-    : loop_(loop),
-      fd_(fd),
-      channel_(loop == nullptr ? nullptr : std::make_unique<Channel>(loop, fd)),
+    : loop_(loop), fd_(fd), channel_(loop == nullptr ? nullptr : std::make_unique<Channel>(loop, fd)),
       last_active_time_ms_(Timestamp::now().millisecondsSinceEpoch()) {
     if (loop_ == nullptr) {
         throw std::invalid_argument("Session requires a valid EventLoop");
@@ -83,9 +81,7 @@ Status Session::sendPacket(const Packet& packet) {
         return Status::ok();
     }
 
-    loop_->queueInLoop([self, encoded = std::move(encoded)]() mutable {
-        self->sendEncodedInLoop(std::move(encoded));
-    });
+    loop_->queueInLoop([self, encoded = std::move(encoded)]() mutable { self->sendEncodedInLoop(std::move(encoded)); });
     return Status::ok();
 }
 
@@ -262,10 +258,7 @@ bool Session::feedInputBuffer() {
     }
 
     std::vector<Packet> packets;
-    const auto status = decoder_.feed(
-        input_buffer_.peek(),
-        input_buffer_.readableBytes(),
-        packets);
+    const auto status = decoder_.feed(input_buffer_.peek(), input_buffer_.readableBytes(), packets);
     input_buffer_.retrieveAll();
     if (!status.isOk()) {
         closeInLoop();
@@ -288,4 +281,4 @@ void Session::updateLastActiveTime() noexcept {
     last_active_time_ms_ = Timestamp::now().millisecondsSinceEpoch();
 }
 
-}  // namespace liteim
+} // namespace liteim

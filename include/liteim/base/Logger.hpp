@@ -26,4 +26,4 @@ public:
     static void setLevel(LogLevel level);
 };
 
-}  // namespace liteim
+} // namespace liteim

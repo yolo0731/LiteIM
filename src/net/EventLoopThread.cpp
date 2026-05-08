@@ -24,9 +24,7 @@ EventLoop* EventLoopThread::startLoop() {
     thread_ = std::thread([this]() { threadFunc(); });
 
     std::unique_lock<std::mutex> lock(mutex_);
-    condition_.wait(lock, [this]() {
-        return loop_ != nullptr || startup_exception_ != nullptr || !running_;
-    });
+    condition_.wait(lock, [this]() { return loop_ != nullptr || startup_exception_ != nullptr || !running_; });
 
     if (startup_exception_ != nullptr) {
         const auto exception = std::exchange(startup_exception_, nullptr);
@@ -99,4 +97,4 @@ void EventLoopThread::threadFunc() noexcept {
     }
 }
 
-}  // namespace liteim
+} // namespace liteim

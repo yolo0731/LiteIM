@@ -40,4 +40,4 @@ enum class TlvType : std::uint16_t {
 
 const char* toString(TlvType type) noexcept;
 
-}  // namespace liteim
+} // namespace liteim

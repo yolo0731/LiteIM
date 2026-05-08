@@ -6,9 +6,7 @@
 
 namespace liteim {
 
-Status FrameDecoder::feed(const Byte* data,
-                          std::size_t len,
-                          std::vector<Packet>& output) {
+Status FrameDecoder::feed(const Byte* data, std::size_t len, std::vector<Packet>& output) {
     output.clear();
 
     if (error_) {
@@ -64,4 +62,4 @@ void FrameDecoder::reset() {
     error_ = false;
 }
 
-}  // namespace liteim
+} // namespace liteim

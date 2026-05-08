@@ -53,4 +53,4 @@ bool isRequestType(MessageType type) noexcept;
 bool isResponseType(MessageType type) noexcept;
 bool isPushType(MessageType type) noexcept;
 
-}  // namespace liteim
+} // namespace liteim

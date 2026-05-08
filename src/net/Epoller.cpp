@@ -37,7 +37,7 @@ epoll_event makeEpollEvent(Channel* channel) {
     return event;
 }
 
-}  // namespace
+} // namespace
 
 Epoller::Epoller(EventLoop* owner_loop)
     : owner_loop_(owner_loop), epoll_fd_(::epoll_create1(EPOLL_CLOEXEC)), events_(kInitialEventListSize) {
@@ -67,10 +67,7 @@ Status Epoller::poll(int timeout_ms, ChannelList& active_channels) {
         return invalidEpollStatus("epoll_wait");
     }
 
-    const int event_count = ::epoll_wait(epoll_fd_,
-                                         events_.data(),
-                                         static_cast<int>(events_.size()),
-                                         timeout_ms);
+    const int event_count = ::epoll_wait(epoll_fd_, events_.data(), static_cast<int>(events_.size()), timeout_ms);
     if (event_count < 0) {
         if (errno == EINTR) {
             return Status::ok();
@@ -173,4 +170,4 @@ Status Epoller::removeChannel(Channel* channel) {
     return Status::ok();
 }
 
-}  // namespace liteim
+} // namespace liteim

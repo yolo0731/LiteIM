@@ -10,7 +10,7 @@ namespace liteim {
 class EventLoop;
 
 class EventLoopThread {
-  public:
+public:
     EventLoopThread() = default;
     ~EventLoopThread();
 
@@ -21,7 +21,7 @@ class EventLoopThread {
     void stop() noexcept;
     bool running() const noexcept;
 
-  private:
+private:
     void threadFunc() noexcept;
 
     mutable std::mutex mutex_;
@@ -33,4 +33,4 @@ class EventLoopThread {
     std::exception_ptr startup_exception_;
 };
 
-}  // namespace liteim
+} // namespace liteim

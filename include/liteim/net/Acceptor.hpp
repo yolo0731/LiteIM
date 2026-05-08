@@ -15,7 +15,7 @@ class Channel;
 class EventLoop;
 
 class Acceptor {
-  public:
+public:
     using NewConnectionCallback = std::function<void(UniqueFd, const sockaddr_in&)>;
 
     Acceptor(EventLoop* loop, const std::string& listen_ip, std::uint16_t port);
@@ -31,7 +31,7 @@ class Acceptor {
     bool listening() const noexcept;
     void close() noexcept;
 
-  private:
+private:
     void closeInLoop() noexcept;
     void handleRead();
     void handleAcceptError(int error_number) noexcept;
@@ -45,4 +45,4 @@ class Acceptor {
     NewConnectionCallback new_connection_callback_;
 };
 
-}  // namespace liteim
+} // namespace liteim

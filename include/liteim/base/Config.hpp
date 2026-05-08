@@ -44,4 +44,4 @@ struct Config {
     Status loadFromFile(const std::filesystem::path& path);
 };
 
-}  // namespace liteim
+} // namespace liteim

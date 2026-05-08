@@ -2,9 +2,8 @@
 
 namespace liteim {
 
-Status::Status(ErrorCode code, std::string message)
-    : code_(code),
-      message_(std::move(message)) {}
+Status::Status(ErrorCode code, std::string message) : code_(code), message_(std::move(message)) {
+}
 
 Status Status::ok() {
     return Status{};
@@ -26,4 +25,4 @@ const std::string& Status::message() const noexcept {
     return message_;
 }
 
-}  // namespace liteim
+} // namespace liteim

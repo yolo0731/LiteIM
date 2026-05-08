@@ -7,7 +7,7 @@
 namespace liteim {
 
 class Timestamp {
-  public:
+public:
     using Clock = std::chrono::system_clock;
 
     Timestamp();
@@ -17,8 +17,8 @@ class Timestamp {
     std::int64_t millisecondsSinceEpoch() const;
     std::string toIso8601String() const;
 
-  private:
+private:
     Clock::time_point time_point_;
 };
 
-}  // namespace liteim
+} // namespace liteim
