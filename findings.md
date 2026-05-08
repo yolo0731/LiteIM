@@ -7,6 +7,39 @@
 - 当前路线是 `LiteIM High Performance + Qt Client + PersonaAgent Authorized Style RAG Edition`。
 - 如果 `README.md`、`task_plan.md`、`progress.md`、教程或源码与 `PROJECT_MEMORY.md` 冲突，统一改回 `PROJECT_MEMORY.md` 的路线。
 
+## 2026-05-08 Step 17 Business ThreadPool Findings
+
+本次进入 `Step 17: implement business ThreadPool`，目标是在不接入 MySQL、Redis、登录态或 MessageRouter 的前提下，先补齐业务线程池基础设施。
+
+已经确认并采用的设计：
+
+- 新增 `liteim_concurrency` 模块，头文件放在 `include/liteim/concurrency/`，实现放在 `src/concurrency/`。
+- `ThreadPool` 使用固定 worker 数，构造时确定，不做动态扩缩容、优先级队列或 work stealing。
+- `submit()` 接收 `std::function<void()>`，返回 `Status`，不返回 `future`，避免 I/O 线程同步等待业务结果。
+- `mutex + condition_variable + deque<Task>` 作为第一版任务队列。
+- `start()` 拒绝 0 worker 和重复启动。
+- `submit()` 拒绝空任务、未启动线程池和停止中的线程池。
+- `stop()` 停止接收新任务，唤醒所有 worker，并等待已经入队的任务执行完再退出。
+- `pendingTaskCount()` 只统计仍在队列中等待 worker 取走的任务，不统计正在执行的任务。
+- 单个任务异常会被 worker 捕获，避免一个业务任务杀死 worker 线程；业务错误后续应转换为 `Status` 或响应 Packet。
+
+新增测试：
+
+- `ConcurrencyInterfaceTest.ThreadPoolHeaderIsSelfContained`
+- `ThreadPoolTest.StartRejectsZeroWorkers`
+- `ThreadPoolTest.SubmitExecutesTask`
+- `ThreadPoolTest.MultipleWorkersRunConcurrently`
+- `ThreadPoolTest.StopRejectsNewTasks`
+- `ThreadPoolTest.DestructorWaitsForQueuedTasks`
+- `ThreadPoolTest.PendingTaskCountTracksQueuedTasks`
+
+本次不采用/不改：
+
+- 不接入 `TcpServer` 的 message callback。
+- 不实现 MySQL、Redis、登录、注册、聊天、历史消息或 MessageRouter。
+- 不让业务线程直接修改 `Session`；后续业务响应仍必须回到连接所属 I/O loop。
+- 不实现 `future`、cancel、deadline、任务优先级、动态扩缩容或 work stealing。
+
 ## 2026-05-08 Step 16 TcpServer Findings
 
 本次进入 `Step 16: implement TcpServer multi-Reactor version`，目标是在不引入业务线程池、MySQL、Redis 或登录态的前提下，把 `Acceptor`、`EventLoopThreadPool` 和 `Session` 串成第一个多 Reactor echo server。

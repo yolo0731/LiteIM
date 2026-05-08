@@ -140,6 +140,12 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 16 docs | done | Synced README, docs, tutorial index, Step 16 tutorial, findings, progress, task plan, and PROJECT_MEMORY for the new `TcpServer` boundary. |
 | Step 16 verification | done | Build, server smoke, full CTest 142/142, diff check, `.gitkeep` check, stale-route path check, and final diff review passed. |
 | Step 16 commit | done | Commit message: `feat(net): implement multi reactor tcp server`. |
+| Step 17 concept | done | Step 17 introduces a fixed-size business `ThreadPool` for later MySQL / Redis / password hash / history query work. |
+| Step 17 tests | done | Added RED tests for `ThreadPool` header, zero-worker rejection, task execution, multi-worker concurrency, stop rejection, destructor drain, and queue length. |
+| Step 17 code | done | Added `liteim_concurrency` with `ThreadPool`, `submit()`, graceful `stop()`, worker loop, exception isolation, and queue length tracking. |
+| Step 17 docs | done | Synced README, docs, tutorial index, Step 17 tutorial, findings, progress, task plan, and PROJECT_MEMORY for the business thread pool boundary. |
+| Step 17 verification | done | Build, server smoke, full CTest 149/149, diff check, `.gitkeep` check, stale-route path check, and final diff review passed. |
+| Step 17 commit | done | Commit message: `feat(concurrency): add business thread pool`. |
 
 ## Current Decision
 

@@ -1,0 +1,307 @@
+# Step 17：实现业务 ThreadPool
+
+本 Step 的目标是新增 `liteim_concurrency::ThreadPool`，让后续登录、消息、历史查询、MySQL 和 Redis 操作有一个独立的业务执行位置。
+
+到 Step 16 为止，网络层已经能完成：
+
+```text
+TcpServer
+  -> Acceptor accepts fd
+  -> EventLoopThreadPool chooses I/O loop
+  -> Session reads/writes Packet
+```
+
+但是 I/O 线程不能直接执行 MySQL、Redis、密码哈希或历史消息查询。原因很简单：这些操作可能阻塞，一旦放在 I/O loop 中，整个连接读写都会被拖住。
+
+Step 17 只解决一个问题：
+
+```text
+阻塞业务任务应该放到哪里执行？
+```
+
+答案是业务线程池。
+
+## 1. 为什么需要业务 ThreadPool
+
+Reactor I/O 线程应该做轻量工作：
+
+- accept 新连接。
+- 读写 socket。
+- 解码 Packet / TLV。
+- 把响应投递回连接所属 `EventLoop`。
+
+业务线程池负责可能慢的工作：
+
+- MySQL 查询和写入。
+- Redis 在线状态、未读计数、限流状态。
+- 密码哈希。
+- 历史消息查询。
+- 后续业务服务里的较重计算。
+
+正确边界是：
+
+```text
+I/O thread
+  -> decode Packet
+  -> submit business task to ThreadPool
+
+business worker
+  -> run blocking business logic
+  -> queue response back to Session's EventLoop
+```
+
+业务线程不能直接改 `Session`，因为 `Session` 属于某个 I/O loop。跨线程响应仍然要回到 `EventLoop::queueInLoop()` 或 `Session::sendPacket()`。
+
+## 2. 本 Step 新增文件
+
+```text
+include/liteim/concurrency/ThreadPool.hpp
+src/concurrency/CMakeLists.txt
+src/concurrency/ThreadPool.cpp
+tests/concurrency/thread_pool_header_test.cpp
+tests/concurrency/thread_pool_test.cpp
+tutorials/step17_thread_pool.md
+```
+
+同时更新：
+
+```text
+src/CMakeLists.txt
+tests/CMakeLists.txt
+README.md
+docs/architecture.md
+docs/project_layout.md
+docs/roadmap.md
+tutorials/README.md
+task_plan.md
+findings.md
+progress.md
+PROJECT_MEMORY.md
+```
+
+## 3. ThreadPool.hpp 接口说明
+
+### `Task`
+
+```cpp
+using Task = std::function<void()>;
+```
+
+第一版业务线程池只接收无返回值任务。
+
+这里不做 `submit()` 返回 `future`，原因是后续业务响应不应该让 I/O 线程同步等待结果。业务处理完以后，应主动把响应投递回连接所属 loop。
+
+### 构造函数
+
+```cpp
+explicit ThreadPool(std::size_t worker_count);
+```
+
+`worker_count` 是固定 worker 数。
+
+本 Step 不做动态扩缩容，也不做 work stealing。固定大小更容易理解，也更符合当前 IM 服务端第一版需求。
+
+### `start()`
+
+```cpp
+Status start();
+```
+
+启动 worker 线程。
+
+失败场景：
+
+- `worker_count == 0` 返回 `InvalidArgument`。
+- 重复启动返回 `InvalidArgument`。
+- 创建线程失败返回 `InternalError`。
+
+`start()` 不在构造函数中自动执行，是为了让服务端后续能明确控制启动顺序：先准备配置和服务，再启动线程池和网络入口。
+
+### `submit()`
+
+```cpp
+Status submit(Task task);
+```
+
+把任务放进队列，并唤醒一个 worker。
+
+失败场景：
+
+- 空任务返回 `InvalidArgument`。
+- 线程池未启动返回 `InvalidArgument`。
+- `stop()` 之后不再接收新任务，返回 `InvalidArgument`。
+
+### `stop()`
+
+```cpp
+void stop() noexcept;
+```
+
+停止线程池。
+
+它的语义是：
+
+1. 停止接收新任务。
+2. 唤醒所有 worker。
+3. 已经入队的任务继续执行完。
+4. 等待 worker 线程退出。
+
+这叫优雅退出。它不是“立刻丢弃队列”。
+
+### 状态查询
+
+```cpp
+std::size_t workerCount() const noexcept;
+std::size_t pendingTaskCount() const;
+bool started() const noexcept;
+```
+
+- `workerCount()` 返回固定 worker 数。
+- `pendingTaskCount()` 返回还在队列里等待执行的任务数，不包含正在执行的任务。
+- `started()` 表示线程池当前是否处于启动状态。
+
+## 4. ThreadPool.cpp 实现思路
+
+核心数据结构是：
+
+```text
+mutex
+condition_variable
+deque<Task>
+vector<thread>
+stopping flag
+started flag
+```
+
+### `submit()` 为什么要加锁
+
+多个线程可能同时提交业务任务，所以任务队列必须由 `mutex` 保护。
+
+流程是：
+
+```text
+submit(task)
+  -> lock mutex
+  -> check started / stopping
+  -> push task into deque
+  -> unlock
+  -> notify_one worker
+```
+
+`notify_one()` 只唤醒一个 worker，因为一个任务只需要一个 worker 执行。
+
+### worker 如何等待任务
+
+worker 线程循环执行：
+
+```text
+workerLoop()
+  -> wait until stopping or queue not empty
+  -> if queue empty and stopping: exit
+  -> pop one task
+  -> run task
+```
+
+这里的关键是 stop 后仍然会先把队列里的任务取完。只有队列为空并且 `stopping_ == true` 时，worker 才退出。
+
+### 为什么任务异常不能杀死 worker
+
+业务任务里以后会有数据库、缓存、业务校验和响应构造。某个任务抛异常不应该让整个 worker 线程消失。
+
+所以当前实现会捕获任务异常，保证 worker 继续处理后续任务。后续业务层应该把业务失败转换成 `Status` 或错误响应 Packet，而不是依赖异常穿透线程边界。
+
+## 5. 本 Step 不做什么
+
+本 Step 不实现：
+
+- `future` 返回值。
+- 任务优先级。
+- 动态扩缩容。
+- work stealing。
+- 定时任务。
+- MySQL / Redis 接入。
+- MessageRouter。
+- 登录、注册、聊天业务。
+- 直接操作 `Session`。
+
+这些都属于后续 Step。
+
+## 6. 测试设计
+
+新增测试文件：
+
+```text
+tests/concurrency/thread_pool_header_test.cpp
+tests/concurrency/thread_pool_test.cpp
+```
+
+测试用例：
+
+```cpp
+TEST(ConcurrencyInterfaceTest, ThreadPoolHeaderIsSelfContained)
+TEST(ThreadPoolTest, StartRejectsZeroWorkers)
+TEST(ThreadPoolTest, SubmitExecutesTask)
+TEST(ThreadPoolTest, MultipleWorkersRunConcurrently)
+TEST(ThreadPoolTest, StopRejectsNewTasks)
+TEST(ThreadPoolTest, DestructorWaitsForQueuedTasks)
+TEST(ThreadPoolTest, PendingTaskCountTracksQueuedTasks)
+```
+
+这些测试覆盖：
+
+- 头文件可以独立 include。
+- 0 worker 会被拒绝。
+- `submit()` 的任务确实会执行。
+- 多 worker 能并发运行，而不是只有一个线程消费任务。
+- `stop()` 后不再接受新任务。
+- 析构会等待已经入队的任务结束。
+- `pendingTaskCount()` 只统计等待中的任务。
+
+运行命令：
+
+```bash
+cmake --build build
+ctest --test-dir build --output-on-failure -R "ThreadPool|ConcurrencyInterfaceTest.ThreadPool"
+```
+
+全量验证：
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
+## 7. 面试时怎么讲
+
+可以这样讲：
+
+> LiteIM 的网络层采用 one-loop-per-thread Reactor。I/O 线程只负责 epoll、socket 读写和协议编解码，不能执行 MySQL 或 Redis 这种阻塞操作。Step 17 单独实现了一个固定大小业务线程池，后续登录、发消息、历史查询等业务会以任务形式提交到 `ThreadPool`。业务线程处理完后不会直接操作 `Session`，而是把响应投递回连接所属的 `EventLoop`，保证连接生命周期和 socket 写入仍然由 I/O 线程管理。
+
+设计取舍：
+
+- 固定 worker 数，避免第一版引入动态扩缩容复杂度。
+- `submit()` 不返回 `future`，避免 I/O 线程等待业务结果。
+- `stop()` 采用优雅退出，已经入队的任务会执行完。
+- 队列用 `mutex + condition_variable`，简单直接，足够支撑后续业务服务接入。
+- 任务异常被 worker 捕获，避免单个业务任务杀死工作线程。
+
+## 8. 面试常见追问
+
+**为什么不用 `std::async`？**
+
+`std::async` 的调度策略和线程复用不适合做长期服务端业务池。IM 服务端需要固定数量 worker、明确停止语义和队列长度诊断。
+
+**为什么 `submit()` 不返回 `future`？**
+
+因为 I/O 线程不应该等待业务结果。业务完成后应该异步把响应投递回连接所属 loop，而不是让调用方阻塞等待。
+
+**`pendingTaskCount()` 为什么不统计正在执行的任务？**
+
+它表达的是队列积压量，用来观察业务线程池是否被提交压力打满。正在执行的任务已经离开队列，不属于 pending。
+
+**业务线程能直接调用 `Session::sendPacket()` 吗？**
+
+可以调用 `Session::sendPacket()` 这个跨线程安全入口，因为它内部会把真实写操作投递回所属 I/O loop。但业务线程不能直接改 `Session` 内部状态或操作 fd。
+
+**stop 时为什么不丢弃队列？**
+
+第一版选择优雅退出，避免已经接收的业务任务被静默丢掉。后续如果需要快速关停，可以单独设计 cancel / deadline 语义。

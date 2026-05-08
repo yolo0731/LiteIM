@@ -1,5 +1,78 @@
 # LiteIM Progress
 
+## 2026-05-08 Step 17 Business ThreadPool
+
+本次进入 `Step 17: implement business ThreadPool`，目标是实现独立业务线程池，让后续 MySQL / Redis / 密码哈希 / 历史消息查询不阻塞 I/O loop。
+
+概念边界：
+
+- I/O 线程继续只负责 socket 读写、Packet/TLV 编解码和连接生命周期。
+- 业务线程池负责执行可能阻塞或较重的业务任务。
+- 业务线程不能直接修改 `Session` 内部状态；响应必须通过 `Session::sendPacket()` 或 `EventLoop::queueInLoop()` 回到连接所属 I/O loop。
+- 第一版 `ThreadPool` 不提供 `future`、任务优先级、动态扩缩容或 work stealing。
+
+TDD RED 已确认：
+
+```bash
+cmake --build build
+```
+
+新增测试先失败于 `fatal error: liteim/concurrency/ThreadPool.hpp: No such file or directory`，证明测试覆盖了当前 Step 缺失的业务线程池接口。
+
+已完成代码：
+
+- 新增 `include/liteim/concurrency/ThreadPool.hpp`。
+- 新增 `src/concurrency/CMakeLists.txt`。
+- 新增 `src/concurrency/ThreadPool.cpp`。
+- `ThreadPool::start()` 创建固定数量 worker，拒绝 0 worker 和重复启动。
+- `ThreadPool::submit()` 把任务放入 `deque<Task>`，通过 `condition_variable` 唤醒 worker；未启动、停止中或空任务会返回 `InvalidArgument`。
+- `ThreadPool::workerLoop()` 等待任务、取出任务并执行；任务抛异常时会被捕获，worker 继续处理后续任务。
+- `ThreadPool::stop()` 停止接收新任务，唤醒 worker，并等待已入队任务执行完成后退出。
+- `pendingTaskCount()` 返回仍在队列中等待执行的任务数量。
+- `src/CMakeLists.txt` 已接入 `concurrency` 模块；`tests/CMakeLists.txt` 已链接 `liteim_concurrency`。
+
+新增测试：
+
+- `tests/concurrency/thread_pool_header_test.cpp`
+- `tests/concurrency/thread_pool_test.cpp`
+- `ConcurrencyInterfaceTest.ThreadPoolHeaderIsSelfContained`
+- `ThreadPoolTest.StartRejectsZeroWorkers`
+- `ThreadPoolTest.SubmitExecutesTask`
+- `ThreadPoolTest.MultipleWorkersRunConcurrently`
+- `ThreadPoolTest.StopRejectsNewTasks`
+- `ThreadPoolTest.DestructorWaitsForQueuedTasks`
+- `ThreadPoolTest.PendingTaskCountTracksQueuedTasks`
+
+定向验证已通过：
+
+```bash
+cmake --build build
+ctest --test-dir build --output-on-failure -R "ThreadPool|ConcurrencyInterfaceTest.ThreadPool"
+```
+
+结果：7/7 Step 17 tests passed。该正则同时匹配了历史 `EventLoopThreadPool` 测试，CTest 输出中共运行 12 个测试，全部通过。
+
+已完成文档同步：
+
+- README、docs/architecture.md、docs/project_layout.md、docs/roadmap.md、tutorials/README.md、Step 17 tutorial、task_plan、findings、progress 和 PROJECT_MEMORY 已同步 Step 17 结果。
+
+全量验证已通过：
+
+```bash
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+git diff --check
+find . -path ./build -prune -o -path ./.git -prune -o -name .gitkeep -print
+find . -path ./build -prune -o -path ./.git -prune -o \( -path ./server/net -o -path ./server/protocol -o -name '*SQLite*' -o -name '*InMemory*' -o -name '*step15_sqlite*' \) -print
+```
+
+结果：build 通过；server scaffold 正常输出 `LiteIM server scaffold is running on 0.0.0.0:9000`；CTest 149/149 通过；`git diff --check` 无输出；`.gitkeep` 检查无输出；旧路线路径检查无输出。
+
+提交状态：
+
+- 已按 `PROJECT_MEMORY.md` 使用提交信息 `feat(concurrency): add business thread pool` 完成 Step 17 commit。
+
 ## 2026-05-08 Step 16 TcpServer
 
 本次进入 `Step 16: implement TcpServer multi-Reactor version`，目标是实现第一个多 Reactor echo server。

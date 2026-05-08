@@ -1,6 +1,6 @@
 # LiteIM Architecture
 
-本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 16 完成状态，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / ByteOrder / Packet / TLV / TCP 字节流解包器，以及 `liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil`、RAII fd 包装 `UniqueFd`、`Epoller` 系统调用封装、`Channel` 事件分发 / `tie()` 生命周期保护、`EventLoop` 事件循环 / `eventfd` 任务投递、非阻塞监听器 `Acceptor`、单连接 owner `Session`、多 Reactor 子线程基础 `EventLoopThreadPool` 和多 Reactor echo `TcpServer`。
+本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 17 完成状态，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / ByteOrder / Packet / TLV / TCP 字节流解包器，`liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil`、RAII fd 包装 `UniqueFd`、`Epoller` 系统调用封装、`Channel` 事件分发 / `tie()` 生命周期保护、`EventLoop` 事件循环 / `eventfd` 任务投递、非阻塞监听器 `Acceptor`、单连接 owner `Session`、多 Reactor 子线程基础 `EventLoopThreadPool` 和多 Reactor echo `TcpServer`，以及 `liteim_concurrency` 的业务 `ThreadPool`。
 
 ## Target Data Flow
 
@@ -287,8 +287,34 @@ liteim_net
 - 当前 `TcpServer` 不执行 MySQL / Redis、不做登录态、不做 MessageRouter，也不实现慢客户端高水位策略；这些留给后续业务线程池、业务服务和 backpressure Step。
 - `retrieve()` 越界返回 `InvalidArgument`，避免网络异常输入触发进程级崩溃。
 
+## Current Concurrency Layer
+
+当前 Step 17 已经实现业务线程池基础设施：
+
+```text
+liteim_concurrency
+  -> ThreadPool
+       -> start()
+       -> submit(Task)
+       -> stop()
+       -> workerCount()
+       -> pendingTaskCount()
+       -> started()
+```
+
+职责边界：
+
+- `ThreadPool` 只负责执行业务任务，不处理 socket、Packet、TLV 或 `Session` 生命周期。
+- 固定 worker 数在构造时确定，`start()` 后创建 worker 线程；worker 数为 0 会返回 `InvalidArgument`。
+- `submit()` 只接收 `std::function<void()>`，不返回 `future`，避免第一版业务线程池把接口做复杂。
+- `submit()` 会拒绝空任务、未启动线程池和停止中的线程池。
+- `stop()` 会停止接收新任务，唤醒 worker，并等待已经入队的任务执行完再退出。
+- `pendingTaskCount()` 返回还在队列里等待 worker 取走的任务数，不包含正在执行的任务。
+- 单个任务抛异常不会杀死 worker 线程；后续业务服务需要自己把业务错误转换成 `Status` 或响应 Packet。
+- 后续 MySQL / Redis / 密码哈希 / 历史消息查询会投递到 `ThreadPool`。业务任务完成后，响应仍必须通过 `EventLoop::queueInLoop()` 或 `runInLoop()` 回到连接所属 I/O 线程。
+
 ## Current Step
 
-Step 16 implements the first multi-Reactor `TcpServer` in `liteim_net`: the main `EventLoop` owns `Acceptor`, accepted fds are assigned to child I/O loops through `EventLoopThreadPool`, `Session` objects are created on their owning loops, and `sendToSession()` can be called cross-thread while actual socket writes still happen in the session loop.
+Step 17 implements the fixed-size business `ThreadPool` in `liteim_concurrency`: tasks are submitted through `submit()`, workers sleep on a `condition_variable`, `stop()` drains already queued tasks before exit, and `pendingTaskCount()` exposes queue length for later diagnostics.
 
-Step 17 will add the business `ThreadPool`. MySQL / Redis blocking calls, login routing, user-session binding, MessageRouter, heartbeat timeout and high-water-mark backpressure remain later steps.
+MySQL / Redis blocking calls, login routing, user-session binding, MessageRouter, heartbeat timeout and high-water-mark backpressure remain later steps.

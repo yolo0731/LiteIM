@@ -23,6 +23,8 @@ add_executable(liteim_tests
     net/socket_util_test.cpp
     net/tcp_server_header_test.cpp
     net/tcp_server_test.cpp
+    concurrency/thread_pool_header_test.cpp
+    concurrency/thread_pool_test.cpp
     protocol/frame_decoder_test.cpp
     protocol/byte_order_test.cpp
     protocol/message_type_test.cpp
@@ -32,7 +34,7 @@ add_executable(liteim_tests
 )
 
 target_compile_features(liteim_tests PRIVATE cxx_std_17)
-target_link_libraries(liteim_tests PRIVATE liteim_base liteim_net liteim_protocol GTest::gtest_main)
+target_link_libraries(liteim_tests PRIVATE liteim_base liteim_net liteim_protocol liteim_concurrency GTest::gtest_main)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(liteim_tests PRIVATE -Wall -Wextra -Wpedantic)

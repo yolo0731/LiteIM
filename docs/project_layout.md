@@ -1,6 +1,6 @@
 # LiteIM Project Layout
 
-Step 16 后只保留当前步骤真正需要的最小文件，不提前提交未来目录。
+Step 17 后只保留当前步骤真正需要的最小文件，不提前提交未来目录。
 
 当前结构：
 
@@ -26,6 +26,8 @@ LiteIM/
 │       │   ├── Status.hpp
 │       │   ├── Types.hpp
 │       │   └── Timestamp.hpp
+│       ├── concurrency/
+│       │   └── ThreadPool.hpp
 │       ├── net/
 │       │   ├── Buffer.hpp
 │       │   ├── Acceptor.hpp
@@ -57,6 +59,9 @@ LiteIM/
 │   │   ├── Logger.cpp
 │   │   ├── Status.cpp
 │   │   └── Timestamp.cpp
+│   ├── concurrency/
+│   │   ├── CMakeLists.txt
+│   │   └── ThreadPool.cpp
 │   ├── net/
 │   │   ├── Acceptor.cpp
 │   │   ├── Buffer.cpp
@@ -83,6 +88,9 @@ LiteIM/
 │   │   ├── error_code_test.cpp
 │   │   ├── logger_test.cpp
 │   │   └── timestamp_test.cpp
+│   ├── concurrency/
+│   │   ├── thread_pool_header_test.cpp
+│   │   └── thread_pool_test.cpp
 │   ├── net/
 │   │   ├── acceptor_header_test.cpp
 │   │   ├── acceptor_test.cpp
@@ -130,7 +138,8 @@ LiteIM/
     ├── step13_acceptor.md
     ├── step14_session.md
     ├── step15_event_loop_thread_pool.md
-    └── step16_tcp_server.md
+    ├── step16_tcp_server.md
+    └── step17_thread_pool.md
 ```
 
 目标结构会按 Step 逐步创建，而不是在 Step 0 一次性建立。
@@ -142,6 +151,7 @@ LiteIM/
 - 基础公共模块从 Step 2 开始放在 `include/liteim/base/` 和 `src/base/`；`Types.hpp` 放只含轻量别名的公共类型，例如 `Byte` / `Bytes`。
 - 协议模块从 Step 3 开始放在 `include/liteim/protocol/` 和 `src/protocol/`，Step 4 在同一模块内加入 `Packet` 编解码，Step 5 加入 `TlvCodec`，Step 6 加入 `FrameDecoder`；Step 16 前清理新增 `ByteOrder.hpp`，让 Packet/TLV 共享大端读写 helper。
 - 网络模块从 Step 7 开始放在 `include/liteim/net/` 和 `src/net/`，Step 7 加入 socket-agnostic `Buffer`，Step 8 加入 Linux socket 工具函数 `SocketUtil`，Step 9 加入 Reactor 核心接口 `Channel` / `Epoller` / `EventLoop`，Step 10 实现 `Epoller` 和最小 `Channel` 状态函数，Step 11 实现 `Channel` 回调分发和 `EventLoop` 更新桥接，Step 12 实现 `EventLoop` 阻塞循环和 `eventfd` 任务投递，Step 13 实现非阻塞监听器 `Acceptor`，Step 13 review hardening 补充 `UniqueFd`、`Channel::tie()` 和 Acceptor loop-thread close 清理，Step 14 实现单连接 `Session`，Step 15 实现 `EventLoopThread` / `EventLoopThreadPool`；Step 16 前清理让 `Epoller` 校验 `Channel` owner loop，并让 Acceptor callback 直接接收 `UniqueFd`；Step 16 加入多 Reactor `TcpServer`。
+- 并发模块从 Step 17 开始放在 `include/liteim/concurrency/` 和 `src/concurrency/`，当前只包含业务 `ThreadPool`，用于后续 MySQL / Redis / 密码哈希 / 历史查询等阻塞任务。
 - 服务端入口放在 `server/`。
 - CLI 客户端放在 `client_cli/`。
 - Qt 客户端放在 `client_qt/`。
@@ -154,4 +164,4 @@ LiteIM/
 - 文本数据用 `std::string`，公共接口不主动引入 `std::string_view`。
 - 保留必要的线程边界函数，例如 `close()` 投递到 `closeInLoop()`；删除没有边界意义的一次性私有包装函数。
 
-这些目录将在真正需要它们的 Step 中创建。当前 Step 16 已在 `net` 模块中补充 `TcpServer.hpp`、`TcpServer.cpp`、`tcp_server_header_test.cpp`、`tcp_server_test.cpp` 和 `step16_tcp_server.md`。本 Step 只实现多 Reactor echo server，不创建业务线程池、MySQL、Redis、CLI、Qt、benchmark 或 Docker 目录。
+这些目录将在真正需要它们的 Step 中创建。当前 Step 17 已在 `concurrency` 模块中补充 `ThreadPool.hpp`、`ThreadPool.cpp`、`thread_pool_header_test.cpp`、`thread_pool_test.cpp` 和 `step17_thread_pool.md`。本 Step 只实现业务线程池基础设施，不创建 MySQL、Redis、CLI、Qt、benchmark 或 Docker 目录。
