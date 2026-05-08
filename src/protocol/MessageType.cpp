@@ -2,7 +2,7 @@
 
 namespace liteim {
 
-std::string_view toString(MessageType type) noexcept {
+const char* toString(MessageType type) noexcept {
     switch (type) {
         case MessageType::HeartbeatRequest:
             return "HEARTBEAT_REQUEST";

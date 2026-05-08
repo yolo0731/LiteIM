@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <string_view>
 
 namespace liteim {
 
@@ -49,7 +48,7 @@ enum class MessageType : std::uint16_t {
     ErrorResponse = 900,
 };
 
-std::string_view toString(MessageType type) noexcept;
+const char* toString(MessageType type) noexcept;
 bool isRequestType(MessageType type) noexcept;
 bool isResponseType(MessageType type) noexcept;
 bool isPushType(MessageType type) noexcept;

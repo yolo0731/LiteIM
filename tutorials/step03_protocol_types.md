@@ -197,7 +197,7 @@ Unknown  -> 三个函数都返回 false
 接口：
 
 ```cpp
-std::string_view toString(MessageType type) noexcept;
+const char* toString(MessageType type) noexcept;
 ```
 
 作用：把枚举转成可读字符串。
@@ -210,11 +210,11 @@ toString(MessageType::GroupMessagePush) == "GROUP_MESSAGE_PUSH"
 toString(static_cast<MessageType>(65535)) == "UNKNOWN"
 ```
 
-为什么返回 `std::string_view`：
+为什么返回 `const char*`：
 
 - 返回的是静态字符串字面量，不需要动态分配。
 - 日志和测试都可以直接使用。
-- 比 `std::string` 更轻量。
+- 比 `std::string` 更轻量，也不在公共接口引入 `std::string_view`。
 
 ## 6. TlvType 设计
 

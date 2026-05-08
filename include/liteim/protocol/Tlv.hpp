@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <string_view>
 
 namespace liteim {
 
@@ -39,6 +38,6 @@ enum class TlvType : std::uint16_t {
     PersonaId = 101,
 };
 
-std::string_view toString(TlvType type) noexcept;
+const char* toString(TlvType type) noexcept;
 
 }  // namespace liteim

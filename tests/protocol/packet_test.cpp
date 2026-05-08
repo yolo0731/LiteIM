@@ -2,19 +2,17 @@
 
 #include <cstdint>
 #include <string>
-#include <string_view>
 #include <utility>
-#include <vector>
 
 #include <gtest/gtest.h>
 
 namespace {
 
-std::vector<std::uint8_t> bytesFromString(std::string_view value) {
+liteim::Bytes bytesFromString(const std::string& value) {
     return {value.begin(), value.end()};
 }
 
-liteim::Packet makePacket(std::vector<std::uint8_t> body) {
+liteim::Packet makePacket(liteim::Bytes body) {
     liteim::Packet packet;
     packet.header.msg_type = liteim::MessageType::PrivateMessageRequest;
     packet.header.seq_id = 42;
@@ -27,7 +25,7 @@ liteim::Packet makePacket(std::vector<std::uint8_t> body) {
 TEST(PacketTest, EncodePacketThenParseHeader) {
     const auto body = bytesFromString("hello");
     const auto packet = makePacket(body);
-    std::vector<std::uint8_t> encoded;
+    liteim::Bytes encoded;
 
     const auto encode_status = liteim::encodePacket(packet, encoded);
 
@@ -45,14 +43,13 @@ TEST(PacketTest, EncodePacketThenParseHeader) {
     EXPECT_EQ(header.seq_id, 42U);
     EXPECT_EQ(header.body_len, body.size());
 
-    const std::vector<std::uint8_t> parsed_body{encoded.begin() + liteim::kPacketHeaderSize,
-                                                encoded.end()};
+    const liteim::Bytes parsed_body{encoded.begin() + liteim::kPacketHeaderSize, encoded.end()};
     EXPECT_EQ(parsed_body, body);
 }
 
 TEST(PacketTest, EmptyBodyCanBeEncoded) {
     const auto packet = makePacket({});
-    std::vector<std::uint8_t> encoded;
+    liteim::Bytes encoded;
 
     const auto encode_status = liteim::encodePacket(packet, encoded);
 
@@ -69,7 +66,7 @@ TEST(PacketTest, EmptyBodyCanBeEncoded) {
 TEST(PacketTest, Utf8BodyCanBeEncoded) {
     const auto body = bytesFromString("你好，LiteIM 👋");
     const auto packet = makePacket(body);
-    std::vector<std::uint8_t> encoded;
+    liteim::Bytes encoded;
 
     const auto encode_status = liteim::encodePacket(packet, encoded);
 
@@ -89,7 +86,7 @@ TEST(PacketTest, HeaderUsesNetworkByteOrder) {
     auto packet = makePacket(bytesFromString("x"));
     packet.header.msg_type = liteim::MessageType::GroupMessageRequest;
     packet.header.seq_id = 0x0102030405060708ULL;
-    std::vector<std::uint8_t> encoded;
+    liteim::Bytes encoded;
 
     const auto encode_status = liteim::encodePacket(packet, encoded);
 
@@ -149,8 +146,8 @@ TEST(PacketTest, OversizedBodyLengthReturnsError) {
 }
 
 TEST(PacketTest, EncodingOversizedBodyReturnsError) {
-    auto packet = makePacket(std::vector<std::uint8_t>(liteim::kMaxPacketBodyLength + 1, 'x'));
-    std::vector<std::uint8_t> encoded;
+    auto packet = makePacket(liteim::Bytes(liteim::kMaxPacketBodyLength + 1, 'x'));
+    liteim::Bytes encoded;
 
     const auto status = liteim::encodePacket(packet, encoded);
 
@@ -160,7 +157,7 @@ TEST(PacketTest, EncodingOversizedBodyReturnsError) {
 }
 
 TEST(PacketTest, IncompleteHeaderReturnsError) {
-    std::vector<std::uint8_t> incomplete(liteim::kPacketHeaderSize - 1, 0);
+    liteim::Bytes incomplete(liteim::kPacketHeaderSize - 1, 0);
     liteim::PacketHeader header;
 
     const auto status = liteim::parseHeader(incomplete.data(), incomplete.size(), header);

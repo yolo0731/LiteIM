@@ -19,7 +19,6 @@
 #include <string>
 #include <thread>
 #include <utility>
-#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -37,7 +36,7 @@ SocketPair makeSocketPair() {
     return SocketPair{liteim::UniqueFd(fds[0]), liteim::UniqueFd(fds[1])};
 }
 
-std::vector<std::uint8_t> bytesFromString(const std::string& value) {
+liteim::Bytes bytesFromString(const std::string& value) {
     return {value.begin(), value.end()};
 }
 
@@ -49,14 +48,14 @@ liteim::Packet makePacket(std::string body, std::uint64_t seq_id = 1) {
     return packet;
 }
 
-std::vector<std::uint8_t> encodeOrDie(const liteim::Packet& packet) {
-    std::vector<std::uint8_t> encoded;
+liteim::Bytes encodeOrDie(const liteim::Packet& packet) {
+    liteim::Bytes encoded;
     const auto status = liteim::encodePacket(packet, encoded);
     EXPECT_TRUE(status.isOk()) << status.message();
     return encoded;
 }
 
-void writeAll(int fd, const std::vector<std::uint8_t>& data) {
+void writeAll(int fd, const liteim::Bytes& data) {
     std::size_t written = 0;
     while (written < data.size()) {
         const auto n = ::write(fd, data.data() + written, data.size() - written);
@@ -71,10 +70,10 @@ void writeAll(int fd, const std::vector<std::uint8_t>& data) {
     }
 }
 
-std::vector<std::uint8_t> readExactWithTimeout(int fd,
-                                               std::size_t len,
-                                               std::chrono::milliseconds timeout) {
-    std::vector<std::uint8_t> output(len);
+liteim::Bytes readExactWithTimeout(int fd,
+                                   std::size_t len,
+                                   std::chrono::milliseconds timeout) {
+    liteim::Bytes output(len);
     std::size_t read_bytes = 0;
     const auto deadline = std::chrono::steady_clock::now() + timeout;
 
@@ -160,7 +159,7 @@ TEST(SessionTest, HalfPacketDoesNotInvokeMessageCallback) {
     });
     session->start();
 
-    const std::vector<std::uint8_t> half(encoded.begin(), encoded.begin() + 5);
+    const liteim::Bytes half(encoded.begin(), encoded.begin() + 5);
     writeAll(sockets.peer.fd(), half);
     std::thread quitter([&loop]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
@@ -190,7 +189,7 @@ TEST(SessionTest, StickyPacketsInvokeCallbackForEachPacket) {
         });
     session->start();
 
-    std::vector<std::uint8_t> sticky = first;
+    liteim::Bytes sticky = first;
     sticky.insert(sticky.end(), second.begin(), second.end());
     writeAll(sockets.peer.fd(), sticky);
     loop.loop();
@@ -276,7 +275,7 @@ TEST(SessionTest, LargePacketLeavesPendingOutputWhenPeerDoesNotRead) {
     liteim::Packet packet;
     packet.header.msg_type = liteim::MessageType::PrivateMessageRequest;
     packet.header.seq_id = 99;
-    packet.body.assign(liteim::kMaxPacketBodyLength, static_cast<std::uint8_t>('x'));
+    packet.body.assign(liteim::kMaxPacketBodyLength, static_cast<liteim::Byte>('x'));
     const auto encoded = encodeOrDie(packet);
     session->start();
 

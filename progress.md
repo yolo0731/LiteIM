@@ -1,5 +1,32 @@
 # LiteIM Progress
 
+## 2026-05-08 Pre-Step 15 Byte/Bytes API Cleanup
+
+本次在进入 `Step 15: implement EventLoopThread and EventLoopThreadPool` 前，先收口上次未完成的字节类型清理，目标是不让后续网络线程池和 `TcpServer` 继续扩散混用 `std::vector<char>` / `std::vector<std::uint8_t>` / `std::string_view` 的公共接口。
+
+已完成代码：
+
+- 新增 `include/liteim/base/Types.hpp`，定义 `liteim::Byte` 和 `liteim::Bytes`。
+- `Packet`、`TlvCodec`、`FrameDecoder`、`Buffer`、`Session` 和相关 tests 已切换到 `Byte` / `Bytes`。
+- `Buffer` 公共接口保留 `append(const Byte*, len)`、`append(const Bytes&)` 和 `append(const std::string&)`；`ensureWritableBytes()` 变成内部实现细节。
+- `ErrorCode::toString()` 不再返回 `std::string_view`；`Logger::parseLogLevel()` 不再在公共接口接收 `std::string_view`。
+
+已完成文档同步：
+
+- README、docs、Step 4/5/6/7 tutorials、task_plan、findings、progress 和 PROJECT_MEMORY 已同步 `Byte` / `Bytes` API 说明。
+
+验证结果：
+
+```bash
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+git diff --check
+find . \( -path './server/net' -o -path './server/protocol' -o -name '*SQLite*' -o -name '*InMemory*' -o -name '*step15_sqlite*' \) -print
+```
+
+结果：build 通过；server scaffold 正常输出 `LiteIM server scaffold is running on 0.0.0.0:9000`；CTest 124/124 通过；`git diff --check` 无输出；旧路线路径检查无输出；旧接口扫描只剩规则说明和本次清理记录中的说明性命中。
+
 ## 2026-05-07 Step 14 Session
 
 本次进入 `Step 14: implement Session`，目标是实现单个已连接 fd 的生命周期和 Packet I/O，不启动 Step 15 多 Reactor 线程池。
@@ -540,12 +567,12 @@ init: create LiteIM project structure with googletest
 - 新增 `BufferTest.DefaultBufferHasNoReadableBytes`。
 - 新增 `BufferTest.AppendIncreasesReadableBytes`。
 - 新增 `BufferTest.AppendStringStoresReadableData`。
-- 新增 `BufferTest.AppendUint8PointerStoresBytes`。
+- 新增 `BufferTest.AppendBytePointerStoresBytes`。
 - 新增 `BufferTest.RetrieveAdvancesReadIndex`。
 - 新增 `BufferTest.RetrieveAllResetsBuffer`。
 - 新增 `BufferTest.RetrieveAllAsStringReturnsReadableDataAndClearsBuffer`。
-- 新增 `BufferTest.EnsureWritableBytesExpandsWhenNeeded`。
-- 新增 `BufferTest.EnsureWritableBytesCompactsReadableDataBeforeExpanding`。
+- 新增 `BufferTest.AppendExpandsWhenNeeded`。
+- 新增 `BufferTest.AppendCompactsReadableDataBeforeExpanding`。
 - 新增 `BufferTest.AppendExpandsAndPreservesExistingData`。
 - 新增 `BufferTest.RetrievePastReadableBytesReturnsError`。
 - 新增 `BufferTest.NullAppendWithNonzeroLengthReturnsError`。

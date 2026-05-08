@@ -1,7 +1,5 @@
 #pragma once
 
-#include <string_view>
-
 namespace liteim {
 
 enum class ErrorCode {
@@ -14,6 +12,6 @@ enum class ErrorCode {
     InternalError,
 };
 
-std::string_view toString(ErrorCode code);
+const char* toString(ErrorCode code) noexcept;
 
 }  // namespace liteim

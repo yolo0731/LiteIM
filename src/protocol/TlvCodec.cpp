@@ -10,35 +10,27 @@ namespace liteim
     namespace
     {
 
-        void appendUint16(std::vector<std::uint8_t> &output, std::uint16_t value)
+        void appendUint16(Bytes &output, std::uint16_t value)
         {
-            output.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
-            output.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+            output.push_back(static_cast<Byte>((value >> 8U) & 0xFFU));
+            output.push_back(static_cast<Byte>(value & 0xFFU));
         }
 
-        void appendUint32(std::vector<std::uint8_t> &output, std::uint32_t value)
+        void appendUint32(Bytes &output, std::uint32_t value)
         {
-            output.push_back(static_cast<std::uint8_t>((value >> 24U) & 0xFFU));
-            output.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
-            output.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
-            output.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+            output.push_back(static_cast<Byte>((value >> 24U) & 0xFFU));
+            output.push_back(static_cast<Byte>((value >> 16U) & 0xFFU));
+            output.push_back(static_cast<Byte>((value >> 8U) & 0xFFU));
+            output.push_back(static_cast<Byte>(value & 0xFFU));
         }
 
-        void appendUint64Value(std::vector<std::uint8_t> &output, std::uint64_t value)
-        {
-            for (int shift = 56; shift >= 0; shift -= 8)
-            {
-                output.push_back(static_cast<std::uint8_t>((value >> shift) & 0xFFULL));
-            }
-        }
-
-        std::uint16_t readUint16(const std::uint8_t *data)
+        std::uint16_t readUint16(const Byte *data)
         {
             return static_cast<std::uint16_t>((static_cast<std::uint16_t>(data[0]) << 8U) |
                                               static_cast<std::uint16_t>(data[1]));
         }
 
-        std::uint32_t readUint32(const std::uint8_t *data)
+        std::uint32_t readUint32(const Byte *data)
         {
             return (static_cast<std::uint32_t>(data[0]) << 24U) |
                    (static_cast<std::uint32_t>(data[1]) << 16U) |
@@ -57,9 +49,9 @@ namespace liteim
         }
 
         Status appendValue(TlvType type,
-                           const std::uint8_t *data,
+                           const Byte *data,
                            std::size_t len,
-                           std::vector<std::uint8_t> &output)
+                           Bytes &output)
         {
             if (type == TlvType::Unknown)
             {
@@ -96,23 +88,26 @@ namespace liteim
 
     } // namespace
 
-    Status appendString(TlvType type, std::string_view value, std::vector<std::uint8_t> &output)
+    Status appendString(TlvType type, const std::string &value, Bytes &output)
     {
         return appendValue(type,
-                           reinterpret_cast<const std::uint8_t *>(value.data()),
+                           reinterpret_cast<const Byte *>(value.data()),
                            value.size(),
                            output);
     }
 
-    Status appendUint64(TlvType type, std::uint64_t value, std::vector<std::uint8_t> &output)
+    Status appendUint64(TlvType type, std::uint64_t value, Bytes &output)
     {
-        std::vector<std::uint8_t> bytes;
+        Bytes bytes;
         bytes.reserve(sizeof(std::uint64_t));
-        appendUint64Value(bytes, value);
+        for (int shift = 56; shift >= 0; shift -= 8)
+        {
+            bytes.push_back(static_cast<Byte>((value >> shift) & 0xFFULL));
+        }
         return appendValue(type, bytes.data(), bytes.size(), output);
     }
 
-    Status parseTlvMap(const std::uint8_t *data, std::size_t len, TlvMap &output)
+    Status parseTlvMap(const Byte *data, std::size_t len, TlvMap &output)
     {
         // parseTlvMap 负责从 body 字节流里循环读取 TLV 字段，检查格式和长度是否合法，然后按 TlvType 把每个 value 保存到 TlvMap 里
         output.clear();
@@ -150,9 +145,9 @@ namespace liteim
         return Status::ok();
     }
 
-    Status parseTlvMap(const std::vector<std::uint8_t> &body, TlvMap &output)
+    Status parseTlvMap(const Bytes &body, TlvMap &output)
     {
-        // 直接传 std::vector<std::uint8_t>，不用自己手动传 data() 和 size()
+        // 直接传 Bytes，调用方不用自己手动传 data() 和 size()
         return parseTlvMap(body.data(), body.size(), output);
     }
 

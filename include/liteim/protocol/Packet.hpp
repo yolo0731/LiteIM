@@ -2,8 +2,8 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <vector>
 
+#include "liteim/base/Types.hpp"
 #include "liteim/base/Status.hpp"
 #include "liteim/protocol/MessageType.hpp"
 
@@ -26,11 +26,11 @@ struct PacketHeader {
 
 struct Packet {
     PacketHeader header;
-    std::vector<std::uint8_t> body;
+    Bytes body;
 };
 
 Status validateHeader(const PacketHeader& header);
-Status encodePacket(const Packet& packet, std::vector<std::uint8_t>& output);
-Status parseHeader(const std::uint8_t* data, std::size_t len, PacketHeader& output);
+Status encodePacket(const Packet& packet, Bytes& output);
+Status parseHeader(const Byte* data, std::size_t len, PacketHeader& output);
 
 }  // namespace liteim

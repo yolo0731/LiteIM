@@ -136,7 +136,7 @@ Status validateHeader(const PacketHeader& header);
 函数声明：
 
 ```cpp
-Status encodePacket(const Packet& packet, std::vector<std::uint8_t>& output);
+Status encodePacket(const Packet& packet, Bytes& output);
 ```
 
 职责：

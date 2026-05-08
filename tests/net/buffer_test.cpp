@@ -1,9 +1,16 @@
 #include "liteim/net/Buffer.hpp"
 
-#include <cstdint>
 #include <string>
 
 #include <gtest/gtest.h>
+
+namespace {
+
+std::string readableAsString(const liteim::Buffer& buffer) {
+    return {reinterpret_cast<const char*>(buffer.peek()), buffer.readableBytes()};
+}
+
+}  // namespace
 
 TEST(BufferTest, DefaultBufferHasNoReadableBytes) {
     liteim::Buffer buffer;
@@ -15,26 +22,27 @@ TEST(BufferTest, DefaultBufferHasNoReadableBytes) {
 TEST(BufferTest, AppendIncreasesReadableBytes) {
     liteim::Buffer buffer(8);
 
-    const auto status = buffer.append("abc", 3);
+    const auto status = buffer.append(std::string{"abc"});
 
     ASSERT_TRUE(status.isOk()) << status.message();
     EXPECT_EQ(buffer.readableBytes(), 3U);
     EXPECT_EQ(buffer.writableBytes(), 5U);
-    EXPECT_EQ(std::string(buffer.peek(), buffer.readableBytes()), "abc");
+    EXPECT_EQ(readableAsString(buffer), "abc");
 }
 
 TEST(BufferTest, AppendStringStoresReadableData) {
     liteim::Buffer buffer(8);
 
-    buffer.appendString("hello");
+    const auto status = buffer.append(std::string{"hello"});
 
+    ASSERT_TRUE(status.isOk()) << status.message();
     EXPECT_EQ(buffer.readableBytes(), 5U);
-    EXPECT_EQ(std::string(buffer.peek(), buffer.readableBytes()), "hello");
+    EXPECT_EQ(readableAsString(buffer), "hello");
 }
 
-TEST(BufferTest, AppendUint8PointerStoresBytes) {
+TEST(BufferTest, AppendBytePointerStoresBytes) {
     liteim::Buffer buffer(8);
-    const std::uint8_t bytes[] = {'o', 'k'};
+    const liteim::Byte bytes[] = {'o', 'k'};
 
     const auto status = buffer.append(bytes, 2);
 
@@ -44,18 +52,18 @@ TEST(BufferTest, AppendUint8PointerStoresBytes) {
 
 TEST(BufferTest, RetrieveAdvancesReadIndex) {
     liteim::Buffer buffer(8);
-    buffer.appendString("abcdef");
+    ASSERT_TRUE(buffer.append(std::string{"abcdef"}).isOk());
 
     const auto status = buffer.retrieve(2);
 
     ASSERT_TRUE(status.isOk()) << status.message();
     EXPECT_EQ(buffer.readableBytes(), 4U);
-    EXPECT_EQ(std::string(buffer.peek(), buffer.readableBytes()), "cdef");
+    EXPECT_EQ(readableAsString(buffer), "cdef");
 }
 
 TEST(BufferTest, RetrieveAllResetsBuffer) {
     liteim::Buffer buffer(8);
-    buffer.appendString("abc");
+    ASSERT_TRUE(buffer.append(std::string{"abc"}).isOk());
 
     buffer.retrieveAll();
 
@@ -65,7 +73,7 @@ TEST(BufferTest, RetrieveAllResetsBuffer) {
 
 TEST(BufferTest, RetrieveAllAsStringReturnsReadableDataAndClearsBuffer) {
     liteim::Buffer buffer(8);
-    buffer.appendString("abc");
+    ASSERT_TRUE(buffer.append(std::string{"abc"}).isOk());
 
     const auto result = buffer.retrieveAllAsString();
 
@@ -74,31 +82,33 @@ TEST(BufferTest, RetrieveAllAsStringReturnsReadableDataAndClearsBuffer) {
     EXPECT_EQ(buffer.writableBytes(), 8U);
 }
 
-TEST(BufferTest, EnsureWritableBytesExpandsWhenNeeded) {
+TEST(BufferTest, AppendExpandsWhenNeeded) {
     liteim::Buffer buffer(4);
 
-    buffer.ensureWritableBytes(10);
+    const auto status = buffer.append(std::string{"0123456789"});
 
-    EXPECT_GE(buffer.writableBytes(), 10U);
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(buffer.readableBytes(), 10U);
+    EXPECT_EQ(readableAsString(buffer), "0123456789");
 }
 
-TEST(BufferTest, EnsureWritableBytesCompactsReadableDataBeforeExpanding) {
+TEST(BufferTest, AppendCompactsReadableDataBeforeExpanding) {
     liteim::Buffer buffer(8);
-    buffer.appendString("abcdef");
+    ASSERT_TRUE(buffer.append(std::string{"abcdef"}).isOk());
     ASSERT_TRUE(buffer.retrieve(4).isOk());
 
-    buffer.ensureWritableBytes(6);
+    const auto status = buffer.append(std::string{"ghijkl"});
 
-    EXPECT_EQ(buffer.readableBytes(), 2U);
-    EXPECT_GE(buffer.writableBytes(), 6U);
-    EXPECT_EQ(std::string(buffer.peek(), buffer.readableBytes()), "ef");
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(buffer.readableBytes(), 8U);
+    EXPECT_EQ(readableAsString(buffer), "efghijkl");
 }
 
 TEST(BufferTest, AppendExpandsAndPreservesExistingData) {
     liteim::Buffer buffer(4);
-    buffer.appendString("abcd");
+    ASSERT_TRUE(buffer.append(std::string{"abcd"}).isOk());
 
-    const auto status = buffer.append("efgh", 4);
+    const auto status = buffer.append(std::string{"efgh"});
 
     ASSERT_TRUE(status.isOk()) << status.message();
     EXPECT_EQ(buffer.readableBytes(), 8U);
@@ -107,20 +117,20 @@ TEST(BufferTest, AppendExpandsAndPreservesExistingData) {
 
 TEST(BufferTest, RetrievePastReadableBytesReturnsError) {
     liteim::Buffer buffer(8);
-    buffer.appendString("abc");
+    ASSERT_TRUE(buffer.append(std::string{"abc"}).isOk());
 
     const auto status = buffer.retrieve(4);
 
     EXPECT_FALSE(status.isOk());
     EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
     EXPECT_EQ(buffer.readableBytes(), 3U);
-    EXPECT_EQ(std::string(buffer.peek(), buffer.readableBytes()), "abc");
+    EXPECT_EQ(readableAsString(buffer), "abc");
 }
 
 TEST(BufferTest, NullAppendWithNonzeroLengthReturnsError) {
     liteim::Buffer buffer(8);
 
-    const auto status = buffer.append(static_cast<const char*>(nullptr), 1);
+    const auto status = buffer.append(static_cast<const liteim::Byte*>(nullptr), 1);
 
     EXPECT_FALSE(status.isOk());
     EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
@@ -130,7 +140,7 @@ TEST(BufferTest, NullAppendWithNonzeroLengthReturnsError) {
 TEST(BufferTest, NullAppendWithZeroLengthIsOk) {
     liteim::Buffer buffer(8);
 
-    const auto status = buffer.append(static_cast<const char*>(nullptr), 0);
+    const auto status = buffer.append(static_cast<const liteim::Byte*>(nullptr), 0);
 
     EXPECT_TRUE(status.isOk()) << status.message();
     EXPECT_EQ(buffer.readableBytes(), 0U);

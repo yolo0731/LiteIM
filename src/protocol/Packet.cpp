@@ -8,35 +8,35 @@ namespace liteim
     namespace
     {
 
-        void appendUint16(std::vector<std::uint8_t> &output, std::uint16_t value)
+        void appendUint16(Bytes &output, std::uint16_t value)
         {                                                                       // 将无符号 16 位整数以大端字节序追加到输出向量中
-            output.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU)); // 十六进制每一位 = 4个二进制位，所以右移8位 = 十六进制右移2位,再与0xFFU进行按位与运算，得到高8位的值
-            output.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+            output.push_back(static_cast<Byte>((value >> 8U) & 0xFFU)); // 十六进制每一位 = 4个二进制位，所以右移8位 = 十六进制右移2位,再与0xFFU进行按位与运算，得到高8位的值
+            output.push_back(static_cast<Byte>(value & 0xFFU));
         }
 
-        void appendUint32(std::vector<std::uint8_t> &output, std::uint32_t value)
+        void appendUint32(Bytes &output, std::uint32_t value)
         {
-            output.push_back(static_cast<std::uint8_t>((value >> 24U) & 0xFFU));
-            output.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
-            output.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
-            output.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+            output.push_back(static_cast<Byte>((value >> 24U) & 0xFFU));
+            output.push_back(static_cast<Byte>((value >> 16U) & 0xFFU));
+            output.push_back(static_cast<Byte>((value >> 8U) & 0xFFU));
+            output.push_back(static_cast<Byte>(value & 0xFFU));
         }
 
-        void appendUint64(std::vector<std::uint8_t> &output, std::uint64_t value)
+        void appendUint64(Bytes &output, std::uint64_t value)
         {
             for (int shift = 56; shift >= 0; shift -= 8)
             {
-                output.push_back(static_cast<std::uint8_t>((value >> shift) & 0xFFULL));
+                output.push_back(static_cast<Byte>((value >> shift) & 0xFFULL));
             }
         }
 
-        std::uint16_t readUint16(const std::uint8_t *data)
+        std::uint16_t readUint16(const Byte *data)
         {
             return static_cast<std::uint16_t>((static_cast<std::uint16_t>(data[0]) << 8U) |
                                               static_cast<std::uint16_t>(data[1]));
         }
 
-        std::uint32_t readUint32(const std::uint8_t *data)
+        std::uint32_t readUint32(const Byte *data)
         {
             return (static_cast<std::uint32_t>(data[0]) << 24U) |
                    (static_cast<std::uint32_t>(data[1]) << 16U) |
@@ -44,7 +44,7 @@ namespace liteim
                    static_cast<std::uint32_t>(data[3]);
         }
 
-        std::uint64_t readUint64(const std::uint8_t *data)
+        std::uint64_t readUint64(const Byte *data)
         {
             std::uint64_t value = 0;
             for (std::size_t index = 0; index < 8; ++index)
@@ -73,7 +73,7 @@ namespace liteim
         return Status::ok();
     }
 
-    Status encodePacket(const Packet &packet, std::vector<std::uint8_t> &output)
+    Status encodePacket(const Packet &packet, Bytes &output)
     {
         output.clear();
 
@@ -102,7 +102,7 @@ namespace liteim
         return Status::ok();
     }
 
-    Status parseHeader(const std::uint8_t *data, std::size_t len, PacketHeader &output)
+    Status parseHeader(const Byte *data, std::size_t len, PacketHeader &output)
     {
         if (data == nullptr)
         {

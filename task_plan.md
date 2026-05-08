@@ -120,6 +120,10 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 14 docs | done | Synced README, docs, findings, progress, task plan, tutorial index, Step 14 tutorial, and PROJECT_MEMORY current progress snapshot. |
 | Step 14 verification | done | CMake build, targeted Session tests, server smoke, full CTest 124/124, diff whitespace check, stale route file-path check, and final code review passed. |
 | Step 14 commit | done | Commit message: `feat(net): implement session lifecycle and packet IO`. |
+| Pre-Step 15 byte API cleanup concept | done | Before adding EventLoopThreadPool, normalize raw wire bytes through `liteim::Byte` / `liteim::Bytes` and remove public `std::string_view`/mixed byte-vector APIs. |
+| Pre-Step 15 byte API cleanup code | done | Added `include/liteim/base/Types.hpp`; updated Packet, TLV, FrameDecoder, Buffer, Session, and tests to use `Byte` / `Bytes`. |
+| Pre-Step 15 byte API cleanup docs | done | Synced README, docs, tutorials, findings, progress, task plan, and PROJECT_MEMORY with the normalized byte API. |
+| Pre-Step 15 byte API cleanup verification | done | Build, server smoke, full CTest 124/124, diff check, stale-route check, and API stale-reference scan passed. |
 
 ## Current Decision
 
@@ -467,12 +471,12 @@ Expected new tests:
 - `TEST(BufferTest, DefaultBufferHasNoReadableBytes)`
 - `TEST(BufferTest, AppendIncreasesReadableBytes)`
 - `TEST(BufferTest, AppendStringStoresReadableData)`
-- `TEST(BufferTest, AppendUint8PointerStoresBytes)`
+- `TEST(BufferTest, AppendBytePointerStoresBytes)`
 - `TEST(BufferTest, RetrieveAdvancesReadIndex)`
 - `TEST(BufferTest, RetrieveAllResetsBuffer)`
 - `TEST(BufferTest, RetrieveAllAsStringReturnsReadableDataAndClearsBuffer)`
-- `TEST(BufferTest, EnsureWritableBytesExpandsWhenNeeded)`
-- `TEST(BufferTest, EnsureWritableBytesCompactsReadableDataBeforeExpanding)`
+- `TEST(BufferTest, AppendExpandsWhenNeeded)`
+- `TEST(BufferTest, AppendCompactsReadableDataBeforeExpanding)`
 - `TEST(BufferTest, AppendExpandsAndPreservesExistingData)`
 - `TEST(BufferTest, RetrievePastReadableBytesReturnsError)`
 - `TEST(BufferTest, NullAppendWithNonzeroLengthReturnsError)`

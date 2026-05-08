@@ -2,7 +2,7 @@
 
 namespace liteim {
 
-std::string_view toString(ErrorCode code) {
+const char* toString(ErrorCode code) noexcept {
     switch (code) {
         case ErrorCode::Ok:
             return "Ok";

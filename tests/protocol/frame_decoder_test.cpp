@@ -2,26 +2,25 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string_view>
-#include <vector>
+#include <string>
 
 #include <gtest/gtest.h>
 
 namespace {
 
-std::vector<std::uint8_t> bytesFromString(std::string_view value) {
+liteim::Bytes bytesFromString(const std::string& value) {
     return {value.begin(), value.end()};
 }
 
-std::vector<std::uint8_t> makeEncodedPacket(liteim::MessageType type,
-                                            std::uint64_t seq_id,
-                                            std::string_view body_text) {
+liteim::Bytes makeEncodedPacket(liteim::MessageType type,
+                                std::uint64_t seq_id,
+                                const std::string& body_text) {
     liteim::Packet packet;
     packet.header.msg_type = type;
     packet.header.seq_id = seq_id;
     packet.body = bytesFromString(body_text);
 
-    std::vector<std::uint8_t> encoded;
+    liteim::Bytes encoded;
     const auto status = liteim::encodePacket(packet, encoded);
     EXPECT_TRUE(status.isOk()) << status.message();
     return encoded;
@@ -93,7 +92,7 @@ TEST(FrameDecoderTest, HalfPacketThenStickyPacketAreDecodedTogether) {
     ASSERT_TRUE(first_status.isOk()) << first_status.message();
     EXPECT_TRUE(packets.empty());
 
-    std::vector<std::uint8_t> rest;
+    liteim::Bytes rest;
     rest.insert(rest.end(), first.begin() + static_cast<std::ptrdiff_t>(split), first.end());
     rest.insert(rest.end(), second.begin(), second.end());
     const auto second_status = decoder.feed(rest, packets);

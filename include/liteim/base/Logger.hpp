@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <string_view>
+#include <string>
 
 #include <spdlog/logger.h>
 
@@ -17,7 +17,7 @@ enum class LogLevel {
     Off,
 };
 
-LogLevel parseLogLevel(std::string_view level);
+LogLevel parseLogLevel(const std::string& level);
 
 class Logger {
 public:

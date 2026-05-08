@@ -13,10 +13,6 @@ namespace {
 
 constexpr int kInitialEventListSize = 16;
 
-Status invalidChannelStatus(const char* action) {
-    return Status::error(ErrorCode::InvalidArgument, std::string(action) + " requires a valid channel");
-}
-
 Status invalidEpollStatus(const char* action) {
     return Status::error(ErrorCode::IoError, std::string(action) + " failed because epoll fd is invalid");
 }
@@ -28,7 +24,7 @@ Status errnoStatus(const char* action, int error_number) {
 
 Status validateChannel(const char* action, Channel* channel) {
     if (channel == nullptr || channel->fd() < 0) {
-        return invalidChannelStatus(action);
+        return Status::error(ErrorCode::InvalidArgument, std::string(action) + " requires a valid channel");
     }
 
     return Status::ok();

@@ -117,7 +117,7 @@ appendUint32(output, static_cast<std::uint32_t>(len));
 核心类型：
 
 ```cpp
-using TlvValue = std::vector<std::uint8_t>;
+using TlvValue = Bytes;
 using TlvValues = std::vector<TlvValue>;
 using TlvMap = std::unordered_map<TlvType, TlvValues>;
 ```
@@ -143,7 +143,7 @@ FriendId: 1003
 ### `appendString()`
 
 ```cpp
-Status appendString(TlvType type, std::string_view value, std::vector<std::uint8_t>& output);
+Status appendString(TlvType type, const std::string& value, Bytes& output);
 ```
 
 把字符串按原始 UTF-8 字节追加进 body。
@@ -153,7 +153,7 @@ Status appendString(TlvType type, std::string_view value, std::vector<std::uint8
 ### `appendUint64()`
 
 ```cpp
-Status appendUint64(TlvType type, std::uint64_t value, std::vector<std::uint8_t>& output);
+Status appendUint64(TlvType type, std::uint64_t value, Bytes& output);
 ```
 
 把 64 位无符号整数按网络字节序写成 8 字节。
@@ -165,8 +165,8 @@ Status appendUint64(TlvType type, std::uint64_t value, std::vector<std::uint8_t>
 ### `parseTlvMap()`
 
 ```cpp
-Status parseTlvMap(const std::uint8_t* data, std::size_t len, TlvMap& output);
-Status parseTlvMap(const std::vector<std::uint8_t>& body, TlvMap& output);
+Status parseTlvMap(const Byte* data, std::size_t len, TlvMap& output);
+Status parseTlvMap(const Bytes& body, TlvMap& output);
 ```
 
 职责：

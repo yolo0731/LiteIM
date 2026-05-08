@@ -12,7 +12,6 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <vector>
 
 namespace liteim {
 
@@ -45,10 +44,9 @@ public:
 
 private:
     void startInLoop();
-    void sendEncodedInLoop(std::vector<std::uint8_t> encoded);
+    void sendEncodedInLoop(Bytes encoded);
     void handleRead();
     void handleWrite();
-    void handleClose();
     void closeInLoop();
     bool feedInputBuffer();
     void updateLastActiveTime() noexcept;

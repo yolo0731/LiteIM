@@ -89,8 +89,8 @@ read2: [packet1 的后半段][packet2]
 ```cpp
 class FrameDecoder {
 public:
-    Status feed(const std::uint8_t* data, std::size_t len, std::vector<Packet>& output);
-    Status feed(const std::vector<std::uint8_t>& data, std::vector<Packet>& output);
+    Status feed(const Byte* data, std::size_t len, std::vector<Packet>& output);
+    Status feed(const Bytes& data, std::vector<Packet>& output);
 
     bool hasError() const noexcept;
     std::size_t bufferedBytes() const noexcept;
@@ -115,7 +115,7 @@ public:
 `FrameDecoder` 内部有：
 
 ```cpp
-std::vector<std::uint8_t> buffer_;
+Bytes buffer_;
 bool error_{false};
 ```
 

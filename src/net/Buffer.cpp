@@ -2,10 +2,8 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 #include <cstring>
 #include <string>
-#include <string_view>
 
 namespace liteim {
 
@@ -19,11 +17,11 @@ std::size_t Buffer::writableBytes() const noexcept {
     return buffer_.size() - write_index_;
 }
 
-const char* Buffer::peek() const noexcept {
-    return begin() + read_index_;
+const Byte* Buffer::peek() const noexcept {
+    return buffer_.data() + read_index_;
 }
 
-Status Buffer::append(const char* data, std::size_t len) {
+Status Buffer::append(const Byte* data, std::size_t len) {
     if (data == nullptr && len != 0) {
         return Status::error(ErrorCode::InvalidArgument, "buffer append input is null");
     }
@@ -32,18 +30,17 @@ Status Buffer::append(const char* data, std::size_t len) {
     }
 
     ensureWritableBytes(len);
-    std::memcpy(begin() + write_index_, data, len);
+    std::memcpy(buffer_.data() + write_index_, data, len);
     write_index_ += len;
     return Status::ok();
 }
 
-Status Buffer::append(const std::uint8_t* data, std::size_t len) {
-    return append(reinterpret_cast<const char*>(data), len);
+Status Buffer::append(const Bytes& data) {
+    return append(data.data(), data.size());
 }
 
-void Buffer::appendString(std::string_view value) {
-    const auto status = append(value.data(), value.size());
-    (void)status;
+Status Buffer::append(const std::string& value) {
+    return append(reinterpret_cast<const Byte*>(value.data()), value.size());
 }
 
 Status Buffer::retrieve(std::size_t len) {
@@ -65,7 +62,7 @@ void Buffer::retrieveAll() noexcept {
 }
 
 std::string Buffer::retrieveAllAsString() {
-    std::string result(peek(), readableBytes());
+    std::string result(reinterpret_cast<const char*>(peek()), readableBytes());
     retrieveAll();
     return result;
 }
@@ -75,28 +72,20 @@ void Buffer::ensureWritableBytes(std::size_t len) {
         return;
     }
 
-    makeSpace(len);
-}
-
-char* Buffer::begin() noexcept {
-    return buffer_.data();
-}
-
-const char* Buffer::begin() const noexcept {
-    return buffer_.data();
-}
-
-void Buffer::makeSpace(std::size_t len) {
     const auto readable = readableBytes();
     if (read_index_ + writableBytes() >= len) {
-        std::move(begin() + read_index_, begin() + write_index_, begin());
+        std::move(buffer_.begin() + static_cast<std::ptrdiff_t>(read_index_),
+                  buffer_.begin() + static_cast<std::ptrdiff_t>(write_index_),
+                  buffer_.begin());
         read_index_ = 0;
         write_index_ = readable;
         return;
     }
 
     if (read_index_ != 0) {
-        std::move(begin() + read_index_, begin() + write_index_, begin());
+        std::move(buffer_.begin() + static_cast<std::ptrdiff_t>(read_index_),
+                  buffer_.begin() + static_cast<std::ptrdiff_t>(write_index_),
+                  buffer_.begin());
         read_index_ = 0;
         write_index_ = readable;
     }

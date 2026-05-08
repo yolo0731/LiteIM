@@ -17,10 +17,6 @@ namespace {
 
 constexpr std::size_t kReadBufferSize = 4096;
 
-std::runtime_error statusError(const Status& status) {
-    return std::runtime_error(status.message());
-}
-
 }  // namespace
 
 Session::Session(EventLoop* loop, int fd)
@@ -37,7 +33,7 @@ Session::Session(EventLoop* loop, int fd)
 
     const auto status = setNonBlocking(fd_.fd());
     if (!status.isOk()) {
-        throw statusError(status);
+        throw std::runtime_error(status.message());
     }
 }
 
@@ -75,7 +71,7 @@ void Session::start() {
 }
 
 Status Session::sendPacket(const Packet& packet) {
-    std::vector<std::uint8_t> encoded;
+    Bytes encoded;
     const auto status = encodePacket(packet, encoded);
     if (!status.isOk()) {
         return status;
@@ -119,12 +115,12 @@ void Session::startInLoop() {
     });
     channel_->setCloseCallback([weak_self]() {
         if (auto owner = weak_self.lock()) {
-            owner->handleClose();
+            owner->closeInLoop();
         }
     });
     channel_->setErrorCallback([weak_self]() {
         if (auto owner = weak_self.lock()) {
-            owner->handleClose();
+            owner->closeInLoop();
         }
     });
 
@@ -136,13 +132,13 @@ void Session::startInLoop() {
     }
 }
 
-void Session::sendEncodedInLoop(std::vector<std::uint8_t> encoded) {
+void Session::sendEncodedInLoop(Bytes encoded) {
     loop_->assertInLoopThread();
     if (closed_.load() || encoded.empty()) {
         return;
     }
 
-    const auto status = output_buffer_.append(encoded.data(), encoded.size());
+    const auto status = output_buffer_.append(encoded);
     if (!status.isOk()) {
         closeInLoop();
         return;
@@ -160,7 +156,7 @@ void Session::handleRead() {
         return;
     }
 
-    std::array<char, kReadBufferSize> buffer{};
+    std::array<Byte, kReadBufferSize> buffer{};
     while (fd_) {
         const auto n = ::read(fd_.fd(), buffer.data(), buffer.size());
         if (n > 0) {
@@ -230,10 +226,6 @@ void Session::handleWrite() {
     }
 }
 
-void Session::handleClose() {
-    closeInLoop();
-}
-
 void Session::closeInLoop() {
     loop_->assertInLoopThread();
     if (closed_.exchange(true)) {
@@ -271,7 +263,7 @@ bool Session::feedInputBuffer() {
 
     std::vector<Packet> packets;
     const auto status = decoder_.feed(
-        reinterpret_cast<const std::uint8_t*>(input_buffer_.peek()),
+        input_buffer_.peek(),
         input_buffer_.readableBytes(),
         packets);
     input_buffer_.retrieveAll();

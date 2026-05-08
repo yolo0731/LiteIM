@@ -95,9 +95,9 @@ liteim_protocol
        -> encodePacket(Packet)
        -> parseHeader(bytes)
   -> TlvCodec
-       -> appendString(type, value, body)
-       -> appendUint64(type, value, body)
-       -> parseTlvMap(body)
+       -> appendString(type, value, Bytes)
+       -> appendUint64(type, value, Bytes)
+       -> parseTlvMap(Bytes)
        -> getString(map, type)
        -> getUint64(map, type)
        -> getRepeatedString(map, type)
@@ -135,15 +135,15 @@ liteim_protocol
 ```text
 liteim_net
   -> Buffer
-       -> append()
-       -> appendString()
+       -> append(const Byte*, len)
+       -> append(const Bytes&)
+       -> append(const std::string&)
        -> readableBytes()
        -> writableBytes()
        -> peek()
        -> retrieve()
        -> retrieveAll()
        -> retrieveAllAsString()
-       -> ensureWritableBytes()
   -> SocketUtil
        -> createNonBlockingSocket()
        -> setNonBlocking()

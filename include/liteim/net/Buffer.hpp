@@ -1,12 +1,10 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <string>
-#include <string_view>
-#include <vector>
 
 #include "liteim/base/Status.hpp"
+#include "liteim/base/Types.hpp"
 
 namespace liteim {
 
@@ -18,24 +16,20 @@ public:
 
     std::size_t readableBytes() const noexcept;
     std::size_t writableBytes() const noexcept;
-    const char* peek() const noexcept;
+    const Byte* peek() const noexcept;
 
-    Status append(const char* data, std::size_t len);
-    Status append(const std::uint8_t* data, std::size_t len);
-    void appendString(std::string_view value);
+    Status append(const Byte* data, std::size_t len);
+    Status append(const Bytes& data);
+    Status append(const std::string& value);
 
     Status retrieve(std::size_t len);
     void retrieveAll() noexcept;
     std::string retrieveAllAsString();
 
+private:
     void ensureWritableBytes(std::size_t len);
 
-private:
-    char* begin() noexcept;
-    const char* begin() const noexcept;
-    void makeSpace(std::size_t len);
-
-    std::vector<char> buffer_;
+    Bytes buffer_;
     std::size_t read_index_{0};
     std::size_t write_index_{0};
 };

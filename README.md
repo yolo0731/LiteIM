@@ -15,7 +15,8 @@ Step 13 已完成 review hardening：新增 `UniqueFd` 表达 fd 所有权，`Ac
 本 Step 已完成：
 
 - 新增 `liteim_net` 库 target。
-- 新增 `Buffer`，支持 `append()`、`appendString()`、`readableBytes()`、`writableBytes()`、`peek()`、`retrieve()`、`retrieveAll()`、`retrieveAllAsString()` 和 `ensureWritableBytes()`。
+- 新增 `Types.hpp`，统一原始网络/协议字节别名 `Byte` / `Bytes`。
+- 新增 `Buffer`，支持 `append(const Byte*, len)`、`append(const Bytes&)`、`append(const std::string&)`、`readableBytes()`、`writableBytes()`、`peek()`、`retrieve()`、`retrieveAll()` 和 `retrieveAllAsString()`。
 - `Buffer` 使用读写索引维护可读区域和可写区域。
 - 空间不足时优先复用已读区域，仍不足时自动扩容。
 - `retrieve()` 越界返回 `InvalidArgument`，不让底层网络工具直接触发进程崩溃。
@@ -415,12 +416,12 @@ CTest 应发现并通过 124 个测试。Step 14 新增测试：
 - `BufferTest.DefaultBufferHasNoReadableBytes`
 - `BufferTest.AppendIncreasesReadableBytes`
 - `BufferTest.AppendStringStoresReadableData`
-- `BufferTest.AppendUint8PointerStoresBytes`
+- `BufferTest.AppendBytePointerStoresBytes`
 - `BufferTest.RetrieveAdvancesReadIndex`
 - `BufferTest.RetrieveAllResetsBuffer`
 - `BufferTest.RetrieveAllAsStringReturnsReadableDataAndClearsBuffer`
-- `BufferTest.EnsureWritableBytesExpandsWhenNeeded`
-- `BufferTest.EnsureWritableBytesCompactsReadableDataBeforeExpanding`
+- `BufferTest.AppendExpandsWhenNeeded`
+- `BufferTest.AppendCompactsReadableDataBeforeExpanding`
 - `BufferTest.AppendExpandsAndPreservesExistingData`
 - `BufferTest.RetrievePastReadableBytesReturnsError`
 - `BufferTest.NullAppendWithNonzeroLengthReturnsError`

@@ -8,7 +8,7 @@
 
 namespace {
 
-liteim::TlvMap parseBody(const std::vector<std::uint8_t>& body) {
+liteim::TlvMap parseBody(const liteim::Bytes& body) {
     liteim::TlvMap map;
     const auto status = liteim::parseTlvMap(body, map);
     EXPECT_TRUE(status.isOk()) << status.message();
@@ -18,7 +18,7 @@ liteim::TlvMap parseBody(const std::vector<std::uint8_t>& body) {
 }  // namespace
 
 TEST(TlvCodecTest, StringFieldCanBeEncodedAndDecoded) {
-    std::vector<std::uint8_t> body;
+    liteim::Bytes body;
 
     const auto append_status = liteim::appendString(liteim::TlvType::Username, "alice", body);
 
@@ -34,7 +34,7 @@ TEST(TlvCodecTest, StringFieldCanBeEncodedAndDecoded) {
 }
 
 TEST(TlvCodecTest, MultipleFieldsCanBeEncodedAndDecoded) {
-    std::vector<std::uint8_t> body;
+    liteim::Bytes body;
 
     ASSERT_TRUE(liteim::appendString(liteim::TlvType::Username, "alice", body).isOk());
     ASSERT_TRUE(liteim::appendUint64(liteim::TlvType::UserId, 1001, body).isOk());
@@ -55,7 +55,7 @@ TEST(TlvCodecTest, MultipleFieldsCanBeEncodedAndDecoded) {
 }
 
 TEST(TlvCodecTest, Utf8StringCanBeEncodedAndDecoded) {
-    std::vector<std::uint8_t> body;
+    liteim::Bytes body;
 
     const auto append_status = liteim::appendString(liteim::TlvType::MessageText,
                                                     "你好，LiteIM 👋",
@@ -72,7 +72,7 @@ TEST(TlvCodecTest, Utf8StringCanBeEncodedAndDecoded) {
 }
 
 TEST(TlvCodecTest, RepeatedStringFieldsArePreserved) {
-    std::vector<std::uint8_t> body;
+    liteim::Bytes body;
 
     ASSERT_TRUE(liteim::appendString(liteim::TlvType::GroupName, "dev", body).isOk());
     ASSERT_TRUE(liteim::appendString(liteim::TlvType::GroupName, "study", body).isOk());
@@ -88,7 +88,7 @@ TEST(TlvCodecTest, RepeatedStringFieldsArePreserved) {
 }
 
 TEST(TlvCodecTest, RepeatedUint64FieldsArePreserved) {
-    std::vector<std::uint8_t> body;
+    liteim::Bytes body;
 
     ASSERT_TRUE(liteim::appendUint64(liteim::TlvType::FriendId, 1001, body).isOk());
     ASSERT_TRUE(liteim::appendUint64(liteim::TlvType::FriendId, 1002, body).isOk());
@@ -106,7 +106,7 @@ TEST(TlvCodecTest, RepeatedUint64FieldsArePreserved) {
 }
 
 TEST(TlvCodecTest, Uint64UsesNetworkByteOrder) {
-    std::vector<std::uint8_t> body;
+    liteim::Bytes body;
 
     const auto append_status = liteim::appendUint64(liteim::TlvType::MessageId,
                                                     0x0102030405060708ULL,
@@ -136,7 +136,7 @@ TEST(TlvCodecTest, Uint64UsesNetworkByteOrder) {
 }
 
 TEST(TlvCodecTest, TlvLengthOutOfBoundsReturnsError) {
-    std::vector<std::uint8_t> body;
+    liteim::Bytes body;
     ASSERT_TRUE(liteim::appendString(liteim::TlvType::Username, "a", body).isOk());
     body[5] = 0x02;
 
@@ -148,7 +148,7 @@ TEST(TlvCodecTest, TlvLengthOutOfBoundsReturnsError) {
 }
 
 TEST(TlvCodecTest, IncompleteTlvHeaderReturnsError) {
-    const std::vector<std::uint8_t> body(liteim::kTlvHeaderSize - 1, 0);
+    const liteim::Bytes body(liteim::kTlvHeaderSize - 1, 0);
     liteim::TlvMap map;
 
     const auto status = liteim::parseTlvMap(body, map);
@@ -178,7 +178,7 @@ TEST(TlvCodecTest, MissingUint64FieldReturnsError) {
 }
 
 TEST(TlvCodecTest, WrongUint64LengthReturnsError) {
-    std::vector<std::uint8_t> body;
+    liteim::Bytes body;
     ASSERT_TRUE(liteim::appendString(liteim::TlvType::UserId, "bad", body).isOk());
     const auto map = parseBody(body);
     std::uint64_t user_id = 0;
@@ -190,7 +190,7 @@ TEST(TlvCodecTest, WrongUint64LengthReturnsError) {
 }
 
 TEST(TlvCodecTest, UnknownTypeCannotBeEncoded) {
-    std::vector<std::uint8_t> body;
+    liteim::Bytes body;
 
     const auto status = liteim::appendString(liteim::TlvType::Unknown, "bad", body);
 

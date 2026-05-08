@@ -2,7 +2,7 @@
 
 namespace liteim {
 
-std::string_view toString(TlvType type) noexcept {
+const char* toString(TlvType type) noexcept {
     switch (type) {
         case TlvType::Username:
             return "USERNAME";

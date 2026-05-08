@@ -1,6 +1,7 @@
 #include "liteim/base/Logger.hpp"
 
 #include <mutex>
+#include <string>
 
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
@@ -50,7 +51,7 @@ namespace liteim
 
     } // namespace
 
-    LogLevel parseLogLevel(std::string_view level)
+    LogLevel parseLogLevel(const std::string& level)
     {
         if (level == "trace")
         {
