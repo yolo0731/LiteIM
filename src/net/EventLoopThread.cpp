@@ -23,11 +23,17 @@ EventLoop* EventLoopThread::startLoop() {
 
     thread_ = std::thread([this]() { threadFunc(); });
 
+    // 用unique_lock主线程会在condition_.wait时候暂时释放锁，等待线程函数threadFunc设置loop_指针或者发生异常
     std::unique_lock<std::mutex> lock(mutex_);
+
+    // 检查条件和进入睡眠必须和 mutex_ 配合,等待的这些变量也都是被 mutex_ 保护的共享变量
+    // notify_all()让等待线程醒来，然后重新检查第二个参数的条件是否满足，如果满足就继续执行，否则继续等待
     condition_.wait(lock, [this]() { return loop_ != nullptr || startup_exception_ != nullptr || !running_; });
 
     if (startup_exception_ != nullptr) {
+        // utility头文件中的函数，交换两个对象的值，并返回旧值
         const auto exception = std::exchange(startup_exception_, nullptr);
+        // std::unique_lock可以在需要时手动释放锁，且在wait期间会自动释放锁，等待条件满足后会重新获取锁
         lock.unlock();
         if (thread_.joinable()) {
             thread_.join();
@@ -50,6 +56,7 @@ void EventLoopThread::stop() noexcept {
         if (thread_.joinable()) {
             if (thread_.get_id() == std::this_thread::get_id()) {
                 thread_.detach();
+                // 如果当前线程就是子线程，不能join自己，否则会导致死锁，所以选择detach让线程独立运行，直到自然结束
             } else {
                 thread_.join();
             }
@@ -78,12 +85,12 @@ void EventLoopThread::threadFunc() noexcept {
         }
         condition_.notify_all();
 
-        loop.loop();
+        loop.loop(); // 子线程进入事件循环，直到调用quit()退出循环
 
         {
             std::lock_guard<std::mutex> lock(mutex_);
             loop_ = nullptr;
-            running_ = false;
+            running_ = false; // 这个 EventLoopThread 管理的子线程不再运行了
         }
         condition_.notify_all();
     } catch (...) {
@@ -91,6 +98,7 @@ void EventLoopThread::threadFunc() noexcept {
             std::lock_guard<std::mutex> lock(mutex_);
             loop_ = nullptr;
             running_ = false;
+            // 捕获异常并保存到成员变量startup_exception_中
             startup_exception_ = std::current_exception();
         }
         condition_.notify_all();

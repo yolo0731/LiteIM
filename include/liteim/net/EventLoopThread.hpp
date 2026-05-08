@@ -17,7 +17,7 @@ public:
     EventLoopThread(const EventLoopThread&) = delete;
     EventLoopThread& operator=(const EventLoopThread&) = delete;
 
-    EventLoop* startLoop();
+    EventLoop* startLoop(); // 把子线程里这个 EventLoop loop 的地址保存到成员变量 loop_里。
     void stop() noexcept;
     bool running() const noexcept;
 
@@ -30,6 +30,11 @@ private:
     EventLoop* loop_{nullptr};
     bool started_{false};
     bool running_{false};
+    /*
+    跨线程、跨作用域传递和重抛异常的句柄。本质是一个智能指针
+    主要函数：std::current_exception() 在 catch 块中捕获当前异常，返回 exception_ptr
+    std::rethrow_exception(ptr)重新抛出 exception_ptr 持有的异常
+    */
     std::exception_ptr startup_exception_;
 };
 
