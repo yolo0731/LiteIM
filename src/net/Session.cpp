@@ -151,7 +151,6 @@ void Session::sendEncodedInLoop(Bytes encoded) {
         closeInLoop();
         return;
     }
-    updateLastActiveTime();
 
     if (started_ && channel_ != nullptr && !channel_->isWriting()) {
         channel_->enableWriting();
@@ -205,7 +204,6 @@ void Session::handleWrite() {
     while (output_buffer_.readableBytes() > 0) {
         const auto n = ::write(fd_.fd(), output_buffer_.peek(), output_buffer_.readableBytes());
         if (n > 0) {
-            updateLastActiveTime();
             const auto retrieve_status = output_buffer_.retrieve(static_cast<std::size_t>(n));
             if (!retrieve_status.isOk()) {
                 closeInLoop();

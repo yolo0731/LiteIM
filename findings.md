@@ -20,6 +20,28 @@
 - `README.md` 保持 GitHub 对外介绍职责，只描述项目能力、模块、架构、构建运行、目录布局和路线概览。
 - `planning-with-files` 三件套是之后恢复进度和过程上下文的来源。
 
+## 2026-05-09 Session Activity Semantics Fix Findings
+
+本次只修 P0：`last_active_time` 只能表达客户端入站完整 Packet 活跃，不能被服务端出站写刷新。
+
+已经确认并采用的设计：
+
+- `Session::feedInputBuffer()` 成功解出完整入站 Packet 后继续调用 `updateLastActiveTime()`。
+- `Session::sendEncodedInLoop()` 只是把服务端待发送数据加入 output buffer，不刷新活跃时间。
+- `Session::handleWrite()` 只是把 output buffer 写到 fd，不刷新活跃时间。
+- `TcpServer` heartbeat 仍按 `now - session->lastActiveTimeMilliseconds() >= timeout` 判断 idle session。
+
+新增回归测试：
+
+- `TcpServerTest.ServerWritesDoNotRefreshHeartbeatActivity`：客户端只发一次入站 Packet 后保持沉默，测试线程持续 `sendToSession()` 主动推送；修复前 session 不超时，修复后即使服务端持续写也会被 heartbeat 关闭。
+
+本次不采用/不改：
+
+- 不进入 Step 20 慢客户端回压完善。
+- 不配置 high water mark。
+- 不删除 `Session::input_buffer_`。
+- 不重构 `Session` 状态机。
+
 ## 2026-05-09 Step 19 Signalfd Graceful Shutdown Findings
 
 本次进入 `Step 19: signalfd graceful shutdown`，目标是在不引入传统 signal handler、不放松 owner-loop 生命周期约束的前提下，让 `liteim_server` 收到 `SIGINT` / `SIGTERM` 后优雅退出。
@@ -104,7 +126,7 @@
 - `TimerManager` 的回调只在 owner loop 线程执行，避免 timer callback 跨线程直接操作 `Session`。
 - `TcpServer` 第一版只在 base loop 创建一个 `TimerManager`，符合 Step 18 “注册到主 EventLoop 或每个 I/O EventLoop” 的边界，同时避免 timer 生命周期和子 I/O loop join 顺序变复杂。
 - 每轮 timer tick 扫描线程安全 session 快照；如果 `now - last_active_time >= 90s`，调用 `session->close()`，实际关闭仍回到 Session 所属 loop。
-- `Session` 收到完整 `Packet` 后刷新 `last_active_time`，让应用层心跳包或任意有效业务包都能续期连接。
+- `Session` 收到完整入站 `Packet` 后刷新 `last_active_time`，让应用层心跳包或任意有效业务包都能续期连接；服务端出站写不能续期。
 
 本次不采用/不改：
 

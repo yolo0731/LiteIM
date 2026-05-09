@@ -404,3 +404,47 @@ TEST(TcpServerTest, ActiveSessionSurvivesHeartbeatTimeout) {
     client.reset();
     EXPECT_TRUE(waitUntil([&]() { return server.sessionCount() == 0; }, 2s));
 }
+
+TEST(TcpServerTest, ServerWritesDoNotRefreshHeartbeatActivity) {
+    std::mutex mutex;
+    std::condition_variable callback_ready;
+    std::uint64_t observed_session_id = 0;
+
+    RunningTcpServer server(1, [&](liteim::TcpServer& tcp_server, liteim::EventLoop&) {
+        tcp_server.setHeartbeatOptions(20ms, 80ms);
+        tcp_server.setMessageCallback([&](const liteim::Session::Ptr& session, const liteim::Packet&) {
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                observed_session_id = session->id();
+            }
+            callback_ready.notify_one();
+        });
+    });
+
+    auto client = connectTo(server.port());
+    ASSERT_GE(client.fd(), 0);
+
+    const auto trigger = encodeOrDie(makePacket("trigger", 601));
+    writeAll(client.fd(), trigger);
+
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        ASSERT_TRUE(callback_ready.wait_for(lock, 2s, [&]() { return observed_session_id != 0; }));
+    }
+
+    std::atomic_bool keep_pushing{true};
+    std::thread pusher([&]() {
+        std::uint64_t seq_id = 602;
+        while (keep_pushing.load()) {
+            const auto status = server.sendToSession(observed_session_id, makePacket("server-push", seq_id++));
+            (void)status;
+            std::this_thread::sleep_for(10ms);
+        }
+    });
+
+    const bool closed_by_heartbeat = waitUntil([&]() { return server.sessionCount() == 0; }, 2s);
+    keep_pushing = false;
+    pusher.join();
+
+    EXPECT_TRUE(closed_by_heartbeat);
+}

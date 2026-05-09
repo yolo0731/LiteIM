@@ -1,5 +1,53 @@
 # LiteIM Progress
 
+## 2026-05-09 Session Activity Semantics Fix
+
+本次只处理 P0：`last_active_time` 出站刷新语义错误。
+
+问题：
+
+- 设计语义应为“客户端发来完整、合法、成功解码的入站 Packet 才算连接活跃”。
+- 旧实现里 `Session::sendEncodedInLoop()` append output buffer 后会刷新活跃时间。
+- 旧实现里 `Session::handleWrite()` 每次写出字节后也会刷新活跃时间。
+- 这会导致服务端持续 push / echo / Bot 回复时，沉默客户端被误判为活跃连接。
+
+TDD RED 已确认：
+
+```bash
+cmake --build build && ctest --test-dir build -R "ServerWritesDoNotRefreshHeartbeatActivity" --output-on-failure
+```
+
+新增 `TcpServerTest.ServerWritesDoNotRefreshHeartbeatActivity` 后先失败：`closed_by_heartbeat` 为 `false`，证明服务端持续写会错误续期连接。
+
+已完成代码：
+
+- 删除 `Session::sendEncodedInLoop()` 中的出站 `updateLastActiveTime()`。
+- 删除 `Session::handleWrite()` 中的出站 `updateLastActiveTime()`。
+- 保留 `feedInputBuffer()` 成功解出完整入站 Packet 后的 `updateLastActiveTime()`。
+
+已完成文档同步：
+
+- 更新 Step 14 教程，把 `last_active_time` 语义改为完整入站 Packet 活跃时间。
+- 更新 Step 18 教程，明确服务端出站写不续期。
+- 更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 中 Step 18 的活跃时间描述。
+- 更新 `findings.md` 和 `task_plan.md` 记录 P0 修复边界。
+
+边界：
+
+- 不做 Step 20 慢客户端回压完善。
+- 不配置 high water mark。
+- 不删除 `Session::input_buffer_`。
+- 不重构 `Session` 状态机。
+- 不自动 commit，避免混入已有未提交的文档边界修正改动。
+
+最终验证：
+
+- `cmake --build build && ctest --test-dir build -R "ServerWritesDoNotRefreshHeartbeatActivity" --output-on-failure`：修复后通过。
+- `cmake --build build && ctest --test-dir build -R "Session|TcpServer" --output-on-failure`：20/20 通过。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，服务端收到 SIGTERM 后优雅退出。
+- `ctest --test-dir build --output-on-failure`：172/172 通过。
+- `git diff --check`：通过。
+
 ## 2026-05-09 Documentation Boundary Correction
 
 本次只修改 Markdown，目标是把文档职责重新分清：

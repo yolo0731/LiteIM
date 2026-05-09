@@ -54,7 +54,7 @@ tutorials/step14_session.md
 - `Buffer output_buffer_`：保存还没写完的待发送字节。
 - `message_callback_`：完整 Packet 到达时通知上层。
 - `close_callback_`：连接关闭时通知上层。
-- `last_active_time_ms_`：记录最近一次读写活跃时间。
+- `last_active_time_ms_`：记录最近一次完整入站 Packet 活跃时间。
 
 这几个成员的边界很重要：
 
@@ -100,7 +100,7 @@ EPOLLIN
 
 `handleRead()` 的规则：
 
-- `read() > 0`：更新活跃时间，追加到输入缓冲区，再喂给 `FrameDecoder`。
+- `read() > 0`：追加到输入缓冲区，再喂给 `FrameDecoder`；只有成功解出完整入站 Packet 后才更新活跃时间。
 - `read() == 0`：对端关闭，进入 `closeInLoop()`。
 - `errno == EINTR`：继续读。
 - `errno == EAGAIN || errno == EWOULDBLOCK`：本轮读完，返回。
@@ -200,6 +200,7 @@ defer Channel destruction
 - 大包在 peer 不读取时会留下 pending output，证明 output buffer 能接住未写完数据。
 - pending output 超过 4MB 时会关闭连接，证明慢客户端不会无限堆积内存。
 - `last_active_time` 初始化为有效时间戳。
+- 服务端持续写出不会刷新 heartbeat 活跃时间；只有客户端入站完整 Packet 会续期。
 - 非 owner 线程直接调用 `pendingOutputBytes()` 会触发线程归属错误，证明 `Buffer` 不被跨线程读取。
 
 运行：
