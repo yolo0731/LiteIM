@@ -41,7 +41,6 @@ Step 0 不是实现功能，而是把旧路线清理掉。
 - `CMakeLists.txt` 空骨架。
 - `README.md`。
 - `task_plan.md`、`findings.md`、`progress.md`。
-- `docs/architecture.md`、`docs/project_layout.md`。
 - `tutorials/README.md`、`tutorials/step00_reset.md`。
 
 ## 4. 测试验证

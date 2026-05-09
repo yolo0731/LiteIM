@@ -69,9 +69,6 @@ tutorials/step17_thread_pool.md
 src/CMakeLists.txt
 tests/CMakeLists.txt
 README.md
-docs/architecture.md
-docs/project_layout.md
-docs/roadmap.md
 tutorials/README.md
 task_plan.md
 findings.md
@@ -159,7 +156,7 @@ void stop() noexcept;
 
 如果多个外部线程同时调用 `stop()`，join/cleanup 阶段会由 `stop_mutex_` 串行化，避免多个线程同时对同一个 `std::thread` 调用 `join()`。
 
-这个问题的完整排查流程记录在 [`docs/debug_cases/thread_pool_worker_stop.md`](../docs/debug_cases/thread_pool_worker_stop.md)，可用于复盘并发 bug 和准备面试中的 debug 经历。
+这个问题的核心结论已经收敛到 `findings.md`：worker 内部 stop 只发出停止请求，最终 join/cleanup 仍由 owner 线程完成。
 
 ### 状态查询
 

@@ -63,9 +63,6 @@ tutorials/step16_tcp_server.md
 src/net/CMakeLists.txt
 tests/CMakeLists.txt
 README.md
-docs/architecture.md
-docs/project_layout.md
-docs/roadmap.md
 tutorials/README.md
 task_plan.md
 findings.md
