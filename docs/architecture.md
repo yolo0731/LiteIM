@@ -1,6 +1,6 @@
 # LiteIM Architecture
 
-本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 17 完成状态，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / ByteOrder / Packet / TLV / TCP 字节流解包器，`liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil`、RAII fd 包装 `UniqueFd`、`Epoller` 系统调用封装、`Channel` 事件分发 / `tie()` 生命周期保护、`EventLoop` 事件循环 / `eventfd` 任务投递、非阻塞监听器 `Acceptor`、单连接 owner `Session`、多 Reactor 子线程基础 `EventLoopThreadPool` 和多 Reactor echo `TcpServer`，以及 `liteim_concurrency` 的业务 `ThreadPool`。
+本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 17 完成状态，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / ByteOrder / Packet / TLV / TCP 字节流解包器，`liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil`、RAII fd 包装 `UniqueFd`、`Epoller` 系统调用封装、`Channel` 事件分发 / `tie()` 生命周期保护、`EventLoop` 事件循环 / `eventfd` 任务投递、非阻塞监听器 `Acceptor`、单连接 owner `Session`、多 Reactor 子线程基础 `EventLoopThreadPool` 和多 Reactor echo `TcpServer`，以及 `liteim_concurrency` 的业务 `ThreadPool`。Step 17 后的 review hardening 已补齐 `EventLoopThread` 自线程 stop、`Session` 输出缓冲高水位、`TcpServer` 逻辑 session id 和 `Channel` error+read 分发回归。
 
 ## Target Data Flow
 
@@ -172,6 +172,7 @@ liteim_net
        -> listening()
        -> close()
   -> Session
+       -> id()
        -> start()
        -> sendPacket()
        -> close()
@@ -243,7 +244,7 @@ liteim_net
 - Step 13 引入 `UniqueFd` 是因为 `Acceptor` 同时管理长期 listen fd 和临时 accepted fd：listen fd 随 `Acceptor` 关闭，accepted fd 通过 `NewConnectionCallback(UniqueFd, peer)` 移动交给后续 `TcpServer` / `Session`。
 - `Channel` 只代表一个 fd 的事件代理，不拥有 fd，不关闭 fd。
 - `Channel::events()` 表示想监听的事件，`Channel::revents()` 表示本轮 epoll 实际返回的事件。
-- `Channel::handleEvent()` 把 `EPOLLIN` / `EPOLLPRI` / `EPOLLRDHUP` 分发给 read callback，把 `EPOLLOUT` 分发给 write callback，把 `EPOLLHUP` 和 `EPOLLERR` 分发给 close/error callback。
+- `Channel::handleEvent()` 把 `EPOLLIN` / `EPOLLPRI` / `EPOLLRDHUP` 分发给 read callback，把 `EPOLLOUT` 分发给 write callback，把 `EPOLLHUP` 和 `EPOLLERR` 分发给 close/error callback；如果 `EPOLLERR` 和可读事件同时出现，error callback 执行后仍继续 read callback，避免丢掉内核缓冲中剩余数据。
 - `Channel::tie()` 保存 owner 的 `weak_ptr`；事件分发前会先 lock，owner 已释放时跳过回调，owner 仍存在时用局部 `shared_ptr` 保证回调执行期间对象不被销毁。
 - `Channel::handleEvent()` 先在本栈帧内 lock `tie()` 保存的 owner，再保留 `revents_` 快照并直接调用 callback，不复制 callback；owner 生命周期由局部 `shared_ptr` guard 保护，减少高频事件路径上的 `std::function` 复制。未 `tie()` 的 `Channel` 必须保证 callback 执行期间不会销毁当前 `Channel`，也不会重置正在执行的 callback。
 - `Channel` 修改关注事件后通过所属 `EventLoop::updateChannel()` 交给 `Epoller` 更新 epoll 注册状态。
@@ -265,26 +266,29 @@ liteim_net
 - listen fd 可读时，`Acceptor` 使用 `accept4(SOCK_NONBLOCK | SOCK_CLOEXEC)` 循环接收新连接，直到 `EAGAIN` / `EWOULDBLOCK`。
 - `Acceptor` 持有一个 `/dev/null` idle fd；当 `accept4()` 遇到 `EMFILE` / `ENFILE` 时，会释放 idle fd、accept 并立即关闭一个 pending connection，再尝试恢复 idle fd，避免 LT 模式 busy loop。
 - `Acceptor::NewConnectionCallback` 把 `UniqueFd` 和 peer address 交给后续 `TcpServer`；如果没有 callback 或 callback 抛异常，局部 `UniqueFd` 会立即关闭 accepted fd，避免泄漏。
-- `Acceptor::close()` 可以从非 loop 线程请求关闭；loop 未启动或仍运行时实际 `removeChannel()` 和 listen fd 关闭会回到所属 loop 线程完成，loop 已停止时才走 fallback 直接释放 `Channel`、listen fd 和 idle fd，避免永久等待 queued task。
+- `Acceptor::close()` 可以从非 loop 线程请求关闭；loop 未启动或仍运行时实际 `removeChannel()` 和 listen fd 关闭会回到所属 loop 线程完成。loop 已停止时，或者 close task 已投递但 loop 在执行它之前退出时，会走 fallback 直接释放 `Channel`、listen fd 和 idle fd，避免永久等待 queued task。
 - `Acceptor` fd 用尽 helper 保持 `noexcept`，但 warn 日志通过内部 no-throw wrapper 写入，避免 `spdlog` sink 或格式化异常在 `EMFILE` / `ENFILE` 路径触发 `std::terminate()`。
 - `Session` 是单个已连接 fd 的 owner，持有 fd、`Channel`、输入 `Buffer`、输出 `Buffer` 和 `FrameDecoder`。
+- `Session::id()` 是 `TcpServer` 分配的逻辑连接 id；fd 只用于 socket I/O，不再承担 session 表 key。
 - `Session::start()` 必须在 `shared_ptr` 管理下调用；它通过 `Channel::tie()` 把 owner 生命周期绑定到事件分发期间。
 - `Session::handleRead()` 在 I/O loop 中循环 `read()` 到 `EAGAIN` / `EWOULDBLOCK`，把读到的字节放进输入 `Buffer`，再交给 `FrameDecoder` 产出完整 `Packet`。
 - `Session::sendPacket()` 先编码 Packet；如果从其他线程调用，会通过 `EventLoop::queueInLoop()` 回到所属 I/O loop，再写入输出 `Buffer` 并启用写事件。
+- `Session::sendPacket()` 写入 output buffer 前会检查 `kSessionOutputHighWaterMark`。待发送数据超过 4MB 时直接关闭连接，避免慢客户端或网络抖动无限堆积内存。
 - `Session::handleWrite()` 在 `EPOLLOUT` 到来时尽量写出 output buffer，写完后关闭写兴趣；没有写完的数据留在 output buffer，后续继续由写事件驱动。
 - `Session::close()` 在所属 loop 中移除 `Channel`、关闭 fd、清空缓冲并触发 close callback；`Channel` 的释放被延迟到当前 `handleEvent()` 栈帧之后，避免在回调中销毁正在执行的 `Channel`。
 - `Session` 维护 `lastActiveTimeMilliseconds()`，后续 heartbeat / timeout Step 会基于它判断连接活跃度。
-- 输出缓冲区高水位回压会在后续慢客户端保护 Step 中实现；当前 Step 14 只记录 pending output bytes，不主动限流或踢慢客户端。
+- 输出缓冲区当前采用第一版慢客户端保护：超过 4MB 直接关闭连接。后续业务 Step 可以在此基础上增加日志、统计、用户级降级或更细的限流策略。
 - `EventLoopThread` 在线程函数内部构造 `EventLoop`，保证 loop 的 `thread_id_` 绑定到真正的 I/O 线程。
+- `EventLoopThread::stop()` 只请求 loop 退出并由 owner 线程 join；`loop_` / `running_` 的清理集中在 `threadFunc()` 末尾，避免自线程 stop 后 detach 导致对象生命周期失控。
 - `EventLoopThreadPool` 启动指定数量的子 I/O loops，并用 round-robin 为后续连接选择所属 loop；线程数为 0 时返回 base loop，保留单 Reactor 调试模式。
 - `TcpServer` 是当前网络层协调器：base loop 持有 `Acceptor`，子 I/O loops 负责连接读写和 Packet 编解码。
 - `TcpServer::start()` 在 base loop 线程中启动 I/O 线程池、创建 `Acceptor` 并记录实际监听端口。
 - `TcpServer` 从 `Acceptor` 接收 `UniqueFd`，选择一个 I/O loop 后通过 `queueInLoop()` 在目标 loop 中创建 `Session`，避免在 base loop 中直接管理连接 I/O。
-- `TcpServer` 用 mutex 保护 `sessions_`，close callback 触发时从表中删除对应 session，`sessionCount()` 可用于测试和诊断。
-- `TcpServer::sendToSession()` 可以从其他线程调用；它只在线程安全表里找到 `Session`，真正的发送仍由 `Session::sendPacket()` 回到连接所属 I/O loop。
+- `TcpServer` 用 mutex 保护 `sessions_`，key 是自增逻辑 session id，close callback 触发时从表中删除对应 session，`sessionCount()` 可用于测试和诊断。
+- `TcpServer::sendToSession()` 可以从其他线程调用；它按逻辑 session id 在线程安全表里找到 `Session`，真正的发送仍由 `Session::sendPacket()` 回到连接所属 I/O loop。
 - `TcpServer::sendToUser()` 当前只提供基础接口并返回 `NotFound`，因为登录态和 user-session 绑定要等后续业务 Step。
 - 未设置 `MessageCallback` 时，`TcpServer` 默认 echo 收到的 `Packet`；设置 callback 后由上层业务决定如何响应。
-- 当前 `TcpServer` 不执行 MySQL / Redis、不做登录态、不做 MessageRouter，也不实现慢客户端高水位策略；这些留给后续业务线程池、业务服务和 backpressure Step。
+- 当前 `TcpServer` 不执行 MySQL / Redis、不做登录态、不做 MessageRouter；业务线程池接入、业务服务和更完整 backpressure 策略留给后续 Step。
 - `retrieve()` 越界返回 `InvalidArgument`，避免网络异常输入触发进程级崩溃。
 
 ## Current Concurrency Layer
@@ -307,14 +311,16 @@ liteim_concurrency
 - `ThreadPool` 只负责执行业务任务，不处理 socket、Packet、TLV 或 `Session` 生命周期。
 - 固定 worker 数在构造时确定，`start()` 后创建 worker 线程；worker 数为 0 会返回 `InvalidArgument`。
 - `submit()` 只接收 `std::function<void()>`，不返回 `future`，避免第一版业务线程池把接口做复杂。
-- `submit()` 会拒绝空任务、未启动线程池和停止中的线程池。
+- `ThreadPool` 内部使用单一 `running_` 状态表达是否运行和是否接受新任务；`submit()` 会拒绝空任务和未运行的线程池。
 - `stop()` 会停止接收新任务，唤醒 worker，并等待已经入队的任务执行完再退出。
+- 如果 `stop()` 从 worker 任务内部调用，当前 worker 不能 join 自己；线程池通过 worker-local 标记识别 self-stop，只发出停止请求并返回，直到 owner 线程后续调用 `stop()` 或析构完成 join 和清理。
+- 外部多线程并发调用 `stop()` 时，join/cleanup 阶段由 `stop_mutex_` 串行化，避免多个线程同时 join 同一个 `std::thread`。
 - `pendingTaskCount()` 返回还在队列里等待 worker 取走的任务数，不包含正在执行的任务。
 - 单个任务抛异常不会杀死 worker 线程；后续业务服务需要自己把业务错误转换成 `Status` 或响应 Packet。
 - 后续 MySQL / Redis / 密码哈希 / 历史消息查询会投递到 `ThreadPool`。业务任务完成后，响应仍必须通过 `EventLoop::queueInLoop()` 或 `runInLoop()` 回到连接所属 I/O 线程。
 
 ## Current Step
 
-Step 17 implements the fixed-size business `ThreadPool` in `liteim_concurrency`: tasks are submitted through `submit()`, workers sleep on a `condition_variable`, `stop()` drains already queued tasks before exit, and `pendingTaskCount()` exposes queue length for later diagnostics.
+Step 17 implements the fixed-size business `ThreadPool` in `liteim_concurrency`: tasks are submitted through `submit()`, workers sleep on a `condition_variable`, `stop()` drains already queued tasks before exit, and `pendingTaskCount()` exposes queue length for later diagnostics. Step 17 后的 hardening 还补齐了网络层生命周期和慢客户端保护回归。
 
-MySQL / Redis blocking calls, login routing, user-session binding, MessageRouter, heartbeat timeout and high-water-mark backpressure remain later steps.
+MySQL / Redis blocking calls, login routing, user-session binding, MessageRouter and heartbeat timeout remain later steps. `Session` 当前已有 4MB 输出缓冲高水位关闭保护，后续会继续扩展成完整业务级 backpressure。

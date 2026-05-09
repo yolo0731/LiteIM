@@ -19,8 +19,8 @@ constexpr std::size_t kReadBufferSize = 4096;
 
 } // namespace
 
-Session::Session(EventLoop* loop, int fd)
-    : loop_(loop), fd_(fd), channel_(loop == nullptr ? nullptr : std::make_unique<Channel>(loop, fd)),
+Session::Session(EventLoop* loop, int fd, std::uint64_t id)
+    : loop_(loop), fd_(fd), id_(id), channel_(loop == nullptr ? nullptr : std::make_unique<Channel>(loop, fd)),
       last_active_time_ms_(Timestamp::now().millisecondsSinceEpoch()) {
     if (loop_ == nullptr) {
         throw std::invalid_argument("Session requires a valid EventLoop");
@@ -37,6 +37,10 @@ Session::Session(EventLoop* loop, int fd)
 
 int Session::fd() const noexcept {
     return fd_.fd();
+}
+
+std::uint64_t Session::id() const noexcept {
+    return id_;
 }
 
 EventLoop* Session::ownerLoop() const noexcept {
@@ -76,7 +80,7 @@ Status Session::sendPacket(const Packet& packet) {
     }
 
     auto self = shared_from_this();
-    if (loop_->isInLoopThread()) {
+    if (loop_->isInLoopThread()) { // loop_是Session所在的EventLoop的指针
         self->sendEncodedInLoop(std::move(encoded));
         return Status::ok();
     }
@@ -131,6 +135,12 @@ void Session::startInLoop() {
 void Session::sendEncodedInLoop(Bytes encoded) {
     loop_->assertInLoopThread();
     if (closed_.load() || encoded.empty()) {
+        return;
+    }
+
+    if (encoded.size() > kSessionOutputHighWaterMark ||
+        output_buffer_.readableBytes() > kSessionOutputHighWaterMark - encoded.size()) {
+        closeInLoop();
         return;
     }
 

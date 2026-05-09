@@ -127,9 +127,10 @@ void EventLoop::queueInLoop(Functor task) {
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        pending_tasks_.push_back(std::move(task));
+        pending_tasks_.push_back(std::move(task)); // 放到自己eventloop的任务队列里
     }
 
+    // 如果当前线程不是EventLoop所在的线程，或者正在调用pending任务，则需要唤醒EventLoop线程来处理新添加的任务
     if (!isInLoopThread() || calling_pending_tasks_.load()) {
         wakeup();
     }
@@ -171,6 +172,7 @@ void EventLoop::wakeup() noexcept {
     }
 
     eventfd_t value = 1;
+    // eventfd是一个计数器，写入一个非零值会使其变为可读状态，从而唤醒正在等待的线程。这里使用一个循环来确保写入成功，处理可能的中断错误。
     while (::eventfd_write(wakeup_fd_.fd(), value) < 0) {
         if (errno == EINTR) {
             continue;
@@ -179,6 +181,7 @@ void EventLoop::wakeup() noexcept {
     }
 }
 
+// 负责处理这次叫醒，并把 eventfd 里的计数读掉
 void EventLoop::handleWakeup() noexcept {
     if (!wakeup_fd_) {
         return;

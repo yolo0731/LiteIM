@@ -94,9 +94,11 @@ public:
 
 1. 调用 `EventLoop::quit()`。
 2. 唤醒阻塞在 `epoll_wait()` 里的 loop。
-3. `join()` 工作线程。
+3. 如果调用者不是这个工作线程本身，就 `join()` 工作线程。
 
 `quit()` 调用放在 `EventLoopThread` 自身 mutex 保护内，避免 loop 线程刚退出、局部 `EventLoop` 即将析构时，外部线程还拿着过期裸指针调用。
+
+Step 17 后的 review hardening 明确了一个边界：如果 `stop()` 在这个 `EventLoopThread` 自己的工作线程里被调用，它只负责发出 `quit()` 请求并返回，不 detach 自己，也不在 `stop()` 里清空 `loop_` / `running_`。状态清理统一放在 `threadFunc()` 末尾，owner 线程后续再调用 `stop()` 或析构时完成 join。这样避免 self-stop 后线程还在跑，而 `EventLoopThread` 对象已经被析构导致 UAF。
 
 ### 析构
 
@@ -181,6 +183,7 @@ TEST(ReactorInterfaceTest, EventLoopThreadHeaderIsSelfContained)
 TEST(ReactorInterfaceTest, EventLoopThreadPoolHeaderIsSelfContained)
 TEST(EventLoopThreadTest, StartLoopCreatesLoopOnWorkerThread)
 TEST(EventLoopThreadTest, StopWithoutStartIsNoop)
+TEST(EventLoopThreadTest, OwnerStopWaitsAfterStopIsRequestedInsideLoop)
 TEST(EventLoopThreadTest, DestructorStopsRunningLoop)
 TEST(EventLoopThreadPoolTest, StartCreatesRequestedNumberOfLoops)
 TEST(EventLoopThreadPoolTest, GetNextLoopUsesRoundRobinOrder)
@@ -193,6 +196,7 @@ TEST(EventLoopThreadPoolTest, ChildLoopsRunTasksOnDistinctThreads)
 - 头文件可以独立 include。
 - `EventLoopThread` 返回的 loop 运行在工作线程。
 - `stop()` 可以安全结束线程。
+- 工作线程内部触发 `stop()` 后，owner 线程再次 `stop()` 会等待线程函数真正结束。
 - 析构可以自动停止仍在运行的 loop。
 - 线程池能启动指定数量的 child loops。
 - round-robin 分配顺序正确。

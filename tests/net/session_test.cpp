@@ -294,6 +294,25 @@ TEST(SessionTest, LargePacketLeavesPendingOutputWhenPeerDoesNotRead) {
     session->close();
 }
 
+TEST(SessionTest, CloseWhenPendingOutputExceedsHighWaterMark) {
+    auto sockets = makeSocketPair();
+    liteim::EventLoop loop;
+    auto session = std::make_shared<liteim::Session>(&loop, sockets.server.release());
+    liteim::Packet packet;
+    packet.header.msg_type = liteim::MessageType::PrivateMessageRequest;
+    packet.body.assign(liteim::kMaxPacketBodyLength, static_cast<liteim::Byte>('x'));
+    session->start();
+
+    for (std::uint64_t seq_id = 1; seq_id <= 5 && !session->closed(); ++seq_id) {
+        packet.header.seq_id = seq_id;
+        const auto status = session->sendPacket(packet);
+        ASSERT_TRUE(status.isOk()) << status.message();
+    }
+
+    EXPECT_TRUE(session->closed());
+    EXPECT_EQ(session->pendingOutputBytes(), 0U);
+}
+
 TEST(SessionTest, LastActiveTimeIsInitialized) {
     auto sockets = makeSocketPair();
     liteim::EventLoop loop;

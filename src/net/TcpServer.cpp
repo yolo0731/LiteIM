@@ -22,6 +22,7 @@ TcpServer::~TcpServer() {
     stop();
 }
 
+// 用来设置服务器收到消息后的处理回调函数
 void TcpServer::setMessageCallback(MessageCallback callback) {
     std::lock_guard<std::mutex> lock(mutex_);
     message_callback_ = std::move(callback);
@@ -78,7 +79,7 @@ bool TcpServer::started() const noexcept {
     return started_.load();
 }
 
-Status TcpServer::sendToSession(int session_id, const Packet& packet) {
+Status TcpServer::sendToSession(std::uint64_t session_id, const Packet& packet) {
     Session::Ptr session;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -114,7 +115,7 @@ void TcpServer::stopInLoop() noexcept {
         for (const auto& [_, session] : sessions_) {
             sessions.push_back(session);
         }
-        sessions_.clear();
+        sessions_.clear(); // 把整个 unordered_map 清空
     }
 
     for (const auto& session : sessions) {
@@ -144,8 +145,8 @@ void TcpServer::createSessionInLoop(EventLoop* io_loop, std::shared_ptr<UniqueFd
     }
 
     UniqueFd fd_guard(accepted_fd->release());
-    const int session_id = fd_guard.fd();
-    auto session = std::make_shared<Session>(io_loop, fd_guard.release());
+    const auto session_id = next_session_id_.fetch_add(1);
+    auto session = std::make_shared<Session>(io_loop, fd_guard.release(), session_id);
     session->setMessageCallback(
         [this](const Session::Ptr& observed, const Packet& packet) { handleMessage(observed, packet); });
     session->setCloseCallback([this, session_id](const Session::Ptr&) { removeSession(session_id); });
@@ -174,7 +175,7 @@ void TcpServer::handleMessage(const Session::Ptr& session, const Packet& packet)
     (void)status;
 }
 
-void TcpServer::removeSession(int session_id) {
+void TcpServer::removeSession(std::uint64_t session_id) {
     std::lock_guard<std::mutex> lock(mutex_);
     sessions_.erase(session_id);
 }

@@ -22,6 +22,10 @@ EventLoop* EventLoopThread::startLoop() {
     }
 
     thread_ = std::thread([this]() { threadFunc(); });
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        thread_id_ = thread_.get_id();
+    }
 
     // 用unique_lock主线程会在condition_.wait时候暂时释放锁，等待线程函数threadFunc设置loop_指针或者发生异常
     std::unique_lock<std::mutex> lock(mutex_);
@@ -45,29 +49,29 @@ EventLoop* EventLoopThread::startLoop() {
 }
 
 void EventLoopThread::stop() noexcept {
+    bool started = false;
+    bool called_from_loop_thread = false;
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (started_ && running_ && loop_ == nullptr && startup_exception_ == nullptr) {
+            condition_.wait(lock, [this]() { return loop_ != nullptr || !running_ || startup_exception_ != nullptr; });
+        }
+        started = started_;
+        called_from_loop_thread = thread_id_ == std::this_thread::get_id();
         if (loop_ != nullptr) {
             loop_->quit();
         }
     }
 
-    try {
-        if (thread_.joinable()) {
-            if (thread_.get_id() == std::this_thread::get_id()) {
-                thread_.detach();
-                // 如果当前线程就是子线程，不能join自己，否则会导致死锁，所以选择detach让线程独立运行，直到自然结束
-            } else {
-                thread_.join();
-            }
-        }
-    } catch (...) {
+    if (!started || called_from_loop_thread) {
+        return;
     }
 
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        loop_ = nullptr;
-        running_ = false;
+    try {
+        if (!join_started_.exchange(true) && thread_.joinable()) {
+            thread_.join();
+        }
+    } catch (...) {
     }
 }
 
@@ -90,6 +94,7 @@ void EventLoopThread::threadFunc() noexcept {
         {
             std::lock_guard<std::mutex> lock(mutex_);
             loop_ = nullptr;
+            thread_id_ = std::thread::id();
             running_ = false; // 这个 EventLoopThread 管理的子线程不再运行了
         }
         condition_.notify_all();
@@ -97,6 +102,7 @@ void EventLoopThread::threadFunc() noexcept {
         {
             std::lock_guard<std::mutex> lock(mutex_);
             loop_ = nullptr;
+            thread_id_ = std::thread::id();
             running_ = false;
             // 捕获异常并保存到成员变量startup_exception_中
             startup_exception_ = std::current_exception();

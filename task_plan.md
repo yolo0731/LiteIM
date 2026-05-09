@@ -141,11 +141,16 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 16 verification | done | Build, server smoke, full CTest 142/142, diff check, `.gitkeep` check, stale-route path check, and final diff review passed. |
 | Step 16 commit | done | Commit message: `feat(net): implement multi reactor tcp server`. |
 | Step 17 concept | done | Step 17 introduces a fixed-size business `ThreadPool` for later MySQL / Redis / password hash / history query work. |
-| Step 17 tests | done | Added RED tests for `ThreadPool` header, zero-worker rejection, task execution, multi-worker concurrency, stop rejection, destructor drain, and queue length. |
-| Step 17 code | done | Added `liteim_concurrency` with `ThreadPool`, `submit()`, graceful `stop()`, worker loop, exception isolation, and queue length tracking. |
-| Step 17 docs | done | Synced README, docs, tutorial index, Step 17 tutorial, findings, progress, task plan, and PROJECT_MEMORY for the business thread pool boundary. |
-| Step 17 verification | done | Build, server smoke, full CTest 149/149, diff check, `.gitkeep` check, stale-route path check, and final diff review passed. |
+| Step 17 tests | done | Added RED tests for `ThreadPool` header, zero-worker rejection, task execution, multi-worker concurrency, stop rejection, worker-origin stop cleanup, concurrent stop serialization, destructor drain, and queue length. |
+| Step 17 code | done | Added `liteim_concurrency` with `ThreadPool`, `submit()`, graceful `stop()`, `running_` state, serialized owner cleanup, worker loop, exception isolation, worker-origin stop cleanup, and queue length tracking. |
+| Step 17 docs | done | Synced README, docs, tutorial index, Step 17 tutorial, debug case notes, findings, progress, task plan, and PROJECT_MEMORY for the business thread pool boundary. |
+| Step 17 verification | done | Build, server smoke, full CTest 151/151, diff check, `.gitkeep` check, stale-route path check, and final diff review passed. |
 | Step 17 commit | done | Commit message: `feat(concurrency): add business thread pool`. |
+| Step 17 review hardening concept | done | Evaluated external review points and accepted only locally reproducible lifecycle / high-water / session-id / event-dispatch bugs. |
+| Step 17 review hardening tests | done | Added regressions for EventLoopThread self-stop owner cleanup, Acceptor queued-close exit race, Session output high-water close, Channel error+read dispatch, and TcpServer logical session id API. |
+| Step 17 review hardening code | done | Moved EventLoopThread state cleanup to threadFunc exit, fixed Acceptor close wait fallback, added Session id/high-water mark, changed TcpServer sessions_ to logical uint64 ids, and let Channel continue read dispatch after EPOLLERR. |
+| Step 17 review hardening docs | done | Synced README, architecture, roadmap, project layout, Step 11/13/14/15/16 tutorials, findings, progress, PROJECT_MEMORY, and added net lifecycle debug case notes. |
+| Step 17 review hardening verification | done | Build, full CTest 155/155, server smoke, diff check, `.gitkeep` check, stale-route path check, and final diff review passed. |
 
 ## Current Decision
 

@@ -47,6 +47,7 @@ tutorials/step14_session.md
 
 - `EventLoop* loop_`：连接所属的 I/O loop。
 - `UniqueFd fd_`：已连接 socket fd 的 RAII owner。
+- `std::uint64_t id_`：由 `TcpServer` 分配的逻辑连接 id。
 - `std::unique_ptr<Channel> channel_`：fd 的 epoll 事件代理。
 - `FrameDecoder decoder_`：把 TCP 字节流解成完整 Packet。
 - `Buffer input_buffer_`：保存本轮从 socket 读到的字节。
@@ -59,6 +60,7 @@ tutorials/step14_session.md
 
 - `Channel` 不拥有 fd。
 - `UniqueFd` 拥有 fd。
+- `id_` 只表达连接身份，不参与 socket I/O，避免 fd 复用影响 session 表。
 - `FrameDecoder` 不读 socket。
 - `Buffer` 不解析协议。
 - `Session` 把这些组件组合成一个连接生命周期。
@@ -137,7 +139,7 @@ EPOLLOUT
 
 这就是输出缓冲区存在的原因：非阻塞 socket 写不完是正常情况，不能阻塞 I/O 线程等待客户端慢慢收。
 
-本 Step 只保留 pending output bytes；高水位回压策略留到后续慢客户端保护 Step。
+Step 17 后的 review hardening 已补上第一版高水位保护：`sendEncodedInLoop()` 在 append 前检查 `output_buffer_.readableBytes() + encoded.size()`，超过 `kSessionOutputHighWaterMark` 也就是 4MB 时直接 `closeInLoop()`。这不是复杂限流，而是最基础的慢客户端保护，防止客户端长期不读导致服务端内存无限增长。
 
 ## 7. 关闭路径
 
@@ -168,7 +170,7 @@ defer Channel destruction
 - 心跳超时。
 - 输出缓冲区高水位关闭策略。
 
-这些内容分别属于后续 Step。
+其中输出缓冲区高水位关闭策略已在 Step 17 后 review hardening 中补齐；心跳、业务路由和更细的限流策略仍属于后续 Step。
 
 ## 9. 测试
 
@@ -181,6 +183,7 @@ defer Channel destruction
 - `SessionTest.PeerCloseInvokesCloseCallback`
 - `SessionTest.SendPacketFromOtherThreadDeliversEncodedPacket`
 - `SessionTest.LargePacketLeavesPendingOutputWhenPeerDoesNotRead`
+- `SessionTest.CloseWhenPendingOutputExceedsHighWaterMark`
 - `SessionTest.LastActiveTimeIsInitialized`
 
 测试重点：
@@ -191,6 +194,7 @@ defer Channel destruction
 - 对端关闭能触发 close callback。
 - 其他线程调用 `sendPacket()` 能投递回 owner loop 并成功写出。
 - 大包在 peer 不读取时会留下 pending output，证明 output buffer 能接住未写完数据。
+- pending output 超过 4MB 时会关闭连接，证明慢客户端不会无限堆积内存。
 - `last_active_time` 初始化为有效时间戳。
 
 运行：
@@ -211,6 +215,10 @@ ctest --test-dir build --output-on-failure
 
 > `Session` 用 `shared_ptr` / `weak_ptr` 管理。启动时调用 `Channel::tie()`，事件回调期间会锁住 owner，避免连接对象在回调中被释放。关闭时先从 epoll 删除 channel、关闭 fd、清空缓冲区，然后延迟释放 `Channel` 对象，避免在 `Channel::handleEvent()` 的栈帧里销毁当前 Channel。
 
+慢客户端保护可以这样补充：
+
+> 发送路径不会无限追加 output buffer。每次 append 前先检查当前待发送字节加本次编码包是否超过 4MB，高于上限就关闭连接。这是第一版高水位保护，简单直接，能防止慢客户端或异常网络把服务端内存耗尽。
+
 ## 11. 常见追问
 
 **为什么 `sendPacket()` 要支持跨线程？**  
@@ -225,5 +233,5 @@ ctest --test-dir build --output-on-failure
 **`FrameDecoder` 和 `Session` 的边界是什么？**  
 `FrameDecoder` 只负责“字节流到 Packet”的解析，不读 socket、不管理连接生命周期。`Session` 负责 socket I/O 和连接关闭，并把读到的字节交给 decoder。
 
-**为什么本 Step 不做心跳和高水位？**  
-Step 14 先把连接读写生命周期打通。心跳依赖 `timerfd` / 定时器管理，高水位依赖明确的慢客户端策略，后续单独实现更清晰。
+**为什么 Step 14 当时不做心跳和高水位？**
+Step 14 先把连接读写生命周期打通。心跳依赖 `timerfd` / 定时器管理，仍然留到后续 Step；高水位保护已在 Step 17 后 review hardening 中补齐为 4MB 超限关闭。

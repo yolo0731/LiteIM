@@ -396,6 +396,86 @@ TEST(AcceptorTest, CloseFromOtherThreadAfterLoopStopsDoesNotBlock) {
     EXPECT_TRUE(close_returned.load());
 }
 
+TEST(AcceptorTest, CloseFromOtherThreadWhileLoopExitsWithQueuedCloseDoesNotBlock) {
+    auto loop_holder = std::make_shared<std::shared_ptr<liteim::EventLoop>>();
+    auto acceptor_holder = std::make_shared<std::shared_ptr<liteim::Acceptor>>();
+    std::promise<void> resources_ready;
+    std::mutex mutex;
+    std::condition_variable ready;
+    bool task_running = false;
+    bool allow_quit = false;
+    std::atomic_bool close_started{false};
+    std::atomic_bool close_returned{false};
+
+    std::thread loop_thread([loop_holder,
+                             acceptor_holder,
+                             &resources_ready,
+                             &mutex,
+                             &ready,
+                             &task_running,
+                             &allow_quit]() {
+        auto loop = std::make_shared<liteim::EventLoop>();
+        auto acceptor = std::make_shared<liteim::Acceptor>(loop.get(), "127.0.0.1", 0);
+        *loop_holder = loop;
+        *acceptor_holder = acceptor;
+        resources_ready.set_value();
+
+        loop->queueInLoop([loop, &mutex, &ready, &task_running, &allow_quit]() {
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                task_running = true;
+            }
+            ready.notify_one();
+
+            std::unique_lock<std::mutex> lock(mutex);
+            ready.wait(lock, [&allow_quit]() { return allow_quit; });
+            loop->quit();
+        });
+
+        loop->loop();
+    });
+
+    ASSERT_EQ(resources_ready.get_future().wait_for(std::chrono::seconds(1)), std::future_status::ready);
+
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        ASSERT_TRUE(ready.wait_for(lock, std::chrono::seconds(1), [&task_running]() { return task_running; }));
+    }
+
+    std::thread close_thread([acceptor = *acceptor_holder, &close_started, &close_returned]() {
+        close_started = true;
+        acceptor->close();
+        close_returned = true;
+    });
+
+    const auto close_started_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (!close_started.load() && std::chrono::steady_clock::now() < close_started_deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    ASSERT_TRUE(close_started.load());
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        allow_quit = true;
+    }
+    ready.notify_one();
+
+    const auto close_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (!close_returned.load() && std::chrono::steady_clock::now() < close_deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    if (close_returned.load()) {
+        close_thread.join();
+    } else {
+        close_thread.detach();
+        FAIL() << "Acceptor::close() blocked after EventLoop exited with a queued close task";
+    }
+
+    loop_thread.join();
+}
+
 TEST(AcceptorTest, CloseFromOtherThreadBeforeLoopStartsStillRemovesChannel) {
     LoopThreadHandle handle;
     bool start_loop{false};

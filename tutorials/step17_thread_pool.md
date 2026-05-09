@@ -148,6 +148,19 @@ void stop() noexcept;
 
 这叫优雅退出。它不是“立刻丢弃队列”。
 
+内部用单一 `running_` 表示线程池是否运行：
+
+- `start()` 把 `running_` 置为 true。
+- `submit()` 只在 `running_ == true` 时接收任务。
+- `stop()` 把 `running_` 置为 false，并唤醒 worker。
+- `workerLoop()` 在 `running_ == false` 且队列为空时退出。
+
+如果 `stop()` 是由某个 worker 任务内部调用的，这个 worker 不能 join 自己。当前实现通过 worker-local 标记识别 self-stop，只设置 `running_ = false` 并唤醒其他 worker，然后直接返回；随后由 owner 线程再次调用 `stop()` 或通过析构完成 join 和清理。
+
+如果多个外部线程同时调用 `stop()`，join/cleanup 阶段会由 `stop_mutex_` 串行化，避免多个线程同时对同一个 `std::thread` 调用 `join()`。
+
+这个问题的完整排查流程记录在 [`docs/debug_cases/thread_pool_worker_stop.md`](../docs/debug_cases/thread_pool_worker_stop.md)，可用于复盘并发 bug 和准备面试中的 debug 经历。
+
 ### 状态查询
 
 ```cpp
@@ -166,11 +179,11 @@ bool started() const noexcept;
 
 ```text
 mutex
+stop_mutex
 condition_variable
 deque<Task>
 vector<thread>
-stopping flag
-started flag
+running flag
 ```
 
 ### `submit()` 为什么要加锁
@@ -182,7 +195,7 @@ started flag
 ```text
 submit(task)
   -> lock mutex
-  -> check started / stopping
+  -> check running
   -> push task into deque
   -> unlock
   -> notify_one worker
@@ -196,13 +209,13 @@ worker 线程循环执行：
 
 ```text
 workerLoop()
-  -> wait until stopping or queue not empty
-  -> if queue empty and stopping: exit
+  -> wait until not running or queue not empty
+  -> if queue empty and not running: exit
   -> pop one task
   -> run task
 ```
 
-这里的关键是 stop 后仍然会先把队列里的任务取完。只有队列为空并且 `stopping_ == true` 时，worker 才退出。
+这里的关键是 stop 后仍然会先把队列里的任务取完。只有队列为空并且 `running_ == false` 时，worker 才退出。
 
 ### 为什么任务异常不能杀死 worker
 
@@ -243,6 +256,8 @@ TEST(ThreadPoolTest, StartRejectsZeroWorkers)
 TEST(ThreadPoolTest, SubmitExecutesTask)
 TEST(ThreadPoolTest, MultipleWorkersRunConcurrently)
 TEST(ThreadPoolTest, StopRejectsNewTasks)
+TEST(ThreadPoolTest, StopCalledFromWorkerRequiresOwnerCleanupBeforeRestart)
+TEST(ThreadPoolTest, ConcurrentStopCallsAreSerialized)
 TEST(ThreadPoolTest, DestructorWaitsForQueuedTasks)
 TEST(ThreadPoolTest, PendingTaskCountTracksQueuedTasks)
 ```
@@ -254,6 +269,8 @@ TEST(ThreadPoolTest, PendingTaskCountTracksQueuedTasks)
 - `submit()` 的任务确实会执行。
 - 多 worker 能并发运行，而不是只有一个线程消费任务。
 - `stop()` 后不再接受新任务。
+- worker 内部调用 `stop()` 后，必须等 owner 线程完成清理后才能重启线程池。
+- 多个外部线程并发调用 `stop()` 时不会同时 join 同一个 worker。
 - 析构会等待已经入队的任务结束。
 - `pendingTaskCount()` 只统计等待中的任务。
 

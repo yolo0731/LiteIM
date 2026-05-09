@@ -1,5 +1,60 @@
 # LiteIM Progress
 
+## 2026-05-09 Network Review Hardening
+
+本次根据外部 review 核对 Step 17 后的网络/并发代码，只接受能在当前代码中证实、并且能用回归测试固定住的问题。
+
+已接受并修复：
+
+- `EventLoopThread::stop()` 自线程调用不再 detach，也不在 `stop()` 中清空 `loop_` / `running_`；状态清理统一放到 `threadFunc()` 末尾，owner 线程后续负责 join。
+- `EventLoopThread` 增加 `thread_id_` 和 `join_started_`，避免 self-stop / owner-stop 边界上并发访问同一个 `std::thread` join 状态。
+- `Session` 新增 `kSessionOutputHighWaterMark = 4MB`，append 输出缓冲前先检查高水位，超限直接关闭连接。
+- `Session` 增加逻辑 `id()`；`TcpServer` 使用自增 `std::uint64_t next_session_id_` 作为 `sessions_` key，不再用 fd 当 session id。
+- `TcpServer::sendToSession()` 接口改为 `std::uint64_t session_id`。
+- `Channel::handleEvent()` 处理 `EPOLLERR` 后不再立即返回；如果同一轮还有可读事件，会继续执行 read callback。
+- `Acceptor::close()` 保留跨线程 close 契约，但在 close task 已投递、loop 却先退出的竞态下不再永久等待，会检测 `isStopped()` 后走 fallback 清理。
+
+TDD RED 已确认：
+
+```bash
+cmake --build build
+```
+
+新增/修改测试后先失败于 `TcpServer::sendToSession` 接口静态断言，证明测试覆盖到了 fd-as-id 到逻辑 session id 的 API 变化。
+
+新增/更新测试：
+
+- `ChannelTest.ErrorWithReadableEventInvokesErrorThenRead`
+- `AcceptorTest.CloseFromOtherThreadWhileLoopExitsWithQueuedCloseDoesNotBlock`
+- `EventLoopThreadTest.OwnerStopWaitsAfterStopIsRequestedInsideLoop`
+- `SessionTest.CloseWhenPendingOutputExceedsHighWaterMark`
+- `TcpServerTest.SendToSessionFromOtherThreadDeliversPacket` 改为使用 `session->id()`
+- `ReactorInterfaceTest.TcpServerHeaderIsSelfContained` 改为校验 `sendToSession(std::uint64_t, Packet)`
+
+本次不采用/暂不改：
+
+- 不把 `Acceptor::close()` 改成 owner-loop-only 契约；当前项目保留跨线程 close，并修复 queued close 等不到执行的竞态。
+- 不把 `ThreadPool::stop()` 改成 swap-and-join；当前 `stop_mutex_` 已有并发 stop 回归测试，worker 内部 delete pool 仍属于不支持的对象生命周期错误，detach 不能真正修好。
+- 不把 `Session` 状态 bool、`EventLoop` flag、`FrameDecoder` buffer 结构等风格项混入本次 bugfix；这些需要单独测试和边界讨论。
+
+文档同步：
+
+- README、docs/architecture.md、docs/project_layout.md、docs/roadmap.md、Step 11/13/14/15/16 tutorials、task_plan、findings、progress 和 PROJECT_MEMORY 已同步本轮 hardening。
+- 新增 `docs/debug_cases/net_lifecycle_review_hardening.md` 记录复盘过程、修复点、不采纳项和面试回答。
+
+验证已通过：
+
+```bash
+cmake --build build
+ctest --test-dir build --output-on-failure
+./build/server/liteim_server
+git diff --check
+find . -path ./build -prune -o -path ./.git -prune -o -name .gitkeep -print
+find . -path ./build -prune -o -path ./.git -prune -o \( -path ./server/net -o -path ./server/protocol -o -name '*SQLite*' -o -name '*InMemory*' -o -name '*step15_sqlite*' \) -print
+```
+
+结果：build 通过；CTest 155/155 通过；server scaffold 正常输出 `LiteIM server scaffold is running on 0.0.0.0:9000`；`git diff --check` 无输出；`.gitkeep` 检查无输出；旧路线路径检查无输出。
+
 ## 2026-05-08 Step 17 Business ThreadPool
 
 本次进入 `Step 17: implement business ThreadPool`，目标是实现独立业务线程池，让后续 MySQL / Redis / 密码哈希 / 历史消息查询不阻塞 I/O loop。
@@ -25,9 +80,12 @@ cmake --build build
 - 新增 `src/concurrency/CMakeLists.txt`。
 - 新增 `src/concurrency/ThreadPool.cpp`。
 - `ThreadPool::start()` 创建固定数量 worker，拒绝 0 worker 和重复启动。
-- `ThreadPool::submit()` 把任务放入 `deque<Task>`，通过 `condition_variable` 唤醒 worker；未启动、停止中或空任务会返回 `InvalidArgument`。
+- `ThreadPool::submit()` 把任务放入 `deque<Task>`，通过 `condition_variable` 唤醒 worker；未运行或空任务会返回 `InvalidArgument`。
 - `ThreadPool::workerLoop()` 等待任务、取出任务并执行；任务抛异常时会被捕获，worker 继续处理后续任务。
 - `ThreadPool::stop()` 停止接收新任务，唤醒 worker，并等待已入队任务执行完成后退出。
+- `ThreadPool` 内部状态已收敛为单一 `running_`；`workerLoop()` 在 `!running_ || !tasks_.empty()` 时被唤醒，stop 后会先 drain 队列再退出。
+- `ThreadPool::stop()` 如果从 worker 任务内部调用，会通过 worker-local 标记识别 self-stop，只发出停止请求并返回，等待 owner 线程后续清理。
+- 外部多线程并发调用 `stop()` 时通过 `stop_mutex_` 串行化 join/cleanup，避免同时 join 同一个 `std::thread`。
 - `pendingTaskCount()` 返回仍在队列中等待执行的任务数量。
 - `src/CMakeLists.txt` 已接入 `concurrency` 模块；`tests/CMakeLists.txt` 已链接 `liteim_concurrency`。
 
@@ -40,6 +98,8 @@ cmake --build build
 - `ThreadPoolTest.SubmitExecutesTask`
 - `ThreadPoolTest.MultipleWorkersRunConcurrently`
 - `ThreadPoolTest.StopRejectsNewTasks`
+- `ThreadPoolTest.StopCalledFromWorkerRequiresOwnerCleanupBeforeRestart`
+- `ThreadPoolTest.ConcurrentStopCallsAreSerialized`
 - `ThreadPoolTest.DestructorWaitsForQueuedTasks`
 - `ThreadPoolTest.PendingTaskCountTracksQueuedTasks`
 
@@ -50,11 +110,12 @@ cmake --build build
 ctest --test-dir build --output-on-failure -R "ThreadPool|ConcurrencyInterfaceTest.ThreadPool"
 ```
 
-结果：7/7 Step 17 tests passed。该正则同时匹配了历史 `EventLoopThreadPool` 测试，CTest 输出中共运行 12 个测试，全部通过。
+结果：9/9 Step 17 tests passed。该正则同时匹配了历史 `EventLoopThreadPool` 测试，CTest 输出中共运行 13 个测试，全部通过。
 
 已完成文档同步：
 
 - README、docs/architecture.md、docs/project_layout.md、docs/roadmap.md、tutorials/README.md、Step 17 tutorial、task_plan、findings、progress 和 PROJECT_MEMORY 已同步 Step 17 结果。
+- 新增并更新 `docs/debug_cases/thread_pool_worker_stop.md`，记录 worker 内部调用 `ThreadPool::stop()`、并发外部 `stop()`、`running_` 状态收敛、RED 测试、修复设计、验证命令和面试回答。
 
 全量验证已通过：
 
@@ -67,7 +128,7 @@ find . -path ./build -prune -o -path ./.git -prune -o -name .gitkeep -print
 find . -path ./build -prune -o -path ./.git -prune -o \( -path ./server/net -o -path ./server/protocol -o -name '*SQLite*' -o -name '*InMemory*' -o -name '*step15_sqlite*' \) -print
 ```
 
-结果：build 通过；server scaffold 正常输出 `LiteIM server scaffold is running on 0.0.0.0:9000`；CTest 149/149 通过；`git diff --check` 无输出；`.gitkeep` 检查无输出；旧路线路径检查无输出。
+结果：build 通过；server scaffold 正常输出 `LiteIM server scaffold is running on 0.0.0.0:9000`；CTest 151/151 通过；`git diff --check` 无输出；`.gitkeep` 检查无输出；旧路线路径检查无输出。
 
 提交状态：
 

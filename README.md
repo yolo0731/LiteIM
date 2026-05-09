@@ -3,10 +3,11 @@
 LiteIM 是一个从 Step 0 重新开始推进的 C++17 高性能即时通讯系统。项目主线是 C++ 后端、Linux 网络编程和高性能服务器开发；Qt Widgets 客户端用于后期演示真实聊天效果，PersonaAgent 后续通过 Python BotClient 作为普通 Bot 用户接入 LiteIM，并在独立 AgentService 中实现 6 节点 LangGraph、Knowledge/Memory/Authorized Style RAG、Persona 和 Safety。
 
 仓库内路线摘要见：[`docs/roadmap.md`](docs/roadmap.md)。
+调试复盘案例见：[`docs/debug_cases/`](docs/debug_cases/)。
 
 ## 当前状态
 
-当前处于 `Step 17: implement business ThreadPool` 已完成状态。
+当前处于 `Step 17: implement business ThreadPool` 已完成状态，并已完成一次网络/并发 review hardening。
 
 Step 17 的目标是在 `liteim_concurrency` 中实现固定大小业务线程池：I/O 线程只负责 socket 读写和轻量协议编解码，MySQL / Redis / 密码哈希 / 历史消息查询这类可能阻塞的业务任务后续统一投递到 `ThreadPool`。第一版只提供 `submit()`、停止、析构等待和队列长度统计，不实现 `future`、优先级队列、动态扩缩容或 work stealing。
 
@@ -40,33 +41,39 @@ Step 16 前已完成一次代码清理：协议层新增 `ByteOrder.hpp` 统一 
 - 新增 `Acceptor.cpp`，实现 `socket`、`setsockopt`、`bind`、`listen`、listen channel 注册、`accept4(SOCK_NONBLOCK | SOCK_CLOEXEC)` 循环和关闭清理。
 - `Acceptor::NewConnectionCallback` 接收 `UniqueFd` 和 peer address；没有 callback 或 callback 抛异常时，accepted fd 由 `UniqueFd` 自动关闭。
 - `Acceptor::close()` 支持从非 loop 线程调用；实际 `removeChannel()` 和 fd 关闭会回到所属 loop 线程完成，避免 `Epoller` 保留旧 fd 到旧 `Channel*` 的映射。
-- `Acceptor` 使用 idle fd 处理 `EMFILE` / `ENFILE`，fd 用尽时拒绝一个 pending connection，避免 LT 模式 busy loop；loop 已停止后 close 走 fallback，不等待无法执行的 queued task。fd 用尽路径保留 `noexcept`，日志写入异常会被吞掉，避免异常状态下因日志 sink 失败触发 `std::terminate()`。
+- `Acceptor` 使用 idle fd 处理 `EMFILE` / `ENFILE`，fd 用尽时拒绝一个 pending connection，避免 LT 模式 busy loop；loop 已停止后 close 走 fallback，不等待无法执行的 queued task；如果跨线程 close 已经投递但 loop 在任务执行前退出，也会停止等待并走 fallback。fd 用尽路径保留 `noexcept`，日志写入异常会被吞掉，避免异常状态下因日志 sink 失败触发 `std::terminate()`。
 - 新增 `Session.hpp` / `Session.cpp`，实现单连接生命周期、非阻塞读写、Packet 解码、输出缓冲、跨线程 `sendPacket()` 和关闭回调。
 - `Session` 使用 `std::enable_shared_from_this`，启动时通过 `Channel::tie()` 把 owner 绑定到事件分发期间，避免回调执行时 owner 被释放。
 - `Session::handleRead()` 循环 `read()` 到 `EAGAIN` / `EWOULDBLOCK`，把读到的字节放进输入 `Buffer`，再交给 `FrameDecoder` 输出完整 `Packet`。
 - `Session::sendPacket()` 先调用 `encodePacket()`，跨线程调用时通过 `EventLoop::queueInLoop()` 回到所属 I/O loop，再追加到输出 `Buffer` 并启用写事件。
 - `Session::handleWrite()` 在 `EPOLLOUT` 到来时持续写输出缓冲区，写完后关闭写兴趣；大包或慢客户端写不完时剩余字节保留在 output buffer。
+- `Session` 拥有逻辑 `id()`；`TcpServer` 使用自增 session id 作为 `sessions_` key，不再把 fd 复用风险混入 session 标识。
+- `Session` 输出缓冲区新增 4MB 高水位保护，待发送字节超过上限时会在所属 I/O loop 中关闭连接，避免慢客户端把进程内存吃满。
 - `Session::close()` 在所属 loop 中移除 `Channel`、关闭 fd、清空缓冲区并触发 close callback；`Channel` 的释放被延后到当前事件回调返回之后，避免在 `Channel::handleEvent()` 栈帧内销毁正在执行的 `Channel`。
-- 新增 `EventLoopThread.hpp` / `EventLoopThread.cpp`，一个线程拥有一个 `EventLoop`，`startLoop()` 等待 loop 初始化完成后返回观察指针，`stop()` 通过 `quit()` 唤醒并退出 loop，然后 join 线程。
+- 新增 `EventLoopThread.hpp` / `EventLoopThread.cpp`，一个线程拥有一个 `EventLoop`，`startLoop()` 等待 loop 初始化完成后返回观察指针，`stop()` 通过 `quit()` 唤醒并退出 loop；状态清理统一在 worker `threadFunc()` 末尾完成，owner 线程负责 join，自线程 stop 不 detach。
 - 新增 `EventLoopThreadPool.hpp` / `EventLoopThreadPool.cpp`，支持启动指定数量的子 I/O loops，`getNextLoop()` round-robin 返回下一个 loop，线程数为 0 时返回 base loop 作为单 Reactor fallback。
 - 新增 `TcpServer.hpp` / `TcpServer.cpp`，把主 Reactor 的 `Acceptor`、子 Reactor 线程池和 `Session` 生命周期连接起来。
 - `TcpServer::start()` 必须在 base loop 线程调用，启动 I/O 线程池、创建 `Acceptor`，并记录真实监听端口。
 - 新连接由 `Acceptor` 以 `UniqueFd` 交给 `TcpServer`，`TcpServer` 选择一个 I/O loop 后在该 loop 中创建 `Session`。
 - `TcpServer` 用 mutex 保护 `sessions_` 表，连接关闭时通过 close callback 删除对应 session。
-- `TcpServer::sendToSession()` 可从其他线程调用，先查找 `Session`，再复用 `Session::sendPacket()` 投递回连接所属 I/O loop。
+- `TcpServer::sendToSession()` 可从其他线程调用，按逻辑 session id 查找 `Session`，再复用 `Session::sendPacket()` 投递回连接所属 I/O loop。
 - `TcpServer::sendToUser()` 先提供基础接口；当前还没有登录态和 user-session 绑定，所以返回 `NotFound`。
 - 未设置业务 callback 时，`TcpServer` 默认 echo 收到的 `Packet`；设置 `MessageCallback` 后由调用方决定如何处理消息。
 - 新增 `liteim_concurrency` 库 target。
 - 新增 `ThreadPool.hpp` / `ThreadPool.cpp`，实现固定 worker 数、`submit(Task)`、`mutex + condition_variable` 任务队列、`stop()` 优雅退出、析构等待已有任务完成和 `pendingTaskCount()` 队列长度查询。
 - `ThreadPool::start()` 拒绝 0 worker，避免业务任务被投递到永远不会消费的队列。
-- `ThreadPool::submit()` 拒绝空任务、未启动线程池和已经停止的线程池；任务执行路径会捕获异常，避免单个业务任务直接杀死 worker 线程。
+- `ThreadPool` 内部使用单一 `running_` 状态表达是否运行和是否接收新任务；`submit()` 拒绝空任务和未运行的线程池，任务执行路径会捕获异常，避免单个业务任务直接杀死 worker 线程。
 - `ThreadPool::stop()` 停止接收新任务，唤醒所有 worker，并等待已入队任务执行完再退出。
+- worker 任务内部调用 `ThreadPool::stop()` 时不会 detach 后继续等待；线程池会拒绝重启，直到 owner 线程后续完成 join 和清理。
+- 外部多线程并发调用 `ThreadPool::stop()` 时会串行化 join/cleanup，避免同时 join 同一个 `std::thread`。
+- `Channel::handleEvent()` 在 `EPOLLERR | EPOLLIN` 同时出现时会先执行 error callback，再继续执行 read callback，避免错误事件吞掉 socket 中仍可读的数据。
+- review hardening 复盘记录在 [`docs/debug_cases/net_lifecycle_review_hardening.md`](docs/debug_cases/net_lifecycle_review_hardening.md)，ThreadPool 并发 bug 复盘记录在 [`docs/debug_cases/thread_pool_worker_stop.md`](docs/debug_cases/thread_pool_worker_stop.md)。
 - `Epoller` 使用 LT 模式，不设置 `EPOLLET`。
 - `Epoller` 构造失败直接抛异常，不保留无效 epoll fd 的半初始化对象。
 - `epoll_wait()` 返回时通过 `epoll_event.data.ptr` 找回 `Channel*`，并写入 `Channel::setRevents()`。
-- `tests/` 新增 Logger、EventLoop、Channel、Acceptor hardening round 2/3 回归测试、Session 单连接 I/O 测试、EventLoopThreadPool 多 Reactor 基础测试、Step 16 前 ByteOrder / Epoller owner-loop / Acceptor UniqueFd callback 清理回归测试、Step 16 `TcpServer` 多 Reactor 回归测试，以及 Step 17 `ThreadPool` 业务线程池测试；当前 CTest 共 149 个测试。
+- `tests/` 新增 Logger、EventLoop、Channel、Acceptor hardening round 2/3 回归测试、Session 单连接 I/O 测试、EventLoopThreadPool 多 Reactor 基础测试、Step 16 前 ByteOrder / Epoller owner-loop / Acceptor UniqueFd callback 清理回归测试、Step 16 `TcpServer` 多 Reactor 回归测试、Step 17 `ThreadPool` 业务线程池测试，以及本轮 review hardening 回归测试；当前 CTest 共 155 个测试。
 
-本 Step 只实现业务线程池基础设施，不接入 MySQL、Redis、登录态、用户路由、MessageRouter 或慢客户端高水位策略。仍然不提前创建 `client_cli/`、`client_qt/`、`bench/`、`scripts/`、`docker/` 等后续目录。
+本 Step 只实现业务线程池基础设施，不接入 MySQL、Redis、登录态、用户路由或 MessageRouter。慢客户端输出缓冲 4MB 超限关闭已补齐，完整业务级限流/降级策略仍留给后续业务 Step。仍然不提前创建 `client_cli/`、`client_qt/`、`bench/`、`scripts/`、`docker/` 等后续目录。
 
 下一步是 `Step 18: implement TimerManager + timerfd heartbeat timeout`。
 
@@ -345,12 +352,13 @@ LiteIM/
     ├── step13_acceptor.md
     ├── step14_session.md
     ├── step15_event_loop_thread_pool.md
-    └── step16_tcp_server.md
+    ├── step16_tcp_server.md
+    └── step17_thread_pool.md
 ```
 
 后续目录按 Step 逐步创建。比如 CLI、Qt、benchmark、Docker 会在后续 Step 需要时创建。
 
-## Step 16 验证
+## 当前验证
 
 Step 16 有一个 server target、`liteim_base` / `liteim_protocol` / `liteim_net` library target 和一个 GoogleTest test target。运行：
 
@@ -367,7 +375,28 @@ ctest --test-dir build --output-on-failure
 [2026-05-06 ...] [info] LiteIM server scaffold is running on 0.0.0.0:9000
 ```
 
-CTest 应发现并通过 142 个测试。Step 16 新增测试：
+CTest 应发现并通过 155 个测试。Step 17 新增测试：
+
+- `ConcurrencyInterfaceTest.ThreadPoolHeaderIsSelfContained`
+- `ThreadPoolTest.StartRejectsZeroWorkers`
+- `ThreadPoolTest.SubmitExecutesTask`
+- `ThreadPoolTest.MultipleWorkersRunConcurrently`
+- `ThreadPoolTest.StopRejectsNewTasks`
+- `ThreadPoolTest.StopCalledFromWorkerRequiresOwnerCleanupBeforeRestart`
+- `ThreadPoolTest.ConcurrentStopCallsAreSerialized`
+- `ThreadPoolTest.DestructorWaitsForQueuedTasks`
+- `ThreadPoolTest.PendingTaskCountTracksQueuedTasks`
+
+Step 17 后 review hardening 新增/更新测试：
+
+- `EventLoopThreadTest.OwnerStopWaitsAfterStopIsRequestedInsideLoop`
+- `AcceptorTest.CloseFromOtherThreadWhileLoopExitsWithQueuedCloseDoesNotBlock`
+- `SessionTest.CloseWhenPendingOutputExceedsHighWaterMark`
+- `ChannelTest.ErrorWithReadableEventInvokesErrorThenRead`
+- `TcpServerTest.SendToSessionFromOtherThreadDeliversPacket`
+- `ReactorInterfaceTest.TcpServerHeaderIsSelfContained`
+
+已有 Step 16 测试包括：
 
 - `ReactorInterfaceTest.TcpServerHeaderIsSelfContained`
 - `TcpServerTest.EchoesPacketToClient`
@@ -382,6 +411,7 @@ CTest 应发现并通过 142 个测试。Step 16 新增测试：
 - `ReactorInterfaceTest.EventLoopThreadPoolHeaderIsSelfContained`
 - `EventLoopThreadTest.StartLoopCreatesLoopOnWorkerThread`
 - `EventLoopThreadTest.StopWithoutStartIsNoop`
+- `EventLoopThreadTest.OwnerStopWaitsAfterStopIsRequestedInsideLoop`
 - `EventLoopThreadTest.DestructorStopsRunningLoop`
 - `EventLoopThreadPoolTest.StartCreatesRequestedNumberOfLoops`
 - `EventLoopThreadPoolTest.GetNextLoopUsesRoundRobinOrder`
@@ -397,6 +427,7 @@ CTest 应发现并通过 142 个测试。Step 16 新增测试：
 - `SessionTest.PeerCloseInvokesCloseCallback`
 - `SessionTest.SendPacketFromOtherThreadDeliversEncodedPacket`
 - `SessionTest.LargePacketLeavesPendingOutputWhenPeerDoesNotRead`
+- `SessionTest.CloseWhenPendingOutputExceedsHighWaterMark`
 - `SessionTest.LastActiveTimeIsInitialized`
 
 已有 Step 13 和 review hardening 测试包括：
@@ -409,6 +440,7 @@ CTest 应发现并通过 142 个测试。Step 16 新增测试：
 - `AcceptorTest.CloseFromOtherThreadRemovesChannelBeforeClosingFd`
 - `AcceptorTest.AcceptedFdIsClosedWhenCallbackThrowsBeforeTakingOwnership`
 - `AcceptorTest.CloseFromOtherThreadAfterLoopStopsDoesNotBlock`
+- `AcceptorTest.CloseFromOtherThreadWhileLoopExitsWithQueuedCloseDoesNotBlock`
 - `AcceptorTest.CloseFromOtherThreadBeforeLoopStartsStillRemovesChannel`
 - `AcceptorTest.FdExhaustionRejectsPendingConnectionWithoutLaterCallback`
 - `UniqueFdTest.DestructorClosesOwnedFd`
@@ -441,6 +473,7 @@ CTest 应发现并通过 142 个测试。Step 16 新增测试：
 - `ChannelTest.ReadWriteEventInvokesCallbacksInStableOrder`
 - `ChannelTest.HangupWithoutReadableEventInvokesCloseOnly`
 - `ChannelTest.ErrorEventInvokesErrorCallback`
+- `ChannelTest.ErrorWithReadableEventInvokesErrorThenRead`
 - `ChannelTest.HandleEventToleratesMissingCallbacks`
 - `ChannelTest.TiedExpiredOwnerSkipsCallbacks`
 - `ChannelTest.TiedOwnerStaysAliveDuringCallback`

@@ -39,7 +39,7 @@ public:
     std::size_t sessionCount() const;
     bool started() const noexcept;
 
-    Status sendToSession(int session_id, const Packet& packet);
+    Status sendToSession(std::uint64_t session_id, const Packet& packet);
     Status sendToUser(std::uint64_t user_id, const Packet& packet);
 
 private:
@@ -47,7 +47,7 @@ private:
     void handleNewConnection(UniqueFd accepted_fd);
     void createSessionInLoop(EventLoop* io_loop, std::shared_ptr<UniqueFd> accepted_fd);
     void handleMessage(const Session::Ptr& session, const Packet& packet);
-    void removeSession(int session_id);
+    void removeSession(std::uint64_t session_id);
 
     EventLoop* base_loop_;
     std::string listen_ip_;
@@ -55,9 +55,10 @@ private:
     EventLoopThreadPool io_threads_;
     std::unique_ptr<Acceptor> acceptor_;
     mutable std::mutex mutex_;
-    std::unordered_map<int, Session::Ptr> sessions_;
+    std::unordered_map<std::uint64_t, Session::Ptr> sessions_;
     MessageCallback message_callback_;
     std::atomic<std::uint16_t> port_{0};
+    std::atomic<std::uint64_t> next_session_id_{1};
     std::atomic_bool started_{false};
 };
 

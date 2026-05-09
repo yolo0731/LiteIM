@@ -162,7 +162,7 @@ sockaddr_in      对端地址
 
 跨线程调用 `close()` 时，如果 `EventLoop` 仍在运行，`Acceptor` 会通过 `EventLoop::queueInLoop()` 把 `closeInLoop()` 投递给 loop 线程，并等待清理完成。这个设计保留 one-loop-per-thread 边界：`Epoller::removeChannel()` 仍然只在 owner loop 线程执行。
 
-如果 `EventLoop::loop()` 已经退出，`isStopped()` 会返回 true，此时再投递任务没有线程会执行，`Acceptor::close()` 会进入 fallback 路径，在调用线程释放 `Channel`、listen fd 和 idle fd。这个路径只用于 loop 已停止后的确定性清理。
+如果 `EventLoop::loop()` 已经退出，`isStopped()` 会返回 true，此时再投递任务没有线程会执行，`Acceptor::close()` 会进入 fallback 路径，在调用线程释放 `Channel`、listen fd 和 idle fd。Step 17 后的 review hardening 还补了一个竞态：如果 close task 已经投递，但 loop 在执行这个 task 前退出，`future.wait()` 不能无限等下去；现在 close 会周期性检查 `isStopped()`，发现 loop 已退出后走同样的 fallback。这个路径只用于 loop 已停止后的确定性清理。
 
 Step 13 hardening round 3 明确了一个容易混淆的状态：`EventLoop` 刚构造但还没进入 `loop()` 时，不算 stopped。这个时候跨线程调用 `Acceptor::close()` 仍然要通过 `queueInLoop()` 等 owner loop 线程执行 `removeChannel()`；否则调用线程直接释放 listen `Channel` 后，`Epoller` 内部的 `fd -> Channel*` 映射会残留，后续同一个 fd 号被复用时会触发 `fd already belongs to a different channel`。
 
@@ -193,6 +193,7 @@ Step 13 hardening round 3 明确了一个容易混淆的状态：`EventLoop` 刚
 - `AcceptorTest.CloseFromOtherThreadRemovesChannelBeforeClosingFd`
 - `AcceptorTest.AcceptedFdIsClosedWhenCallbackThrowsBeforeTakingOwnership`
 - `AcceptorTest.CloseFromOtherThreadAfterLoopStopsDoesNotBlock`
+- `AcceptorTest.CloseFromOtherThreadWhileLoopExitsWithQueuedCloseDoesNotBlock`
 - `AcceptorTest.CloseFromOtherThreadBeforeLoopStartsStillRemovesChannel`
 - `AcceptorTest.FdExhaustionRejectsPendingConnectionWithoutLaterCallback`
 - `UniqueFdTest.DestructorClosesOwnedFd`
@@ -219,4 +220,4 @@ ctest --test-dir build --output-on-failure
 
 review hardening 后还可以补充：
 
-> listen fd、accepted fd 和 idle fd 都用 RAII 思路兜底。`Acceptor::close()` 即使从其他线程发起，也会把真正的 epoll 删除和 fd 关闭投递回 owner loop；如果 loop 尚未启动但还会启动，close 会等待 owner loop 执行清理；只有 loop 已经显式退出后，才走 fallback 直接释放资源，避免永久等待。fd 用尽时用 idle fd 套路拒绝一个 pending connection，避免 LT 模式下 `EMFILE` 触发 busy loop，且该异常路径中的日志不会从 `noexcept` helper 里继续抛出。`Channel::tie()` 则为下一步 `Session` 的 `shared_ptr` / `weak_ptr` 生命周期模型预留了基础。
+> listen fd、accepted fd 和 idle fd 都用 RAII 思路兜底。`Acceptor::close()` 即使从其他线程发起，也会把真正的 epoll 删除和 fd 关闭投递回 owner loop；如果 loop 尚未启动但还会启动，close 会等待 owner loop 执行清理；如果 loop 已经显式退出，或 close task 排队后 loop 在执行前退出，才走 fallback 直接释放资源，避免永久等待。fd 用尽时用 idle fd 套路拒绝一个 pending connection，避免 LT 模式下 `EMFILE` 触发 busy loop，且该异常路径中的日志不会从 `noexcept` helper 里继续抛出。`Channel::tie()` 则为下一步 `Session` 的 `shared_ptr` / `weak_ptr` 生命周期模型预留了基础。

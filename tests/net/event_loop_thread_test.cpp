@@ -39,6 +39,45 @@ TEST(EventLoopThreadTest, StopWithoutStartIsNoop) {
     EXPECT_FALSE(thread.running());
 }
 
+TEST(EventLoopThreadTest, OwnerStopWaitsAfterStopIsRequestedInsideLoop) {
+    liteim::EventLoopThread thread;
+    auto* loop = thread.startLoop();
+    ASSERT_NE(loop, nullptr);
+
+    std::mutex mutex;
+    std::condition_variable ready;
+    bool self_stop_returned = false;
+    bool task_finished = false;
+
+    loop->queueInLoop([&]() {
+        thread.stop();
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            self_stop_returned = true;
+        }
+        ready.notify_one();
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            task_finished = true;
+        }
+        ready.notify_one();
+    });
+
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        ASSERT_TRUE(ready.wait_for(lock, std::chrono::seconds(2), [&]() { return self_stop_returned; }));
+    }
+
+    thread.stop();
+
+    std::lock_guard<std::mutex> lock(mutex);
+    EXPECT_TRUE(task_finished);
+    EXPECT_FALSE(thread.running());
+}
+
 TEST(EventLoopThreadTest, DestructorStopsRunningLoop) {
     std::atomic_bool ran{false};
 

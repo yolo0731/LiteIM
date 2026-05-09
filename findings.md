@@ -7,6 +7,35 @@
 - 当前路线是 `LiteIM High Performance + Qt Client + PersonaAgent Authorized Style RAG Edition`。
 - 如果 `README.md`、`task_plan.md`、`progress.md`、教程或源码与 `PROJECT_MEMORY.md` 冲突，统一改回 `PROJECT_MEMORY.md` 的路线。
 
+## 2026-05-09 Network Review Hardening Findings
+
+本次处理 Step 17 后的外部 review，不启动 Step 18，只修复当前网络/并发层中已能证实的问题。
+
+已经确认并采用的设计：
+
+- `EventLoopThread::stop()` 自线程调用只请求 `EventLoop::quit()` 并返回，不 detach 自己，不清空 `loop_` / `running_`；状态清理放到 `threadFunc()` 退出路径。
+- `EventLoopThread` 使用保存的 `thread_id_` 判断 self-stop，并用 `join_started_` 避免多个外部 stop 并发 join 同一个 `std::thread`。
+- `Session` 输出缓冲区设置 4MB 高水位；超过上限直接关闭连接，这是第一版慢客户端保护。
+- `TcpServer` 的 session 表 key 改为自增逻辑 id，fd 只用于 socket I/O，避免 fd 复用误删新 session。
+- `Session` 暴露 `id()`，`TcpServer::sendToSession()` 改为接收 `std::uint64_t session_id`。
+- `Channel::handleEvent()` 遇到 `EPOLLERR | EPOLLIN` 时先跑 error callback，再继续 read callback，避免吞掉 socket 缓冲中的剩余数据。
+- `Acceptor::close()` 保留跨线程 close，但在 close task 排队后 loop 先退出的竞态下会检测 `isStopped()` 并走 fallback，避免 `future.wait()` 永久阻塞。
+
+新增/更新测试：
+
+- `ChannelTest.ErrorWithReadableEventInvokesErrorThenRead`
+- `AcceptorTest.CloseFromOtherThreadWhileLoopExitsWithQueuedCloseDoesNotBlock`
+- `EventLoopThreadTest.OwnerStopWaitsAfterStopIsRequestedInsideLoop`
+- `SessionTest.CloseWhenPendingOutputExceedsHighWaterMark`
+- `TcpServerTest.SendToSessionFromOtherThreadDeliversPacket`
+- `ReactorInterfaceTest.TcpServerHeaderIsSelfContained`
+
+本次不采用/不改：
+
+- 不采纳 “`Acceptor::close()` 只能 owner loop 调用” 的直接重写建议；本次保留当前已经测试过的跨线程 close 契约，只修补 queued close 永久等待竞态。
+- 不采纳 `ThreadPool::stop()` swap-and-join 替换当前 `stop_mutex_` 的建议；当前实现已用测试覆盖并发外部 stop，worker 内部析构自身对象不是支持场景。
+- 不做大范围变量合并或 `FrameDecoder` 重构，避免把风格重构和真实 bugfix 混在一起。
+
 ## 2026-05-08 Step 17 Business ThreadPool Findings
 
 本次进入 `Step 17: implement business ThreadPool`，目标是在不接入 MySQL、Redis、登录态或 MessageRouter 的前提下，先补齐业务线程池基础设施。
@@ -18,8 +47,11 @@
 - `submit()` 接收 `std::function<void()>`，返回 `Status`，不返回 `future`，避免 I/O 线程同步等待业务结果。
 - `mutex + condition_variable + deque<Task>` 作为第一版任务队列。
 - `start()` 拒绝 0 worker 和重复启动。
-- `submit()` 拒绝空任务、未启动线程池和停止中的线程池。
+- `ThreadPool` 内部使用单一 `running_` 状态表达是否运行和是否接受新任务，`start()` 置 true，`stop()` 置 false。
+- `submit()` 拒绝空任务和未运行的线程池。
 - `stop()` 停止接收新任务，唤醒所有 worker，并等待已经入队的任务执行完再退出。
+- worker 内部调用 `stop()` 时不能 join 自己；当前实现通过 worker-local 标记识别 self-stop，只发出停止请求并返回，直到 owner 线程后续调用 `stop()` 或析构完成 join 和清理。
+- 外部多线程并发调用 `stop()` 时通过 `stop_mutex_` 串行化 join/cleanup，避免多个线程同时 join 同一个 `std::thread`。
 - `pendingTaskCount()` 只统计仍在队列中等待 worker 取走的任务，不统计正在执行的任务。
 - 单个任务异常会被 worker 捕获，避免一个业务任务杀死 worker 线程；业务错误后续应转换为 `Status` 或响应 Packet。
 
@@ -30,6 +62,8 @@
 - `ThreadPoolTest.SubmitExecutesTask`
 - `ThreadPoolTest.MultipleWorkersRunConcurrently`
 - `ThreadPoolTest.StopRejectsNewTasks`
+- `ThreadPoolTest.StopCalledFromWorkerRequiresOwnerCleanupBeforeRestart`
+- `ThreadPoolTest.ConcurrentStopCallsAreSerialized`
 - `ThreadPoolTest.DestructorWaitsForQueuedTasks`
 - `ThreadPoolTest.PendingTaskCountTracksQueuedTasks`
 
@@ -614,7 +648,7 @@ Step 11 只实现 `Channel` 事件分发和关注事件更新链路。
 - `enableReading()`、`disableReading()`、`enableWriting()`、`disableWriting()` 和 `disableAll()` 修改 `events_` 后会调用私有 `update()`。
 - `Channel::update()` 在 `owner_loop_ != nullptr` 时调用 `EventLoop::updateChannel(this)`；`owner_loop_ == nullptr` 时不做 epoll 更新，方便纯状态测试和直接 `Epoller` 测试。
 - `handleEvent()` 根据 `revents_` 分发回调：`EPOLLIN` / `EPOLLPRI` / `EPOLLRDHUP` 触发 read callback，`EPOLLOUT` 触发 write callback，`EPOLLHUP` 触发 close callback，`EPOLLERR` 触发 error callback。
-- `EPOLLHUP` 且没有 `EPOLLIN` 时优先 close 并返回；`EPOLLERR` 优先 error 并返回，避免错误状态继续触发普通读写回调。
+- `EPOLLHUP` 且没有 `EPOLLIN` 时优先 close 并返回；Step 17 后 review hardening 已调整为 `EPOLLERR` 优先 error 但不直接返回，如果同一轮还有可读事件会继续 read callback。
 - `handleEvent()` 只保存 `revents_` 快照，不复制 callback；Step 13 的 `Channel::tie()` 已经用 `weak_ptr` / `shared_ptr` 接管 owner 生命周期保护。未 `tie()` 的 `Channel` 只能用于 callback 不销毁自身、不重置自身 callback 的场景。
 - `EventLoop.cpp` 当前只实现构造 `Epoller`、`quit()`、`updateChannel()`、`removeChannel()`、`isInLoopThread()` 和 `assertInLoopThread()`；完整事件循环和 `eventfd` 任务队列留给 Step 12。
 

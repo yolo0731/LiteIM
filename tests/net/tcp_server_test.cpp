@@ -201,7 +201,7 @@ public:
         return server->sessionCount();
     }
 
-    liteim::Status sendToSession(int session_id, const liteim::Packet& packet) {
+    liteim::Status sendToSession(std::uint64_t session_id, const liteim::Packet& packet) {
         auto* server = serverPtr();
         if (server == nullptr) {
             return liteim::Status::error(liteim::ErrorCode::InvalidArgument, "server is stopped");
@@ -319,13 +319,13 @@ TEST(TcpServerTest, RemovesSessionAfterClientDisconnects) {
 TEST(TcpServerTest, SendToSessionFromOtherThreadDeliversPacket) {
     std::mutex mutex;
     std::condition_variable callback_ready;
-    int observed_session_id = liteim::kInvalidFd;
+    std::uint64_t observed_session_id = 0;
 
     RunningTcpServer server(1, [&](liteim::TcpServer& tcp_server, liteim::EventLoop&) {
         tcp_server.setMessageCallback([&](const liteim::Session::Ptr& session, const liteim::Packet&) {
             {
                 std::lock_guard<std::mutex> lock(mutex);
-                observed_session_id = session->fd();
+                observed_session_id = session->id();
             }
             callback_ready.notify_one();
         });
@@ -339,7 +339,7 @@ TEST(TcpServerTest, SendToSessionFromOtherThreadDeliversPacket) {
 
     {
         std::unique_lock<std::mutex> lock(mutex);
-        ASSERT_TRUE(callback_ready.wait_for(lock, 2s, [&]() { return observed_session_id >= 0; }));
+        ASSERT_TRUE(callback_ready.wait_for(lock, 2s, [&]() { return observed_session_id != 0; }));
     }
 
     const auto reply = makePacket("server push", 302);

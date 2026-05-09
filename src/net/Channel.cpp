@@ -110,7 +110,6 @@ void Channel::handleEvent() {
         if (error_callback_) {
             error_callback_();
         }
-        return;
     }
 
     if ((active_events & (EPOLLIN | EPOLLPRI | EPOLLRDHUP)) != 0) {

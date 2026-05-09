@@ -94,6 +94,106 @@ TEST(ThreadPoolTest, StopRejectsNewTasks) {
     EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
 }
 
+TEST(ThreadPoolTest, StopCalledFromWorkerRequiresOwnerCleanupBeforeRestart) {
+    liteim::ThreadPool pool(1);
+    const auto start_status = pool.start();
+    ASSERT_TRUE(start_status.isOk()) << start_status.message();
+
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool worker_stop_returned = false;
+
+    const auto submit_status = pool.submit([&]() {
+        pool.stop();
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            worker_stop_returned = true;
+        }
+        condition.notify_all();
+    });
+    ASSERT_TRUE(submit_status.isOk()) << submit_status.message();
+
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        ASSERT_TRUE(condition.wait_for(lock, 1s, [&]() { return worker_stop_returned; }));
+    }
+
+    const auto restart_status_before_cleanup = pool.start();
+    EXPECT_FALSE(restart_status_before_cleanup.isOk());
+    if (restart_status_before_cleanup.isOk()) {
+        pool.stop();
+    }
+
+    pool.stop();
+
+    const auto restart_status_after_cleanup = pool.start();
+    ASSERT_TRUE(restart_status_after_cleanup.isOk()) << restart_status_after_cleanup.message();
+    pool.stop();
+}
+
+TEST(ThreadPoolTest, ConcurrentStopCallsAreSerialized) {
+    liteim::ThreadPool pool(1);
+    const auto start_status = pool.start();
+    ASSERT_TRUE(start_status.isOk()) << start_status.message();
+
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool task_started = false;
+    bool release_task = false;
+    int stop_callers_ready = 0;
+    std::atomic<int> stop_callers_returned{0};
+
+    const auto submit_status = pool.submit([&]() {
+        std::unique_lock<std::mutex> lock(mutex);
+        task_started = true;
+        condition.notify_all();
+        condition.wait(lock, [&]() { return release_task; });
+    });
+    ASSERT_TRUE(submit_status.isOk()) << submit_status.message();
+
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        ASSERT_TRUE(condition.wait_for(lock, 1s, [&]() { return task_started; }));
+    }
+
+    auto stop_pool = [&]() {
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            ++stop_callers_ready;
+        }
+        condition.notify_all();
+        pool.stop();
+        stop_callers_returned.fetch_add(1);
+        condition.notify_all();
+    };
+
+    std::thread first_stop(stop_pool);
+    std::thread second_stop(stop_pool);
+
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        ASSERT_TRUE(condition.wait_for(lock, 1s, [&]() { return stop_callers_ready == 2; }));
+    }
+
+    std::this_thread::sleep_for(20ms);
+
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        release_task = true;
+    }
+    condition.notify_all();
+
+    first_stop.join();
+    second_stop.join();
+
+    EXPECT_EQ(stop_callers_returned.load(), 2);
+    EXPECT_FALSE(pool.started());
+
+    const auto restart_status = pool.start();
+    ASSERT_TRUE(restart_status.isOk()) << restart_status.message();
+    pool.stop();
+}
+
 TEST(ThreadPoolTest, DestructorWaitsForQueuedTasks) {
     std::atomic<int> completed{0};
 

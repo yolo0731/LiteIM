@@ -153,10 +153,10 @@ bool started() const noexcept;
 ### `sendToSession()`
 
 ```cpp
-Status sendToSession(int session_id, const Packet& packet);
+Status sendToSession(std::uint64_t session_id, const Packet& packet);
 ```
 
-按 session fd 查找连接并发送 Packet。
+按逻辑 session id 查找连接并发送 Packet。
 
 这个函数可以从其他线程调用，但它不会直接操作 socket。它找到 `Session` 后调用 `Session::sendPacket()`，后者会把真正的发送任务投递回 session 所属 I/O loop。
 
@@ -200,13 +200,16 @@ handleNewConnection(UniqueFd fd)
 主要动作：
 
 1. 从 `UniqueFd` 中 release fd。
-2. 创建 `std::shared_ptr<Session>`。
-3. 设置 message callback。
-4. 设置 close callback。
-5. 写入 `sessions_` 表。
-6. 调用 `session->start()` 注册读事件。
+2. 从 `next_session_id_` 取一个自增逻辑 id。
+3. 创建 `std::shared_ptr<Session>`。
+4. 设置 message callback。
+5. 设置 close callback。
+6. 写入 `sessions_` 表。
+7. 调用 `session->start()` 注册读事件。
 
 `Session` 创建和启动都在它所属的 I/O loop 中完成，这样 `Channel` 注册不会跨 loop。
+
+这里不要用 fd 当 session id。fd 关闭后内核会快速复用，如果旧连接的关闭删除任务晚于新连接注册，就可能用同一个 fd 把新 session 从表里删掉。Step 17 后的 review hardening 改为 `std::atomic<std::uint64_t> next_session_id_` 自增，fd 只用于 socket I/O，session id 只用于连接身份。
 
 ### `handleMessage()`
 
@@ -225,7 +228,7 @@ handleNewConnection(UniqueFd fd)
 
 ### `removeSession()`
 
-`Session` 关闭时会触发 close callback，`TcpServer` 根据 session fd 从 `sessions_` 表删除连接。
+`Session` 关闭时会触发 close callback，`TcpServer` 根据逻辑 session id 从 `sessions_` 表删除连接。
 
 `sessions_` 用 mutex 保护，因为：
 
@@ -275,6 +278,7 @@ TEST(TcpServerTest, SendToUnknownUserReturnsNotFound)
 - 多个客户端连接会被分配到不同 I/O loops，验证 round-robin 多 Reactor 分发。
 - 客户端断开后 `sessionCount()` 会减少，验证 close callback 和 `sessions_` 删除。
 - 测试线程调用 `sendToSession()` 后，数据仍能发到客户端，验证跨线程发送路径。
+- `sendToSession()` 使用 `Session::id()` 传回的逻辑 id，不再依赖 fd。
 - 当前 `sendToUser()` 没有登录态绑定，会返回 `NotFound`。
 
 TDD RED 阶段，新增测试先失败在：
@@ -315,7 +319,7 @@ Step 16 完成后，CTest 应通过 142 个测试，其中 6 个是新增的 Ste
 - `Acceptor` 不拥有连接生命周期，只交出 accepted fd。
 - `UniqueFd` 表达 accepted fd 所有权，避免裸 fd 泄漏。
 - `Session` 必须在所属 I/O loop 创建和启动。
-- `sessions_` 表需要 mutex，因为查询和删除可能来自不同线程。
+- `sessions_` 表需要 mutex，因为查询和删除可能来自不同线程；表 key 是逻辑 session id，不是 fd。
 - 跨线程发送必须回到 session 所属 I/O loop。
 - Step 16 只验证网络底座，不把 MySQL / Redis 阻塞调用放进 I/O 线程。
 
@@ -331,7 +335,11 @@ Step 16 完成后，CTest 应通过 142 个测试，其中 6 个是新增的 Ste
 
 **为什么 sendToSession() 可以跨线程调用？**
 
-因为它不直接写 fd。它只找到 `Session`，然后调用 `Session::sendPacket()`；`sendPacket()` 会通过 `queueInLoop()` 把发送任务投递回连接所属 loop。
+因为它不直接写 fd。它只根据逻辑 session id 找到 `Session`，然后调用 `Session::sendPacket()`；`sendPacket()` 会通过 `queueInLoop()` 把发送任务投递回连接所属 loop。
+
+**为什么不用 fd 当 session_id？**
+
+fd 是内核资源编号，关闭后可能马上复用。如果旧连接的 remove 回调排队较晚，而新连接刚好拿到同一个 fd，旧 remove 就可能误删新 session。逻辑 session id 单调递增，能把“socket fd”和“连接身份”分开。
 
 **为什么 sendToUser() 现在返回 NotFound？**
 

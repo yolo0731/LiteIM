@@ -101,6 +101,20 @@ TEST(ChannelTest, ErrorEventInvokesErrorCallback) {
     EXPECT_EQ(error_count, 1);
 }
 
+TEST(ChannelTest, ErrorWithReadableEventInvokesErrorThenRead) {
+    liteim::Channel channel(nullptr, 10);
+    std::vector<std::string> calls;
+    channel.setErrorCallback([&calls]() { calls.push_back("error"); });
+    channel.setReadCallback([&calls]() { calls.push_back("read"); });
+
+    channel.setRevents(EPOLLERR | EPOLLIN);
+    channel.handleEvent();
+
+    ASSERT_EQ(calls.size(), 2U);
+    EXPECT_EQ(calls[0], "error");
+    EXPECT_EQ(calls[1], "read");
+}
+
 TEST(ChannelTest, HandleEventToleratesMissingCallbacks) {
     liteim::Channel channel(nullptr, 10);
 

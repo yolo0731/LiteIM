@@ -132,7 +132,7 @@ if ((active_events & EPOLLHUP) != 0 && (active_events & EPOLLIN) == 0) {
 }
 ```
 
-如果发生 `EPOLLERR`，说明 fd 存在错误。当前实现调用 error callback 后返回，避免在错误状态下继续触发普通读写回调。
+如果发生 `EPOLLERR`，说明 fd 存在错误。Step 17 后的 review hardening 把这里改成：先调用 error callback，但不直接 `return`。如果本轮同时带着 `EPOLLIN` / `EPOLLPRI` / `EPOLLRDHUP`，后面的 read callback 仍会继续执行。原因是错误事件和可读事件可能同时出现，socket 缓冲里仍有数据需要由 `Session::handleRead()` 读完后再关闭。
 
 `EPOLLRDHUP` 归到 read callback，是因为它表示对端关闭了写方向。后续 `Session::handleRead()` 会读到 `0` 或读到剩余数据后判断连接关闭，这比在 `Channel` 里直接关闭更符合职责边界。
 
@@ -169,6 +169,7 @@ TEST(ChannelTest, WritableEventInvokesWriteCallback)
 TEST(ChannelTest, ReadWriteEventInvokesCallbacksInStableOrder)
 TEST(ChannelTest, HangupWithoutReadableEventInvokesCloseOnly)
 TEST(ChannelTest, ErrorEventInvokesErrorCallback)
+TEST(ChannelTest, ErrorWithReadableEventInvokesErrorThenRead)
 TEST(ChannelTest, HandleEventToleratesMissingCallbacks)
 TEST(ChannelTest, TiedExpiredOwnerSkipsCallbacks)
 TEST(ChannelTest, TiedOwnerStaysAliveDuringCallback)
@@ -182,7 +183,7 @@ TEST(ChannelTest, HandleEventDoesNotCopyStoredCallbacks)
 - `EPOLLOUT` 是否触发 write callback。
 - 同时有读写事件时，先读后写。
 - 只有 `EPOLLHUP` 时触发 close callback，不触发 read callback。
-- `EPOLLERR` 触发 error callback。
+- `EPOLLERR` 触发 error callback；如果同时有可读事件，会先 error 再 read，避免吞掉剩余数据。
 - 没有设置 callback 时，`handleEvent()` 不应该崩溃。
 - `tie()` 后 owner 已释放时跳过回调。
 - 回调执行期间局部 `shared_ptr` 会让 tied owner 保持存活。

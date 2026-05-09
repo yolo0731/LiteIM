@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 #include <exception>
 #include <mutex>
@@ -27,9 +28,11 @@ private:
     mutable std::mutex mutex_;
     std::condition_variable condition_;
     std::thread thread_;
+    std::thread::id thread_id_;
     EventLoop* loop_{nullptr};
     bool started_{false};
     bool running_{false};
+    std::atomic_bool join_started_{false};
     /*
     跨线程、跨作用域传递和重抛异常的句柄。本质是一个智能指针
     主要函数：std::current_exception() 在 catch 块中捕获当前异常，返回 exception_ptr

@@ -5,6 +5,7 @@
 #include "liteim/net/EventLoop.hpp"
 
 #include <arpa/inet.h>
+#include <chrono>
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
@@ -139,7 +140,12 @@ void Acceptor::close() noexcept {
                 closeInLoop();
                 done->set_value();
             });
-            future.wait();
+            while (future.wait_for(std::chrono::milliseconds(10)) != std::future_status::ready) {
+                if (loop_->isStopped()) {
+                    closeInLoop();
+                    return;
+                }
+            }
         } catch (...) {
         }
         return;

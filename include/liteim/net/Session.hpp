@@ -17,19 +17,22 @@ namespace liteim {
 
 class EventLoop;
 
+inline constexpr std::size_t kSessionOutputHighWaterMark = 4 * 1024 * 1024;
+
 class Session : public std::enable_shared_from_this<Session> {
 public:
     using Ptr = std::shared_ptr<Session>;
     using MessageCallback = std::function<void(const Ptr&, const Packet&)>;
     using CloseCallback = std::function<void(const Ptr&)>;
 
-    Session(EventLoop* loop, int fd);
+    Session(EventLoop* loop, int fd, std::uint64_t id = 0);
     ~Session() = default;
 
     Session(const Session&) = delete;
     Session& operator=(const Session&) = delete;
 
     int fd() const noexcept;
+    std::uint64_t id() const noexcept;
     EventLoop* ownerLoop() const noexcept;
     bool closed() const noexcept;
     std::size_t pendingOutputBytes() const noexcept;
@@ -53,6 +56,7 @@ private:
 
     EventLoop* loop_;
     UniqueFd fd_;
+    std::uint64_t id_{0};
     std::unique_ptr<Channel> channel_;
     FrameDecoder decoder_;
     Buffer input_buffer_;

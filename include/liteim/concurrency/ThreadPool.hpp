@@ -36,11 +36,11 @@ private:
 
     std::size_t worker_count_{0};
     mutable std::mutex mutex_;
+    std::mutex stop_mutex_;
     std::condition_variable condition_;
     std::deque<Task> tasks_;
     std::vector<std::thread> workers_;
-    bool stopping_{false};
-    std::atomic_bool started_{false};
+    std::atomic_bool running_{false};
 };
 
 } // namespace liteim
