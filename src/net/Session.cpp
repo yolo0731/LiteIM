@@ -166,7 +166,6 @@ void Session::handleRead() {
     while (fd_) {
         const auto n = ::read(fd_.fd(), buffer.data(), buffer.size());
         if (n > 0) {
-            updateLastActiveTime();
             const auto append_status = input_buffer_.append(buffer.data(), static_cast<std::size_t>(n));
             if (!append_status.isOk()) {
                 closeInLoop();
@@ -279,6 +278,7 @@ bool Session::feedInputBuffer() {
         if (closed_.load()) {
             return false;
         }
+        updateLastActiveTime();
         if (message_callback_) {
             message_callback_(shared_from_this(), packet);
         }

@@ -5,6 +5,7 @@
 #include "liteim/net/Session.hpp"
 #include "liteim/protocol/Packet.hpp"
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -21,6 +22,8 @@ TEST(ReactorInterfaceTest, TcpServerHeaderIsSelfContained) {
     using MessageCallback = std::function<void(const liteim::Session::Ptr&, const liteim::Packet&)>;
     static_assert(std::is_same_v<TcpServer::MessageCallback, MessageCallback>);
     static_assert(std::is_same_v<decltype(&TcpServer::setMessageCallback), void (TcpServer::*)(MessageCallback)>);
+    static_assert(std::is_same_v<decltype(&TcpServer::setHeartbeatOptions),
+                                 void (TcpServer::*)(std::chrono::milliseconds, std::chrono::milliseconds)>);
     static_assert(std::is_same_v<decltype(&TcpServer::start), void (TcpServer::*)()>);
     static_assert(std::is_same_v<decltype(&TcpServer::stop), void (TcpServer::*)() noexcept>);
     static_assert(std::is_same_v<decltype(&TcpServer::port), std::uint16_t (TcpServer::*)() const noexcept>);

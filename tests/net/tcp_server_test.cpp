@@ -358,3 +358,38 @@ TEST(TcpServerTest, SendToUnknownUserReturnsNotFound) {
     EXPECT_FALSE(status.isOk());
     EXPECT_EQ(status.code(), liteim::ErrorCode::NotFound);
 }
+
+TEST(TcpServerTest, IdleSessionIsClosedByHeartbeatTimeout) {
+    RunningTcpServer server(1, [](liteim::TcpServer& tcp_server, liteim::EventLoop&) {
+        tcp_server.setHeartbeatOptions(20ms, 60ms);
+    });
+    auto client = connectTo(server.port());
+    ASSERT_GE(client.fd(), 0);
+
+    ASSERT_TRUE(waitUntil([&]() { return server.sessionCount() == 1; }, 2s));
+
+    EXPECT_TRUE(waitUntil([&]() { return server.sessionCount() == 0; }, 2s));
+}
+
+TEST(TcpServerTest, ActiveSessionSurvivesHeartbeatTimeout) {
+    RunningTcpServer server(1, [](liteim::TcpServer& tcp_server, liteim::EventLoop&) {
+        tcp_server.setHeartbeatOptions(20ms, 90ms);
+    });
+    auto client = connectTo(server.port());
+    ASSERT_GE(client.fd(), 0);
+
+    ASSERT_TRUE(waitUntil([&]() { return server.sessionCount() == 1; }, 2s));
+
+    for (std::uint64_t seq_id = 501; seq_id < 506; ++seq_id) {
+        const auto packet = makePacket("keep-active", seq_id);
+        const auto expected = encodeOrDie(packet);
+        writeAll(client.fd(), expected);
+        EXPECT_EQ(readExactWithTimeout(client.fd(), expected.size(), 1s), expected);
+        std::this_thread::sleep_for(35ms);
+    }
+
+    EXPECT_EQ(server.sessionCount(), 1U);
+
+    client.reset();
+    EXPECT_TRUE(waitUntil([&]() { return server.sessionCount() == 0; }, 2s));
+}

@@ -12,6 +12,7 @@ LiteIM 的目标是实现一个 C++17 高性能即时通讯服务端：
 - one-loop-per-thread Reactor。
 - 主从 Reactor `TcpServer`。
 - business `ThreadPool` 隔离 MySQL / Redis 阻塞调用。
+- timerfd 心跳超时和 idle session 清理。
 - 自定义 TLV 二进制协议。
 - TCP 半包 / 粘包处理。
 - `shared_ptr` / `weak_ptr` 管理连接生命周期。
@@ -24,12 +25,13 @@ LiteIM 的目标是实现一个 C++17 高性能即时通讯服务端：
 
 ## Current State
 
-当前仓库处于 Step 17 完成状态，并已完成一次网络/并发 review hardening：
+当前仓库处于 Step 18 完成状态：
 
 - `liteim_base` 已提供 `Config`、`Logger`、`ErrorCode`、`Status` 和 `Timestamp`。
 - `liteim_protocol` 已提供 `MessageType`、`TlvType`、`ByteOrder`、`Packet`、`TlvCodec` 和 `FrameDecoder`。
 - `liteim_net` 已提供 `Buffer`、`SocketUtil`、`UniqueFd`、`Channel`、`Epoller`、`EventLoop`、`Acceptor`、`Session`、`EventLoopThread`、`EventLoopThreadPool` 和 `TcpServer`。
 - `liteim_concurrency` 已提供固定大小业务 `ThreadPool`，支持 `start()`、`submit()`、`stop()`、析构等待和队列长度统计。
+- `liteim/timer` 已提供 `TimerHeap` 和 `TimerManager`，用 `timerfd` 接入 base `EventLoop`，驱动服务端 idle session 清理。
 - `Acceptor` 可以创建非阻塞 listen socket，注册到 `EventLoop`，并用 `accept4(SOCK_NONBLOCK | SOCK_CLOEXEC)` 循环接收新连接。
 - `Acceptor::NewConnectionCallback` 通过 `UniqueFd` 移动交出 accepted fd 所有权，避免裸 `int` fd 所有权不清。
 - `Acceptor::close()` 的清理会回到所属 loop 线程执行，避免 `Epoller` 保留 stale `Channel*`；如果 close task 排队后 loop 先退出，会走 stopped fallback 避免永久等待。
@@ -41,6 +43,7 @@ LiteIM 的目标是实现一个 C++17 高性能即时通讯服务端：
 - `TcpServer::sendToSession()` 已提供跨线程发送基础，按逻辑 session id 查找连接，实际写 socket 仍回到 session 所属 I/O loop。
 - `TcpServer::sendToUser()` 当前只是基础接口；登录态和 user-session 绑定留给后续业务 Step。
 - `ThreadPool` 当前只执行普通 `std::function<void()>` 业务任务，不提供 `future`、优先级队列、动态扩缩容或 work stealing。
+- `TcpServer` 默认每 5 秒检查一次连接，90 秒没有收到完整 `Packet` 的 `Session` 会被关闭。登录心跳包、Redis 在线状态和 `HeartbeatService` 仍是后续业务 Step。
 
 当前还没有 MySQL、Redis、登录态、用户路由、CLI、Qt、benchmark 或 CI。
 

@@ -1,5 +1,81 @@
 # LiteIM Progress
 
+## 2026-05-09 Step 18 TimerManager
+
+本次进入 `Step 18: implement TimerManager + timerfd heartbeat timeout`。
+
+概念边界：
+
+- `TimerHeap` 只负责 timer id、过期时间、小根堆、回调保存、取消标记和 lazy deletion。
+- `TimerManager` 只负责把 Linux `timerfd` 接入 `EventLoop`，读取 tick 计数并触发已过期 timer。
+- `TcpServer` 本轮只接入服务端 idle session cleanup：每 5 秒检查一次，90 秒未活跃连接关闭。
+- `Session` 收到完整 `Packet` 后刷新活跃时间；后续真正的心跳协议、登录态续期、Redis 在线状态和 `HeartbeatService` 留到后续 Step。
+
+准备新增 RED 测试：
+
+- `tests/timer/timer_heap_header_test.cpp`
+- `tests/timer/timer_heap_test.cpp`
+- `tests/timer/timer_manager_header_test.cpp`
+- `tests/timer/timer_manager_test.cpp`
+- `tests/net/tcp_server_test.cpp` 增加 idle close / active survive 回归测试。
+
+TDD RED 已确认：
+
+```bash
+cmake --build build
+```
+
+新增测试后先失败于 `TcpServer::setHeartbeatOptions` 接口不存在，证明测试覆盖到了 Step 18 的 TcpServer 心跳超时配置入口。
+
+已完成代码：
+
+- 新增 `include/liteim/timer/TimerHeap.hpp` 和 `src/timer/TimerHeap.cpp`。
+- 新增 `include/liteim/timer/TimerManager.hpp` 和 `src/timer/TimerManager.cpp`。
+- 新增 `src/timer/CMakeLists.txt`，把 timer 源码编进 `liteim_net`，避免 `TimerManager` 依赖 `EventLoop` 时形成库循环依赖。
+- `TimerHeap` 支持 one-shot timer、取消、过期回调、小根堆顺序和 lazy deletion。
+- `TimerManager` 使用 `timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC)`，并通过 `Channel` 注册到 owner `EventLoop`。
+- `TcpServer` 增加 `setHeartbeatOptions()`，默认 5 秒检查一次、90 秒未活跃关闭。
+- `TcpServer` 在 base loop 上创建 `TimerManager`，每轮扫描 session 快照，过期连接通过 `Session::close()` 回到所属 I/O loop。
+- `Session` 调整为收到完整 `Packet` 后刷新 `last_active_time`。
+
+定向验证已通过：
+
+```bash
+cmake --build build
+ctest --test-dir build --output-on-failure -R "Timer|TcpServerTest\\.(IdleSessionIsClosedByHeartbeatTimeout|ActiveSessionSurvivesHeartbeatTimeout)|ReactorInterfaceTest.TcpServerHeaderIsSelfContained"
+```
+
+结果：10/10 Step 18 相关测试通过。
+
+全量测试已通过：
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
+结果：164/164 tests passed。
+
+文档同步：
+
+- README、docs/architecture.md、docs/project_layout.md、docs/roadmap.md、tutorials/README.md、Step 18 tutorial、task_plan、findings、progress 和 PROJECT_MEMORY 已同步 Step 18 结果。
+
+最终验证已通过：
+
+```bash
+cmake -S . -B build && cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+git diff --check
+find . -path ./build -prune -o -path ./.git -prune -o -name .gitkeep -print
+find . -path ./build -prune -o -path ./.git -prune -o \( -path ./server/net -o -path ./server/protocol -o -name '*SQLite*' -o -name '*InMemory*' -o -name '*step15_sqlite*' \) -print
+```
+
+结果：configure/build 通过；server scaffold 正常输出 `LiteIM server scaffold is running on 0.0.0.0:9000`；CTest 164/164 通过；`git diff --check` 无输出；`.gitkeep` 检查无输出；旧路线路径检查无输出。
+
+提交状态：
+
+- 将按 `PROJECT_MEMORY.md` 使用提交信息 `feat(timer): integrate timerfd heartbeat timeout` 完成 Step 18 commit。
+
 ## 2026-05-09 Network Review Hardening
 
 本次根据外部 review 核对 Step 17 后的网络/并发代码，只接受能在当前代码中证实、并且能用回归测试固定住的问题。

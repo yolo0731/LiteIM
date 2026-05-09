@@ -25,6 +25,10 @@ add_executable(liteim_tests
     net/tcp_server_test.cpp
     concurrency/thread_pool_header_test.cpp
     concurrency/thread_pool_test.cpp
+    timer/timer_heap_header_test.cpp
+    timer/timer_heap_test.cpp
+    timer/timer_manager_header_test.cpp
+    timer/timer_manager_test.cpp
     protocol/frame_decoder_test.cpp
     protocol/byte_order_test.cpp
     protocol/message_type_test.cpp

@@ -151,6 +151,12 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 17 review hardening code | done | Moved EventLoopThread state cleanup to threadFunc exit, fixed Acceptor close wait fallback, added Session id/high-water mark, changed TcpServer sessions_ to logical uint64 ids, and let Channel continue read dispatch after EPOLLERR. |
 | Step 17 review hardening docs | done | Synced README, architecture, roadmap, project layout, Step 11/13/14/15/16 tutorials, findings, progress, PROJECT_MEMORY, and added net lifecycle debug case notes. |
 | Step 17 review hardening verification | done | Build, full CTest 155/155, server smoke, diff check, `.gitkeep` check, stale-route path check, and final diff review passed. |
+| Step 18 concept | done | Step 18 adds a timer module and wires timerfd-driven heartbeat timeout into TcpServer without adding HeartbeatService, login state, MySQL, or Redis. |
+| Step 18 tests | done | Added RED tests for TimerHeap, TimerManager timerfd firing, idle session close, active session survival, and lazy deletion safety. |
+| Step 18 code | done | Added `TimerHeap` / `TimerManager`, connected a base-loop timer to `TcpServer`, and kept all Session closes on the owning I/O loop. |
+| Step 18 docs | done | Synced README, docs, tutorials, findings, progress, task plan, and PROJECT_MEMORY for the timerfd heartbeat boundary. |
+| Step 18 verification | done | Build, server smoke, targeted timer/TcpServer tests, full CTest 164/164, diff check, `.gitkeep`, stale-route checks, and final diff review passed. |
+| Step 18 commit | done | Commit message: `feat(timer): integrate timerfd heartbeat timeout`. |
 
 ## Current Decision
 
@@ -857,7 +863,57 @@ Pre-Step 16 cleanup verification baseline:
 - Acceptor callback tests now assert the `UniqueFd` ownership signature.
 - Full CTest count is now 136 tests.
 
-Next Step: `Step 16: implement TcpServer multi-Reactor version`.
+## Step 18 Target
+
+Step 18 adds timer infrastructure and server-side idle connection cleanup:
+
+```text
+LiteIM/
+├── include/liteim/timer/
+│   ├── TimerHeap.hpp
+│   └── TimerManager.hpp
+├── src/timer/
+│   ├── CMakeLists.txt
+│   ├── TimerHeap.cpp
+│   └── TimerManager.cpp
+└── tests/timer/
+    ├── timer_heap_header_test.cpp
+    ├── timer_heap_test.cpp
+    ├── timer_manager_header_test.cpp
+    └── timer_manager_test.cpp
+```
+
+Step 18 intentionally implements only:
+
+- `TimerHeap`: one-shot timer ids, min-heap by expiration time, callback storage, cancellation, and lazy deletion of cancelled or stale heap entries.
+- `TimerManager`: `timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC)`, owner-loop `Channel`, periodic tick interval, expired callback dispatch, and `stop()` cleanup.
+- `TcpServer` idle heartbeat timeout: base `EventLoop` owns the timer; every tick checks a session snapshot; sessions idle for 90 seconds are closed through their owning loop.
+- `Session` activity refresh on decoded incoming packets.
+
+Step 18 does not implement login heartbeat packets, `HeartbeatService`, user online state, MySQL, Redis, signalfd shutdown, business routing, or client-side reconnect.
+
+Step 18 verification:
+
+```bash
+cmake -S . -B build
+cmake --build build
+./build/server/liteim_server
+ctest --test-dir build --output-on-failure
+```
+
+Expected new tests:
+
+- `TEST(TimerInterfaceTest, TimerHeapHeaderIsSelfContained)`
+- `TEST(TimerInterfaceTest, TimerManagerHeaderIsSelfContained)`
+- `TEST(TimerHeapTest, PopExpiredRunsCallbacksInDeadlineOrder)`
+- `TEST(TimerHeapTest, CancelUsesLazyDeletionWithoutRemovingNewTimer)`
+- `TEST(TimerHeapTest, PopExpiredIgnoresFutureTimers)`
+- `TEST(TimerManagerTest, TimerFdTickRunsExpiredTimer)`
+- `TEST(TimerManagerTest, CancelledTimerDoesNotRun)`
+- `TEST(TcpServerTest, IdleSessionIsClosedByHeartbeatTimeout)`
+- `TEST(TcpServerTest, ActiveSessionSurvivesHeartbeatTimeout)`
+
+Next Step after completion: `Step 19: implement signalfd graceful shutdown`.
 
 ## Persistent Requirements
 

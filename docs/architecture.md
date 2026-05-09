@@ -1,6 +1,6 @@
 # LiteIM Architecture
 
-本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 17 完成状态，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / ByteOrder / Packet / TLV / TCP 字节流解包器，`liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil`、RAII fd 包装 `UniqueFd`、`Epoller` 系统调用封装、`Channel` 事件分发 / `tie()` 生命周期保护、`EventLoop` 事件循环 / `eventfd` 任务投递、非阻塞监听器 `Acceptor`、单连接 owner `Session`、多 Reactor 子线程基础 `EventLoopThreadPool` 和多 Reactor echo `TcpServer`，以及 `liteim_concurrency` 的业务 `ThreadPool`。Step 17 后的 review hardening 已补齐 `EventLoopThread` 自线程 stop、`Session` 输出缓冲高水位、`TcpServer` 逻辑 session id 和 `Channel` error+read 分发回归。
+本文档记录 LiteIM 最终目标架构。当前仓库处于 Step 18 完成状态，已经有最小 `liteim_server`、`liteim_tests`、`liteim_base`、`liteim_protocol` 协议类型 / ByteOrder / Packet / TLV / TCP 字节流解包器，`liteim_net` 的网络缓冲区 `Buffer`、Linux socket 工具函数 `SocketUtil`、RAII fd 包装 `UniqueFd`、`Epoller` 系统调用封装、`Channel` 事件分发 / `tie()` 生命周期保护、`EventLoop` 事件循环 / `eventfd` 任务投递、非阻塞监听器 `Acceptor`、单连接 owner `Session`、多 Reactor 子线程基础 `EventLoopThreadPool` 和多 Reactor echo `TcpServer`，`liteim_concurrency` 的业务 `ThreadPool`，以及 `liteim/timer` 的 `TimerHeap` / `TimerManager`。Step 18 已通过 base-loop `timerfd` 实现服务端 idle session timeout。
 
 ## Target Data Flow
 
@@ -72,7 +72,7 @@ liteim_base
 - `Config` 只负责读取和保存配置，不创建 socket，不连接 MySQL / Redis。
 - `Logger` 只负责统一日志入口，不负责业务状态或错误恢复。
 - `ErrorCode` 和 `Status` 只表达函数调用结果，不承载业务实体。
-- `Timestamp` 只负责时间表达，不做定时器调度；`timerfd` 和心跳超时会在后续 Step 实现。
+- `Timestamp` 只负责 wall-clock 时间表达，不做定时器调度；`timerfd` 调度由 `TimerManager` 负责。
 
 这些基础能力会被协议层、网络层、存储层、缓存层、业务层和测试复用，但它们本身不依赖任何上层模块。
 
@@ -138,7 +138,7 @@ liteim_protocol
 
 ## Current Network Layer
 
-当前 Step 16 已经实现 `Epoller` 系统调用层、`Channel` 回调分发、`EventLoop` 阻塞循环、`eventfd` 任务投递、`Acceptor` 非阻塞监听、`Session` 单连接读写、`EventLoopThreadPool` 子 Reactor 线程池以及多 Reactor `TcpServer`：
+当前 Step 18 已经实现 `Epoller` 系统调用层、`Channel` 回调分发、`EventLoop` 阻塞循环、`eventfd` 任务投递、`Acceptor` 非阻塞监听、`Session` 单连接读写、`EventLoopThreadPool` 子 Reactor 线程池、多 Reactor `TcpServer` 和 base-loop timerfd idle timeout：
 
 ```text
 liteim_net
@@ -192,6 +192,7 @@ liteim_net
        -> threadCount()
   -> TcpServer
        -> setMessageCallback()
+       -> setHeartbeatOptions()
        -> start()
        -> stop()
        -> port()
@@ -272,11 +273,12 @@ liteim_net
 - `Session::id()` 是 `TcpServer` 分配的逻辑连接 id；fd 只用于 socket I/O，不再承担 session 表 key。
 - `Session::start()` 必须在 `shared_ptr` 管理下调用；它通过 `Channel::tie()` 把 owner 生命周期绑定到事件分发期间。
 - `Session::handleRead()` 在 I/O loop 中循环 `read()` 到 `EAGAIN` / `EWOULDBLOCK`，把读到的字节放进输入 `Buffer`，再交给 `FrameDecoder` 产出完整 `Packet`。
+- `Session` 只在产出完整 `Packet` 后刷新 `lastActiveTimeMilliseconds()`，让服务端 idle timeout 基于协议层活跃而不是任意半包字节。
 - `Session::sendPacket()` 先编码 Packet；如果从其他线程调用，会通过 `EventLoop::queueInLoop()` 回到所属 I/O loop，再写入输出 `Buffer` 并启用写事件。
 - `Session::sendPacket()` 写入 output buffer 前会检查 `kSessionOutputHighWaterMark`。待发送数据超过 4MB 时直接关闭连接，避免慢客户端或网络抖动无限堆积内存。
 - `Session::handleWrite()` 在 `EPOLLOUT` 到来时尽量写出 output buffer，写完后关闭写兴趣；没有写完的数据留在 output buffer，后续继续由写事件驱动。
 - `Session::close()` 在所属 loop 中移除 `Channel`、关闭 fd、清空缓冲并触发 close callback；`Channel` 的释放被延迟到当前 `handleEvent()` 栈帧之后，避免在回调中销毁正在执行的 `Channel`。
-- `Session` 维护 `lastActiveTimeMilliseconds()`，后续 heartbeat / timeout Step 会基于它判断连接活跃度。
+- `Session` 维护 `lastActiveTimeMilliseconds()`，当前 `TcpServer` heartbeat timeout 已基于它判断连接活跃度。
 - 输出缓冲区当前采用第一版慢客户端保护：超过 4MB 直接关闭连接。后续业务 Step 可以在此基础上增加日志、统计、用户级降级或更细的限流策略。
 - `EventLoopThread` 在线程函数内部构造 `EventLoop`，保证 loop 的 `thread_id_` 绑定到真正的 I/O 线程。
 - `EventLoopThread::stop()` 只请求 loop 退出并由 owner 线程 join；`loop_` / `running_` 的清理集中在 `threadFunc()` 末尾，避免自线程 stop 后 detach 导致对象生命周期失控。
@@ -288,8 +290,40 @@ liteim_net
 - `TcpServer::sendToSession()` 可以从其他线程调用；它按逻辑 session id 在线程安全表里找到 `Session`，真正的发送仍由 `Session::sendPacket()` 回到连接所属 I/O loop。
 - `TcpServer::sendToUser()` 当前只提供基础接口并返回 `NotFound`，因为登录态和 user-session 绑定要等后续业务 Step。
 - 未设置 `MessageCallback` 时，`TcpServer` 默认 echo 收到的 `Packet`；设置 callback 后由上层业务决定如何响应。
-- 当前 `TcpServer` 不执行 MySQL / Redis、不做登录态、不做 MessageRouter；业务线程池接入、业务服务和更完整 backpressure 策略留给后续 Step。
+- `TcpServer` 当前在 base loop 上持有一个 `TimerManager`，默认每 5 秒扫描 session 快照，90 秒未收到完整 `Packet` 的连接会调用 `Session::close()`。真正关闭仍回到连接所属 I/O loop。
+- 当前 `TcpServer` 不执行 MySQL / Redis、不做登录态、不做 MessageRouter；业务服务、登录心跳包、Redis 在线状态和更完整 backpressure 策略留给后续 Step。
 - `retrieve()` 越界返回 `InvalidArgument`，避免网络异常输入触发进程级崩溃。
+
+## Current Timer Layer
+
+当前 Step 18 已经实现 timerfd 调度基础设施：
+
+```text
+liteim/timer
+  -> TimerHeap
+       -> add(expiration_ms, callback)
+       -> cancel(timer_id)
+       -> popExpired(now_ms)
+       -> nextExpirationMilliseconds()
+       -> activeTimerCount()
+  -> TimerManager
+       -> start()
+       -> stop()
+       -> runAfter(delay, callback)
+       -> cancel(timer_id)
+       -> started()
+       -> timerFd()
+```
+
+职责边界：
+
+- `TimerHeap` 只管理内存中的 timer 元数据，不创建 fd，不依赖 `EventLoop`。
+- `TimerHeap` 用 `std::priority_queue` 小根堆保存过期时间，用 `TimerId -> TimerEntry` 映射保存仍有效的 timer。`cancel()` 只从映射中删除，堆中的旧 entry 等到成为堆顶时再清理，这就是 lazy deletion。
+- `TimerManager` 绑定一个 owner `EventLoop`，用 `timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC)` 创建定时 fd，并包装成 `Channel` 注册读事件。
+- `TimerManager` 的 timer callback 在 owner loop 线程中执行，不投递到业务线程池，也不跨线程直接修改 `Session`。
+- 当前 `TimerManager` 提供 one-shot `runAfter()`；`TcpServer` 的周期性 heartbeat check 是回调执行后再次调度下一次检查。
+- `TimerManager` 第一版使用固定 tick interval，生产默认由 `TcpServer` 设置为 5 秒；测试可用更短 interval 缩短等待时间。
+- `TimerManager` 依赖 `EventLoop` / `Channel`，源码放在 `src/timer/`，通过 `src/timer/CMakeLists.txt` 编进 `liteim_net`，避免独立 `liteim_timer` target 与 `liteim_net` 形成循环依赖。
 
 ## Current Concurrency Layer
 
@@ -321,6 +355,6 @@ liteim_concurrency
 
 ## Current Step
 
-Step 17 implements the fixed-size business `ThreadPool` in `liteim_concurrency`: tasks are submitted through `submit()`, workers sleep on a `condition_variable`, `stop()` drains already queued tasks before exit, and `pendingTaskCount()` exposes queue length for later diagnostics. Step 17 后的 hardening 还补齐了网络层生命周期和慢客户端保护回归。
+Step 18 implements `TimerHeap` / `TimerManager` and integrates base-loop `timerfd` heartbeat timeout into `TcpServer`: timer callbacks scan a session snapshot, close sessions idle for 90 seconds, and leave actual `Session` cleanup on the owning I/O loop.
 
-MySQL / Redis blocking calls, login routing, user-session binding, MessageRouter and heartbeat timeout remain later steps. `Session` 当前已有 4MB 输出缓冲高水位关闭保护，后续会继续扩展成完整业务级 backpressure。
+MySQL / Redis blocking calls, login routing, user-session binding, MessageRouter, protocol-level heartbeat requests, Redis online TTL and graceful signalfd shutdown remain later steps. `Session` 当前已有 4MB 输出缓冲高水位关闭保护，后续会继续扩展成完整业务级 backpressure。

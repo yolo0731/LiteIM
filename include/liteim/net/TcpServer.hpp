@@ -6,6 +6,7 @@
 #include "liteim/protocol/Packet.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -18,6 +19,7 @@ namespace liteim {
 
 class Acceptor;
 class EventLoop;
+class TimerManager;
 class UniqueFd;
 
 class TcpServer {
@@ -31,6 +33,7 @@ public:
     TcpServer& operator=(const TcpServer&) = delete;
 
     void setMessageCallback(MessageCallback callback);
+    void setHeartbeatOptions(std::chrono::milliseconds interval, std::chrono::milliseconds timeout);
 
     void start();
     void stop() noexcept;
@@ -48,15 +51,21 @@ private:
     void createSessionInLoop(EventLoop* io_loop, std::shared_ptr<UniqueFd> accepted_fd);
     void handleMessage(const Session::Ptr& session, const Packet& packet);
     void removeSession(std::uint64_t session_id);
+    void startHeartbeatTimer();
+    void scheduleHeartbeatCheck();
+    void closeIdleSessions();
 
     EventLoop* base_loop_;
     std::string listen_ip_;
     std::uint16_t requested_port_;
     EventLoopThreadPool io_threads_;
     std::unique_ptr<Acceptor> acceptor_;
+    std::unique_ptr<TimerManager> heartbeat_timer_;
     mutable std::mutex mutex_;
     std::unordered_map<std::uint64_t, Session::Ptr> sessions_;
     MessageCallback message_callback_;
+    std::chrono::milliseconds heartbeat_interval_{std::chrono::seconds(5)};
+    std::chrono::milliseconds heartbeat_timeout_{std::chrono::seconds(90)};
     std::atomic<std::uint16_t> port_{0};
     std::atomic<std::uint64_t> next_session_id_{1};
     std::atomic_bool started_{false};

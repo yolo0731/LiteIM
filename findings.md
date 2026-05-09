@@ -7,6 +7,28 @@
 - 当前路线是 `LiteIM High Performance + Qt Client + PersonaAgent Authorized Style RAG Edition`。
 - 如果 `README.md`、`task_plan.md`、`progress.md`、教程或源码与 `PROJECT_MEMORY.md` 冲突，统一改回 `PROJECT_MEMORY.md` 的路线。
 
+## 2026-05-09 Step 18 TimerManager Findings
+
+本次进入 `Step 18: implement TimerManager + timerfd heartbeat timeout`，目标是在不实现登录心跳包、`HeartbeatService`、MySQL、Redis 或 signalfd 的前提下，先补齐 timerfd 驱动的服务端 idle session 清理能力。
+
+已经确认并采用的设计：
+
+- 新增 timer 模块，头文件放在 `include/liteim/timer/`，实现放在 `src/timer/`；当前 `TimerManager` 源码编进 `liteim_net`，避免和 `EventLoop` / `Channel` 形成库循环依赖。
+- `TimerHeap` 使用小根堆保存 one-shot timer，返回自增 `TimerId`，`cancel()` 只标记取消，真正删除发生在 `popExpired()` / `nextExpirationMilliseconds()` 清理堆顶时，避免线性扫描。
+- `TimerManager` 绑定一个 `EventLoop*`，用 `timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC)` 创建 fd，再用 `Channel` 注册读事件。
+- 第一版 `TimerManager` 使用固定 tick interval，生产默认 5 秒；测试允许用更短 interval 缩短运行时间。
+- `TimerManager` 的回调只在 owner loop 线程执行，避免 timer callback 跨线程直接操作 `Session`。
+- `TcpServer` 第一版只在 base loop 创建一个 `TimerManager`，符合 Step 18 “注册到主 EventLoop 或每个 I/O EventLoop” 的边界，同时避免 timer 生命周期和子 I/O loop join 顺序变复杂。
+- 每轮 timer tick 扫描线程安全 session 快照；如果 `now - last_active_time >= 90s`，调用 `session->close()`，实际关闭仍回到 Session 所属 loop。
+- `Session` 收到完整 `Packet` 后刷新 `last_active_time`，让应用层心跳包或任意有效业务包都能续期连接。
+
+本次不采用/不改：
+
+- 不新增协议层 heartbeat message。
+- 不实现 `HeartbeatService`、用户在线状态、Redis TTL 或登录态绑定。
+- 不把 timer callback 投递到业务线程池。
+- 不实现复杂可变 tick、cron、重复 timer API、优先级、跨线程取消同步等待或 signalfd 退出。
+
 ## 2026-05-09 Network Review Hardening Findings
 
 本次处理 Step 17 后的外部 review，不启动 Step 18，只修复当前网络/并发层中已能证实的问题。
