@@ -1,5 +1,47 @@
 # LiteIM Progress
 
+## 2026-05-09 Muduo-style Lifecycle Hardening
+
+本次根据外部 review 做一轮小范围 hardening，目标是让 Reactor 对象生命周期更接近 muduo：对象在哪个 loop 线程拥有，就在哪个 loop 线程停止和析构。
+
+范围：
+
+- 修复 `TcpServer::stop()` 非 owner 线程捕获裸 `this` 异步投递的 UAF 风险。
+- 修复 `TimerManager::stop()` 同类非 owner 线程裸 `this` 异步投递风险。
+- 把 `Session` 构造函数从裸 `int fd` 改为接收 `UniqueFd`，让 accepted fd 所有权全程由 RAII 类型表达。
+- 让 `Session::pendingOutputBytes()` 先检查 owner loop 线程，避免跨线程读 `output_buffer_`。
+- 把 `server/main.cpp` 从 scaffold 改为真实启动 `EventLoop + TcpServer` echo server。
+
+TDD RED：
+
+- `cmake --build build` 先失败在 `ReactorInterfaceTest.SessionHeaderIsSelfContained` 的三个 static_assert：`Session(EventLoop*, UniqueFd, id)` 尚不存在、裸 `int fd` 构造仍存在、`pendingOutputBytes()` 仍是 `noexcept`。
+
+代码完成：
+
+- `TcpServer::~TcpServer()` 和 `TcpServer::stop()` 改为 owner-loop-only；非 owner 线程直接调用 `stop()` 会 `std::terminate()`。
+- `TimerManager::~TimerManager()` 和 `TimerManager::stop()` 改为 owner-loop-only；非 owner 线程直接调用 `stop()` 会 `std::terminate()`。
+- `TcpServer::createSessionInLoop()` 直接把 accepted `UniqueFd` move 给 `Session`，删除裸 fd `release()` 串联。
+- `Session(EventLoop*, UniqueFd, id)` 在构造体内接管 fd，构造失败也由 `UniqueFd` 自动关闭 fd。
+- `Session::pendingOutputBytes()` 去掉 `noexcept` 并调用 `loop_->assertInLoopThread()`。
+- `server/CMakeLists.txt` 让 `liteim_server` 链接 `liteim_net`；`server/main.cpp` 创建 `EventLoop` 和 `TcpServer`，启动后进入 `loop()`。
+
+新增/更新测试：
+
+- `ReactorInterfaceTest.SessionHeaderIsSelfContained`
+- `SessionTest.PendingOutputBytesRequiresOwnerLoopThread`
+- `TcpServerTest.StopFromNonOwnerThreadTerminatesInsteadOfQueueingThis`
+- `TimerManagerTest.StopFromNonOwnerThreadTerminatesInsteadOfQueueingThis`
+
+验证完成：
+
+- `cmake -S . -B build` 通过。
+- `cmake --build build` 通过。
+- `ctest --test-dir build -R "(Session|TcpServer|TimerManager)" --output-on-failure` 通过，23/23。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124` 通过，输出 `LiteIM server is listening on 0.0.0.0:9000`。
+- `ctest --test-dir build --output-on-failure` 通过，167/167。
+- `git diff --check` 无输出。
+- `.gitkeep` 和旧 SQLite / `InMemoryStorage` / old `server/net` 路径扫描无输出。
+
 ## 2026-05-09 Step 18 TimerManager
 
 本次进入 `Step 18: implement TimerManager + timerfd heartbeat timeout`。

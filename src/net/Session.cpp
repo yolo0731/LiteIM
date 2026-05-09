@@ -19,13 +19,13 @@ constexpr std::size_t kReadBufferSize = 4096;
 
 } // namespace
 
-Session::Session(EventLoop* loop, int fd, std::uint64_t id)
-    : loop_(loop), fd_(fd), id_(id), channel_(loop == nullptr ? nullptr : std::make_unique<Channel>(loop, fd)),
+Session::Session(EventLoop* loop, UniqueFd fd, std::uint64_t id)
+    : loop_(loop), fd_(std::move(fd)), id_(id), channel_(nullptr),
       last_active_time_ms_(Timestamp::now().millisecondsSinceEpoch()) {
     if (loop_ == nullptr) {
         throw std::invalid_argument("Session requires a valid EventLoop");
     }
-    if (fd < 0) {
+    if (!fd_) {
         throw std::invalid_argument("Session requires a valid fd");
     }
 
@@ -33,6 +33,7 @@ Session::Session(EventLoop* loop, int fd, std::uint64_t id)
     if (!status.isOk()) {
         throw std::runtime_error(status.message());
     }
+    channel_ = std::make_unique<Channel>(loop_, fd_.fd());
 }
 
 int Session::fd() const noexcept {
@@ -51,7 +52,8 @@ bool Session::closed() const noexcept {
     return closed_.load();
 }
 
-std::size_t Session::pendingOutputBytes() const noexcept {
+std::size_t Session::pendingOutputBytes() const {
+    loop_->assertInLoopThread();
     return output_buffer_.readableBytes();
 }
 

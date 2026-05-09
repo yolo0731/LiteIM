@@ -3,7 +3,7 @@ add_executable(liteim_server
 )
 
 target_compile_features(liteim_server PRIVATE cxx_std_17)
-target_link_libraries(liteim_server PRIVATE liteim_base)
+target_link_libraries(liteim_server PRIVATE liteim_base liteim_net)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(liteim_server PRIVATE -Wall -Wextra -Wpedantic)

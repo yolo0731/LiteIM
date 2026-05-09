@@ -6,6 +6,7 @@
 
 #include <cerrno>
 #include <cstring>
+#include <exception>
 #include <stdexcept>
 #include <string>
 #include <sys/timerfd.h>
@@ -40,7 +41,10 @@ TimerManager::TimerManager(EventLoop* loop, std::chrono::milliseconds tick_inter
 }
 
 TimerManager::~TimerManager() {
-    stop();
+    if (loop_ != nullptr && !loop_->isInLoopThread()) {
+        std::terminate();
+    }
+    stopInLoop();
 }
 
 Status TimerManager::start() {
@@ -57,11 +61,7 @@ void TimerManager::stop() noexcept {
     }
 
     if (!loop_->isInLoopThread()) {
-        try {
-            loop_->queueInLoop([this]() { stopInLoop(); });
-        } catch (...) {
-        }
-        return;
+        std::terminate();
     }
 
     stopInLoop();

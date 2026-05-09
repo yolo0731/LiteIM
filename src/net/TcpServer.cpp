@@ -7,6 +7,7 @@
 #include "liteim/timer/TimerManager.hpp"
 
 #include <chrono>
+#include <exception>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -22,7 +23,10 @@ TcpServer::TcpServer(EventLoop* base_loop, std::string listen_ip, std::uint16_t 
 }
 
 TcpServer::~TcpServer() {
-    stop();
+    if (base_loop_ != nullptr && !base_loop_->isInLoopThread()) {
+        std::terminate();
+    }
+    stopInLoop();
 }
 
 // 用来设置服务器收到消息后的处理回调函数
@@ -82,11 +86,7 @@ void TcpServer::stop() noexcept {
     }
 
     if (!base_loop_->isInLoopThread()) {
-        try {
-            base_loop_->queueInLoop([this]() { stopInLoop(); });
-        } catch (...) {
-        }
-        return;
+        std::terminate();
     }
 
     stopInLoop();
@@ -174,9 +174,8 @@ void TcpServer::createSessionInLoop(EventLoop* io_loop, std::shared_ptr<UniqueFd
         return;
     }
 
-    UniqueFd fd_guard(accepted_fd->release());
     const auto session_id = next_session_id_.fetch_add(1);
-    auto session = std::make_shared<Session>(io_loop, fd_guard.release(), session_id);
+    auto session = std::make_shared<Session>(io_loop, std::move(*accepted_fd), session_id);
     session->setMessageCallback(
         [this](const Session::Ptr& observed, const Packet& packet) { handleMessage(observed, packet); });
     session->setCloseCallback([this, session_id](const Session::Ptr&) { removeSession(session_id); });

@@ -960,3 +960,39 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 git diff --check
 ```
+
+## 2026-05-09 Muduo-style Lifecycle Hardening
+
+This hardening pass follows the external review but keeps the scope narrow:
+
+- Make `TcpServer::stop()` and `TcpServer` destruction owner-loop-only. Non-owner calls terminate instead of queueing a lambda that captures raw `this`.
+- Make `TimerManager::stop()` and `TimerManager` destruction owner-loop-only for the same reason.
+- Change `Session` construction to receive `UniqueFd`, so accepted fd ownership stays RAII from `Acceptor` through `TcpServer` into `Session`.
+- Require `Session::pendingOutputBytes()` to run on the owner loop thread and remove `noexcept`.
+- Change `server/main.cpp` from a scaffold log to a real `EventLoop + TcpServer` echo server.
+
+Do not include in this pass:
+
+- deleting `Session::input_buffer_`;
+- a `Session` enum state-machine refactor;
+- dynamic rearm `TimerManager` / full muduo `TimerQueue`;
+- `signalfd` graceful shutdown;
+- MySQL / Redis / service-layer work.
+
+Expected new or updated tests:
+
+- `ReactorInterfaceTest.SessionHeaderIsSelfContained`
+- `SessionTest.PendingOutputBytesRequiresOwnerLoopThread`
+- `TcpServerTest.StopFromNonOwnerThreadTerminatesInsteadOfQueueingThis`
+- `TimerManagerTest.StopFromNonOwnerThreadTerminatesInsteadOfQueueingThis`
+
+Verification commands:
+
+```bash
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build -R "(Session|TcpServer|TimerManager)" --output-on-failure
+timeout 1s ./build/server/liteim_server || test $? -eq 124
+ctest --test-dir build --output-on-failure
+git diff --check
+```

@@ -7,6 +7,34 @@
 - 当前路线是 `LiteIM High Performance + Qt Client + PersonaAgent Authorized Style RAG Edition`。
 - 如果 `README.md`、`task_plan.md`、`progress.md`、教程或源码与 `PROJECT_MEMORY.md` 冲突，统一改回 `PROJECT_MEMORY.md` 的路线。
 
+## 2026-05-09 Muduo-style Lifecycle Hardening Findings
+
+本次处理外部 review 中仍能在当前代码确认的生命周期和所有权隐患，不启动 Step 19，不接入 MySQL / Redis，也不删除 `Session::input_buffer_` 或重做状态机。
+
+已经确认并采用的设计：
+
+- `TcpServer` 是 base loop 拥有的 Reactor 对象，`stop()` 和析构必须在 base loop 线程执行；非 owner 线程直接调用 `stop()` 会 `std::terminate()`，不再捕获裸 `this` 异步排队。
+- `TimerManager` 同样是 owner loop 内部对象，`stop()` 和析构必须在 owner loop 线程执行；非 owner 线程直接调用 `stop()` 会 `std::terminate()`。
+- `Session` 构造函数改为 `Session(EventLoop*, UniqueFd, id)`，fd 所有权从 `Acceptor` 到 `TcpServer` 再到 `Session` 全程由 RAII 类型表达，不再依赖裸 fd `release()` 串联。
+- `Session::pendingOutputBytes()` 只允许 owner loop 线程调用，并去掉 `noexcept`；它读取的是 `output_buffer_`，不能跨线程直接观察。
+- `server/main.cpp` 不再是 scaffold，当前会创建 `EventLoop`、启动真实 `TcpServer` echo server 并进入 `loop()`；`signalfd` graceful shutdown 仍留给 Step 19。
+- 当前 `TimerManager` 定位为 heartbeat fixed tick timer，不是完整 muduo `TimerQueue`；动态 rearm 到最近 expiration 可作为后续独立重构。
+
+新增/更新测试：
+
+- `ReactorInterfaceTest.SessionHeaderIsSelfContained` 校验 `Session` 只接收 `UniqueFd` 构造，且 `pendingOutputBytes()` 不是 `noexcept`。
+- `SessionTest.PendingOutputBytesRequiresOwnerLoopThread`
+- `TcpServerTest.StopFromNonOwnerThreadTerminatesInsteadOfQueueingThis`
+- `TimerManagerTest.StopFromNonOwnerThreadTerminatesInsteadOfQueueingThis`
+
+本次不采用/不改：
+
+- 不删除 `Session::input_buffer_`。
+- 不把 `Session` 的多个状态 bool 合并成 enum 状态机。
+- 不把 `TimerManager` 改成动态 rearm 的通用 `TimerQueue`。
+- 不实现 signalfd graceful shutdown。
+- 不接入 MySQL / Redis / 业务服务层。
+
 ## 2026-05-09 Step 18 TimerManager Findings
 
 本次进入 `Step 18: implement TimerManager + timerfd heartbeat timeout`，目标是在不实现登录心跳包、`HeartbeatService`、MySQL、Redis 或 signalfd 的前提下，先补齐 timerfd 驱动的服务端 idle session 清理能力。

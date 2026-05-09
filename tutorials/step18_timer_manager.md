@@ -151,7 +151,7 @@ TimerManager(EventLoop* loop, std::chrono::milliseconds tick_interval);
 
 `TimerManager` 绑定一个 owner `EventLoop`。
 
-它的 `start()`、`runAfter()` 和 `cancel()` 都要求在 owner loop 线程调用。这样 timer 回调和 `Channel` 生命周期都保持在同一个线程里。
+它的 `start()`、`stop()`、`runAfter()` 和 `cancel()` 都要求在 owner loop 线程调用。这样 timer 回调和 `Channel` 生命周期都保持在同一个线程里。非 owner 线程直接调用 `stop()` 会 `std::terminate()`，避免析构时还有捕获裸 `this` 的 stop task 留在 owner loop 队列里。
 
 ### `start()`
 
@@ -186,6 +186,8 @@ void stop() noexcept;
 停止 timerfd，移除 `Channel`，清空 pending timer。
 
 如果 `stop()` 正好在 timer 回调期间被调用，不会立即销毁正在执行的 `Channel` 对象，而是先移除 epoll 注册、关闭 fd，等当前回调栈自然返回后再由对象析构或后续 cleanup 释放资源。
+
+`TimerManager` 当前定位是 heartbeat tick timer：用固定 tick 驱动过期任务扫描。它不是完整 muduo `TimerQueue`；后续如果要做通用定时器，再用 `TimerHeap::nextExpirationMilliseconds()` 把 timerfd 动态 rearm 到最近过期点。
 
 ### `runAfter()`
 
@@ -302,6 +304,7 @@ TEST(TimerHeapTest, CancelUsesLazyDeletionWithoutRemovingNewTimer)
 TEST(TimerHeapTest, PopExpiredIgnoresFutureTimers)
 TEST(TimerManagerTest, TimerFdTickRunsExpiredTimer)
 TEST(TimerManagerTest, CancelledTimerDoesNotRun)
+TEST(TimerManagerTest, StopFromNonOwnerThreadTerminatesInsteadOfQueueingThis)
 TEST(TcpServerTest, IdleSessionIsClosedByHeartbeatTimeout)
 TEST(TcpServerTest, ActiveSessionSurvivesHeartbeatTimeout)
 ```
@@ -315,6 +318,7 @@ TEST(TcpServerTest, ActiveSessionSurvivesHeartbeatTimeout)
 异常和边界路径：
 
 - 被取消的 timer 不执行。
+- 非 owner 线程直接调用 `TimerManager::stop()` 会终止进程，验证 owner-loop 生命周期契约。
 - lazy deletion 不会误删同一时间点的新 timer。
 - 未到期 timer 不会被提前触发。
 - idle session 会被 `TcpServer` 的 heartbeat timeout 关闭。
@@ -332,17 +336,17 @@ ctest --test-dir build --output-on-failure -R "Timer|TcpServerTest\\.(IdleSessio
 ```bash
 cmake -S . -B build
 cmake --build build
-./build/server/liteim_server
+timeout 1s ./build/server/liteim_server || test $? -eq 124
 ctest --test-dir build --output-on-failure
 ```
 
-本 Step 完成后，CTest 应通过 164 个测试。
+本 Step 完成后，CTest 通过 164 个测试；后续 lifecycle hardening 补充 owner-only stop 和 `Session` 线程归属测试后，CTest 应通过 167 个测试。
 
 ## 10. 面试时怎么讲
 
 可以这样讲：
 
-> 我在 Reactor 里用 timerfd 统一处理定时事件。timerfd 本身是 fd，所以能像 socket 一样注册到 epoll。TimerManager 持有 timerfd 和 Channel，触发时读取 timerfd 计数，然后从 TimerHeap 里弹出过期任务执行。TimerHeap 用小根堆按过期时间排序，取消时用 lazy deletion，避免 priority_queue 中间删除。
+> 我在 Reactor 里用 timerfd 统一处理定时事件。timerfd 本身是 fd，所以能像 socket 一样注册到 epoll。TimerManager 持有 timerfd 和 Channel，触发时读取 timerfd 计数，然后从 TimerHeap 里弹出过期任务执行。当前 TimerManager 定位是 heartbeat tick timer，用固定 tick 扫描过期任务；TimerHeap 的 next-expiration 接口保留给后续动态 rearm 成更完整的 TimerQueue。TimerHeap 用小根堆按过期时间排序，取消时用 lazy deletion，避免 priority_queue 中间删除。
 
 继续说明 heartbeat：
 
@@ -352,6 +356,7 @@ ctest --test-dir build --output-on-failure
 
 - 定时事件也走 epoll。
 - timer callback 不在业务线程池里执行。
+- `TimerManager` 在 owner loop 线程停止和析构。
 - 关闭连接仍回到 Session 所属 loop。
 - `TimerHeap` 的取消用 lazy deletion。
 

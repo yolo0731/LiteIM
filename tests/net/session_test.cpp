@@ -14,8 +14,10 @@
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -123,7 +125,7 @@ liteim::Bytes readExactWithTimeout(int fd,
 TEST(SessionTest, CompletePacketInvokesMessageCallback) {
     auto sockets = makeSocketPair();
     liteim::EventLoop loop;
-    auto session = std::make_shared<liteim::Session>(&loop, sockets.server.release());
+    auto session = std::make_shared<liteim::Session>(&loop, std::move(sockets.server));
     const auto packet = makePacket("hello", 7);
     const auto encoded = encodeOrDie(packet);
     int callback_count = 0;
@@ -149,7 +151,7 @@ TEST(SessionTest, CompletePacketInvokesMessageCallback) {
 TEST(SessionTest, HalfPacketDoesNotInvokeMessageCallback) {
     auto sockets = makeSocketPair();
     liteim::EventLoop loop;
-    auto session = std::make_shared<liteim::Session>(&loop, sockets.server.release());
+    auto session = std::make_shared<liteim::Session>(&loop, std::move(sockets.server));
     const auto encoded = encodeOrDie(makePacket("split", 8));
     std::atomic_int callback_count{0};
 
@@ -175,7 +177,7 @@ TEST(SessionTest, HalfPacketDoesNotInvokeMessageCallback) {
 TEST(SessionTest, StickyPacketsInvokeCallbackForEachPacket) {
     auto sockets = makeSocketPair();
     liteim::EventLoop loop;
-    auto session = std::make_shared<liteim::Session>(&loop, sockets.server.release());
+    auto session = std::make_shared<liteim::Session>(&loop, std::move(sockets.server));
     const auto first = encodeOrDie(makePacket("one", 11));
     const auto second = encodeOrDie(makePacket("two", 12));
     std::vector<std::uint64_t> seq_ids;
@@ -203,7 +205,7 @@ TEST(SessionTest, StickyPacketsInvokeCallbackForEachPacket) {
 TEST(SessionTest, PeerCloseInvokesCloseCallback) {
     auto sockets = makeSocketPair();
     liteim::EventLoop loop;
-    auto session = std::make_shared<liteim::Session>(&loop, sockets.server.release());
+    auto session = std::make_shared<liteim::Session>(&loop, std::move(sockets.server));
     int close_count = 0;
 
     session->setCloseCallback([&loop, &close_count](const std::shared_ptr<liteim::Session>& closed) {
@@ -232,7 +234,7 @@ TEST(SessionTest, SendPacketFromOtherThreadDeliversEncodedPacket) {
 
     std::thread loop_thread([&]() {
         liteim::EventLoop loop;
-        auto local_session = std::make_shared<liteim::Session>(&loop, sockets.server.release());
+        auto local_session = std::make_shared<liteim::Session>(&loop, std::move(sockets.server));
         local_session->start();
         {
             std::lock_guard<std::mutex> lock(mutex);
@@ -271,7 +273,7 @@ TEST(SessionTest, LargePacketLeavesPendingOutputWhenPeerDoesNotRead) {
     ASSERT_EQ(rc, 0) << "setsockopt errno=" << errno;
 
     liteim::EventLoop loop;
-    auto session = std::make_shared<liteim::Session>(&loop, sockets.server.release());
+    auto session = std::make_shared<liteim::Session>(&loop, std::move(sockets.server));
     liteim::Packet packet;
     packet.header.msg_type = liteim::MessageType::PrivateMessageRequest;
     packet.header.seq_id = 99;
@@ -297,7 +299,7 @@ TEST(SessionTest, LargePacketLeavesPendingOutputWhenPeerDoesNotRead) {
 TEST(SessionTest, CloseWhenPendingOutputExceedsHighWaterMark) {
     auto sockets = makeSocketPair();
     liteim::EventLoop loop;
-    auto session = std::make_shared<liteim::Session>(&loop, sockets.server.release());
+    auto session = std::make_shared<liteim::Session>(&loop, std::move(sockets.server));
     liteim::Packet packet;
     packet.header.msg_type = liteim::MessageType::PrivateMessageRequest;
     packet.body.assign(liteim::kMaxPacketBodyLength, static_cast<liteim::Byte>('x'));
@@ -316,8 +318,27 @@ TEST(SessionTest, CloseWhenPendingOutputExceedsHighWaterMark) {
 TEST(SessionTest, LastActiveTimeIsInitialized) {
     auto sockets = makeSocketPair();
     liteim::EventLoop loop;
-    auto session = std::make_shared<liteim::Session>(&loop, sockets.server.release());
+    auto session = std::make_shared<liteim::Session>(&loop, std::move(sockets.server));
 
     EXPECT_GT(session->lastActiveTimeMilliseconds(), 0);
     session->close();
+}
+
+TEST(SessionTest, PendingOutputBytesRequiresOwnerLoopThread) {
+    auto sockets = makeSocketPair();
+    liteim::EventLoop loop;
+    auto session = std::make_shared<liteim::Session>(&loop, std::move(sockets.server));
+    std::exception_ptr thrown;
+
+    std::thread reader([&]() {
+        try {
+            (void)session->pendingOutputBytes();
+        } catch (...) {
+            thrown = std::current_exception();
+        }
+    });
+    reader.join();
+
+    ASSERT_NE(thrown, nullptr);
+    EXPECT_THROW(std::rethrow_exception(thrown), std::logic_error);
 }

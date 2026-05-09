@@ -65,6 +65,7 @@ Important boundaries:
 - Business threads must not directly mutate `Session`.
 - Responses generated outside the owning I/O thread must be delivered through the owning `EventLoop`.
 - `Session` lifetime is protected with `shared_ptr` / `weak_ptr`, not long-lived raw pointers.
+- Reactor-owned objects such as `TcpServer` and `TimerManager` must stop and destruct in their owner loop thread.
 - Redis is cache/state, not the final source of message truth. Message entities belong in MySQL.
 
 ## Current Modules
@@ -91,10 +92,16 @@ cmake -S . -B build
 cmake --build build
 ```
 
-Run the server smoke executable:
+Run the echo server executable:
 
 ```bash
 ./build/server/liteim_server
+```
+
+The server starts a real `EventLoop + TcpServer` echo server on the configured host and port. Until the planned `signalfd` graceful shutdown step lands, stop it with `Ctrl-C`; for a bounded smoke check, use:
+
+```bash
+timeout 1s ./build/server/liteim_server || test $? -eq 124
 ```
 
 Run tests:

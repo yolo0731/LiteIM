@@ -125,7 +125,7 @@ void stop() noexcept;
 
 停止服务端。
 
-在 base loop 线程调用时，它直接执行关闭逻辑；从其他线程调用时，它把关闭任务投递回 base loop。
+`TcpServer` 是 base loop 拥有的 Reactor 对象，`stop()` 必须在 base loop 线程调用。非 owner 线程调用会 `std::terminate()`，避免把捕获裸 `this` 的关闭任务排进 base loop 后对象先析构，造成 use-after-free 风险。需要跨线程停止时，上层应先 `queueInLoop()`，让 `server->stop()` 真正在 base loop 线程执行。
 
 关闭逻辑包括：
 
@@ -195,15 +195,15 @@ handleNewConnection(UniqueFd fd)
 
 主要动作：
 
-1. 从 `UniqueFd` 中 release fd。
-2. 从 `next_session_id_` 取一个自增逻辑 id。
+1. 从 `next_session_id_` 取一个自增逻辑 id。
+2. 把 accepted `UniqueFd` move 给 `Session(EventLoop*, UniqueFd, id)`。
 3. 创建 `std::shared_ptr<Session>`。
 4. 设置 message callback。
 5. 设置 close callback。
 6. 写入 `sessions_` 表。
 7. 调用 `session->start()` 注册读事件。
 
-`Session` 创建和启动都在它所属的 I/O loop 中完成，这样 `Channel` 注册不会跨 loop。
+`Session` 创建和启动都在它所属的 I/O loop 中完成，这样 `Channel` 注册不会跨 loop。accepted fd 的所有权一直由 `UniqueFd` 表达，即使 `Session` 构造过程中抛异常，fd 也会自动关闭。
 
 这里不要用 fd 当 session id。fd 关闭后内核会快速复用，如果旧连接的关闭删除任务晚于新连接注册，就可能用同一个 fd 把新 session 从表里删掉。Step 17 后的 review hardening 改为 `std::atomic<std::uint64_t> next_session_id_` 自增，fd 只用于 socket I/O，session id 只用于连接身份。
 
@@ -265,6 +265,7 @@ TEST(TcpServerTest, DistributesConnectionsAcrossIoLoops)
 TEST(TcpServerTest, RemovesSessionAfterClientDisconnects)
 TEST(TcpServerTest, SendToSessionFromOtherThreadDeliversPacket)
 TEST(TcpServerTest, SendToUnknownUserReturnsNotFound)
+TEST(TcpServerTest, StopFromNonOwnerThreadTerminatesInsteadOfQueueingThis)
 ```
 
 覆盖点：
@@ -276,6 +277,7 @@ TEST(TcpServerTest, SendToUnknownUserReturnsNotFound)
 - 测试线程调用 `sendToSession()` 后，数据仍能发到客户端，验证跨线程发送路径。
 - `sendToSession()` 使用 `Session::id()` 传回的逻辑 id，不再依赖 fd。
 - 当前 `sendToUser()` 没有登录态绑定，会返回 `NotFound`。
+- 非 owner 线程直接调用 `stop()` 会终止进程，验证生命周期契约不再用裸 `this` 异步排队。
 
 TDD RED 阶段，新增测试先失败在：
 
@@ -292,7 +294,7 @@ fatal error: liteim/net/TcpServer.hpp: No such file or directory
 ```bash
 cmake -S . -B build
 cmake --build build
-./build/server/liteim_server
+timeout 1s ./build/server/liteim_server || test $? -eq 124
 ctest --test-dir build --output-on-failure
 ```
 
@@ -302,13 +304,17 @@ ctest --test-dir build --output-on-failure
 ctest --test-dir build --output-on-failure -R "TcpServer|ReactorInterfaceTest.TcpServer"
 ```
 
-Step 16 完成后，CTest 应通过 142 个测试，其中 6 个是新增的 Step 16 `TcpServer` 测试。
+Step 16 完成时，CTest 通过 142 个测试；后续 lifecycle hardening 又补充了 `TcpServer` owner-only stop 回归测试。
 
 ## 8. 面试时怎么讲
 
 可以这样讲：
 
 > 我实现了一个主从 Reactor 结构的 `TcpServer`。主 Reactor 只负责监听和 accept；每个新连接由 `EventLoopThreadPool` 按 round-robin 分配到一个子 I/O loop；`Session` 在目标 loop 中创建并固定归属该 loop。服务端维护一个线程安全的 session 表，外部线程调用 `sendToSession()` 时不会直接写 socket，而是复用 `Session::sendPacket()` 投递回连接所属 loop。第一版业务默认 echo，用来验证多 Reactor 网络底座。
+
+生命周期边界可以这样补充：
+
+> `TcpServer` 的启动、停止和析构都收紧到 base loop 线程。跨线程只允许投递“请 base loop 调用 stop”这个上层动作，而不是让 `TcpServer::stop()` 自己捕获裸 `this` 异步排队。这样对象在哪个 loop 拥有，就在哪个 loop 停止和析构，生命周期更接近 muduo 的硬边界。
 
 关键点：
 

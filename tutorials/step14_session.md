@@ -2,7 +2,7 @@
 
 本 Step 开始把前面的网络积木串到一个真实连接上。
 
-`Acceptor` 只负责监听和 `accept4()`，它拿到的是“新连接 fd”。`Session` 负责接管这个已连接 fd，并在所属 `EventLoop` 中完成后续读写：
+`Acceptor` 只负责监听和 `accept4()`，它拿到的是“新连接 fd”。`Session` 负责通过 `UniqueFd` 接管这个已连接 fd，并在所属 `EventLoop` 中完成后续读写：
 
 ```text
 connected fd
@@ -60,6 +60,7 @@ tutorials/step14_session.md
 
 - `Channel` 不拥有 fd。
 - `UniqueFd` 拥有 fd。
+- `Session(EventLoop*, UniqueFd, id)` 通过 move 接管 fd；构造失败时 `UniqueFd` 仍会按 RAII 关闭 fd。
 - `id_` 只表达连接身份，不参与 socket I/O，避免 fd 复用影响 session 表。
 - `FrameDecoder` 不读 socket。
 - `Buffer` 不解析协议。
@@ -80,6 +81,8 @@ channel_->enableReading();
 ```
 
 `tie()` 的作用是：事件分发时先锁住 `Session` owner。如果外部引用已经释放，回调不会继续执行；如果 owner 还在，回调期间会有局部 `shared_ptr` 保住它。
+
+`pendingOutputBytes()` 也属于连接内部状态查询，只能在 owner loop 线程调用。它会先执行 `loop_->assertInLoopThread()`，避免测试或业务线程直接跨线程读取 `output_buffer_`。
 
 ## 5. 读路径
 
@@ -185,6 +188,7 @@ defer Channel destruction
 - `SessionTest.LargePacketLeavesPendingOutputWhenPeerDoesNotRead`
 - `SessionTest.CloseWhenPendingOutputExceedsHighWaterMark`
 - `SessionTest.LastActiveTimeIsInitialized`
+- `SessionTest.PendingOutputBytesRequiresOwnerLoopThread`
 
 测试重点：
 
@@ -196,6 +200,7 @@ defer Channel destruction
 - 大包在 peer 不读取时会留下 pending output，证明 output buffer 能接住未写完数据。
 - pending output 超过 4MB 时会关闭连接，证明慢客户端不会无限堆积内存。
 - `last_active_time` 初始化为有效时间戳。
+- 非 owner 线程直接调用 `pendingOutputBytes()` 会触发线程归属错误，证明 `Buffer` 不被跨线程读取。
 
 运行：
 
@@ -209,7 +214,7 @@ ctest --test-dir build --output-on-failure
 
 可以这样说：
 
-> 我把 `Session` 作为单连接 owner。`Acceptor` 只负责接收新连接，拿到 connected fd 后交给后续 `TcpServer`，再由 `Session` 接管 fd 生命周期。`Session` 持有 `Channel`、输入/输出 `Buffer` 和 `FrameDecoder`。读事件触发时循环 read 到 `EAGAIN`，把字节交给 `FrameDecoder` 解析完整 Packet；写事件触发时尽量写 output buffer，没写完就继续等下一次 `EPOLLOUT`。跨线程发送不会直接写 fd，而是通过 `EventLoop::queueInLoop()` 回到连接所属 I/O 线程。
+> 我把 `Session` 作为单连接 owner。`Acceptor` 只负责接收新连接，拿到 connected fd 后交给后续 `TcpServer`，再由 `Session(EventLoop*, UniqueFd, id)` 通过 RAII 类型接管 fd 生命周期。`Session` 持有 `Channel`、输入/输出 `Buffer` 和 `FrameDecoder`。读事件触发时循环 read 到 `EAGAIN`，把字节交给 `FrameDecoder` 解析完整 Packet；写事件触发时尽量写 output buffer，没写完就继续等下一次 `EPOLLOUT`。跨线程发送不会直接写 fd，而是通过 `EventLoop::queueInLoop()` 回到连接所属 I/O 线程。
 
 生命周期可以这样补充：
 

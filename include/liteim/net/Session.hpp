@@ -25,7 +25,7 @@ public:
     using MessageCallback = std::function<void(const Ptr&, const Packet&)>;
     using CloseCallback = std::function<void(const Ptr&)>;
 
-    Session(EventLoop* loop, int fd, std::uint64_t id = 0);
+    Session(EventLoop* loop, UniqueFd fd, std::uint64_t id = 0);
     ~Session() = default;
 
     Session(const Session&) = delete;
@@ -35,7 +35,7 @@ public:
     std::uint64_t id() const noexcept;
     EventLoop* ownerLoop() const noexcept;
     bool closed() const noexcept;
-    std::size_t pendingOutputBytes() const noexcept;
+    std::size_t pendingOutputBytes() const;
     std::int64_t lastActiveTimeMilliseconds() const noexcept;
 
     void setMessageCallback(MessageCallback callback);

@@ -359,6 +359,17 @@ TEST(TcpServerTest, SendToUnknownUserReturnsNotFound) {
     EXPECT_EQ(status.code(), liteim::ErrorCode::NotFound);
 }
 
+TEST(TcpServerTest, StopFromNonOwnerThreadTerminatesInsteadOfQueueingThis) {
+    EXPECT_DEATH(
+        {
+            liteim::EventLoop loop;
+            liteim::TcpServer server(&loop, "127.0.0.1", 0, 0);
+            std::thread caller([&server]() { server.stop(); });
+            caller.join();
+        },
+        ".*");
+}
+
 TEST(TcpServerTest, IdleSessionIsClosedByHeartbeatTimeout) {
     RunningTcpServer server(1, [](liteim::TcpServer& tcp_server, liteim::EventLoop&) {
         tcp_server.setHeartbeatOptions(20ms, 60ms);

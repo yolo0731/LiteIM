@@ -3,6 +3,7 @@
 #include "liteim/net/EventLoop.hpp"
 
 #include <chrono>
+#include <thread>
 
 #include <gtest/gtest.h>
 
@@ -52,4 +53,15 @@ TEST(TimerManagerTest, CancelledTimerDoesNotRun) {
     EXPECT_FALSE(cancelled_fired);
     EXPECT_TRUE(stop_fired);
     EXPECT_FALSE(manager.started());
+}
+
+TEST(TimerManagerTest, StopFromNonOwnerThreadTerminatesInsteadOfQueueingThis) {
+    EXPECT_DEATH(
+        {
+            liteim::EventLoop loop;
+            liteim::TimerManager manager(&loop, 10ms);
+            std::thread caller([&manager]() { manager.stop(); });
+            caller.join();
+        },
+        ".*");
 }
