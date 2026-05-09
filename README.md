@@ -19,7 +19,7 @@ PersonaAgent is intentionally a separate Python service. LiteIM exposes the prot
 
 - High-performance C++ backend engineering with C++17, CMake, RAII, GoogleTest, and Linux system calls.
 - Nonblocking socket I/O with `epoll` LT mode, `eventfd` cross-thread wakeups, `timerfd` based timers, and `signalfd` graceful shutdown handling.
-- Main Reactor + sub Reactor thread pool. I/O threads handle fd events, Packet/TLV codec work, output-buffer backpressure, and `Session` lifetime.
+- Main Reactor + sub Reactor thread pool. I/O threads handle fd events, Packet/TLV codec work, configurable output-buffer high-water-mark backpressure, and `Session` lifetime.
 - Business `ThreadPool` for future blocking work such as MySQL queries, Redis operations, password hashing, and history loading.
 - Custom TLV binary protocol with TCP sticky-packet / half-packet handling.
 - Safe cross-thread connection access through `EventLoop::runInLoop()` and `EventLoop::queueInLoop()`.
@@ -47,7 +47,7 @@ PersonaAgent is intentionally a separate Python service. LiteIM exposes the prot
 |  - eventfd queueInLoop wakeup                                               |
 |  - Session read/write lifecycle                                             |
 |  - FrameDecoder + Packet/TLV codec                                          |
-|  - output-buffer high-water-mark protection                                 |
+|  - configurable output-buffer high-water-mark protection                    |
 |                                                                            |
 |  Business Thread Pool                                                       |
 |  - AuthService / ChatService / GroupService / HistoryService                |
@@ -104,6 +104,18 @@ The server starts a real `EventLoop + TcpServer` echo server on the configured h
 ```bash
 timeout 1s ./build/server/liteim_server || test $? -eq 124
 ```
+
+Configuration keys are parsed by `liteim::Config::loadFromFile()`. Network-facing defaults include:
+
+```text
+server.host = 0.0.0.0
+server.port = 9000
+server.io_threads = 4
+server.business_threads = 4
+server.output_high_water_mark_bytes = 4194304
+```
+
+`server.output_high_water_mark_bytes` controls the per-`Session` pending output-buffer limit. When a server push would exceed the limit, LiteIM logs the pending bytes, incoming bytes, and limit, then closes that slow connection.
 
 Run tests:
 

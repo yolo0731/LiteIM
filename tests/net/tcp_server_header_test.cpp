@@ -24,6 +24,8 @@ TEST(ReactorInterfaceTest, TcpServerHeaderIsSelfContained) {
     static_assert(std::is_same_v<decltype(&TcpServer::setMessageCallback), void (TcpServer::*)(MessageCallback)>);
     static_assert(std::is_same_v<decltype(&TcpServer::setHeartbeatOptions),
                                  void (TcpServer::*)(std::chrono::milliseconds, std::chrono::milliseconds)>);
+    static_assert(std::is_same_v<decltype(&TcpServer::setSessionOutputHighWaterMark),
+                                 void (TcpServer::*)(std::size_t)>);
     static_assert(std::is_same_v<decltype(&TcpServer::start), void (TcpServer::*)()>);
     static_assert(std::is_same_v<decltype(&TcpServer::stop), void (TcpServer::*)() noexcept>);
     static_assert(std::is_same_v<decltype(&TcpServer::port), std::uint16_t (TcpServer::*)() const noexcept>);

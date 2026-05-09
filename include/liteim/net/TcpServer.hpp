@@ -34,6 +34,7 @@ public:
 
     void setMessageCallback(MessageCallback callback);
     void setHeartbeatOptions(std::chrono::milliseconds interval, std::chrono::milliseconds timeout);
+    void setSessionOutputHighWaterMark(std::size_t high_water_mark);
 
     void start();
     void stop() noexcept;
@@ -66,6 +67,7 @@ private:
     MessageCallback message_callback_;
     std::chrono::milliseconds heartbeat_interval_{std::chrono::seconds(5)};
     std::chrono::milliseconds heartbeat_timeout_{std::chrono::seconds(90)};
+    std::size_t session_output_high_water_mark_{kSessionDefaultOutputHighWaterMark};
     std::atomic<std::uint16_t> port_{0};
     std::atomic<std::uint64_t> next_session_id_{1};
     std::atomic_bool started_{false};

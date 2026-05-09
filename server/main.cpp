@@ -16,6 +16,7 @@ int main() {
                              config.server_host,
                              config.server_port,
                              config.io_threads);
+    server.setSessionOutputHighWaterMark(config.session_output_high_water_mark);
     liteim::SignalWatcher signal_watcher(&loop, std::vector<int>{SIGINT, SIGTERM}, [&](int signo) {
         liteim::Logger::get()->info("LiteIM server received signal {}, shutting down", signo);
         server.stop();

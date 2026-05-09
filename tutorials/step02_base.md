@@ -110,6 +110,7 @@ struct Config {
     std::uint16_t server_port{9000};
     std::uint32_t io_threads{4};
     std::uint32_t business_threads{4};
+    std::size_t session_output_high_water_mark{4 * 1024 * 1024};
     std::string log_level{"info"};
     MySqlConfig mysql;
     RedisConfig redis;
@@ -130,6 +131,7 @@ struct Config {
 - `server.port = 9000`
 - `server.io_threads = 4`
 - `server.business_threads = 4`
+- `server.output_high_water_mark_bytes = 4194304`
 - `mysql.host = 127.0.0.1`
 - `mysql.port = 3306`
 - `redis.host = 127.0.0.1`
@@ -149,6 +151,7 @@ struct Config {
 # comment
 server.host = 127.0.0.1
 server.port = 10086
+server.output_high_water_mark_bytes = 65536
 log.level = debug
 mysql.host = mysql.local
 redis.port = 6380
@@ -162,6 +165,7 @@ qt.server_port = 10087
 - 缺失的配置项保留默认值。
 - 未知 key 返回 `ErrorCode::InvalidArgument`。
 - 非法端口返回 `ErrorCode::ParseError`。
+- 输出高水位必须大于 0，否则返回 `ErrorCode::InvalidArgument`。
 - 缺失文件返回 `ErrorCode::NotFound`。
 
 本 Step 不引入 YAML / JSON / TOML，是为了让项目先保持可读、可测、可手写。等配置项明显复杂之后，再考虑更成熟的配置格式。
@@ -348,6 +352,7 @@ TEST(ConfigTest, MissingValuesKeepDefaults)
 TEST(ConfigTest, MissingFileReturnsNotFound)
 TEST(ConfigTest, UnknownKeyFails)
 TEST(ConfigTest, InvalidPortFails)
+TEST(ConfigTest, ZeroHighWaterMarkFails)
 ```
 
 覆盖点：

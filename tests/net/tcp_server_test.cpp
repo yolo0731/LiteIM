@@ -20,6 +20,7 @@
 #include <functional>
 #include <mutex>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -348,6 +349,110 @@ TEST(TcpServerTest, SendToSessionFromOtherThreadDeliversPacket) {
     ASSERT_TRUE(status.isOk()) << status.message();
 
     EXPECT_EQ(readExactWithTimeout(client.fd(), expected.size(), 2s), expected);
+}
+
+TEST(TcpServerTest, RejectsZeroSessionOutputHighWaterMark) {
+    liteim::EventLoop loop;
+    liteim::TcpServer server(&loop, "127.0.0.1", 0, 0);
+
+    EXPECT_THROW(server.setSessionOutputHighWaterMark(0), std::invalid_argument);
+}
+
+TEST(TcpServerTest, SessionOutputHighWaterMarkMustBeSetBeforeStart) {
+    liteim::EventLoop loop;
+    liteim::TcpServer server(&loop, "127.0.0.1", 0, 0);
+    server.start();
+
+    EXPECT_THROW(server.setSessionOutputHighWaterMark(1024), std::logic_error);
+
+    server.stop();
+}
+
+TEST(TcpServerTest, NormalClientDoesNotTriggerConfiguredHighWaterMark) {
+    RunningTcpServer server(1, [](liteim::TcpServer& tcp_server, liteim::EventLoop&) {
+        tcp_server.setSessionOutputHighWaterMark(1024);
+    });
+    auto client = connectTo(server.port());
+    ASSERT_GE(client.fd(), 0);
+
+    const auto packet = makePacket("small echo", 351);
+    const auto expected = encodeOrDie(packet);
+
+    writeAll(client.fd(), expected);
+    EXPECT_EQ(readExactWithTimeout(client.fd(), expected.size(), 2s), expected);
+    EXPECT_EQ(server.sessionCount(), 1U);
+
+    client.reset();
+    EXPECT_TRUE(waitUntil([&]() { return server.sessionCount() == 0; }, 2s));
+}
+
+TEST(TcpServerTest, SlowClientIsClosedWhenOutputExceedsHighWaterMark) {
+    std::mutex mutex;
+    std::condition_variable callback_ready;
+    std::uint64_t observed_session_id = 0;
+
+    RunningTcpServer server(1, [&](liteim::TcpServer& tcp_server, liteim::EventLoop&) {
+        tcp_server.setSessionOutputHighWaterMark(64);
+        tcp_server.setMessageCallback([&](const liteim::Session::Ptr& session, const liteim::Packet&) {
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                observed_session_id = session->id();
+            }
+            callback_ready.notify_one();
+        });
+    });
+
+    auto client = connectTo(server.port());
+    ASSERT_GE(client.fd(), 0);
+
+    const auto trigger = encodeOrDie(makePacket("trigger", 361));
+    writeAll(client.fd(), trigger);
+
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        ASSERT_TRUE(callback_ready.wait_for(lock, 2s, [&]() { return observed_session_id != 0; }));
+    }
+
+    const auto status = server.sendToSession(observed_session_id, makePacket(std::string(128, 'x'), 362));
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_TRUE(waitUntil([&]() { return server.sessionCount() == 0; }, 2s));
+}
+
+TEST(TcpServerTest, ClosedSlowClientIsRemovedFromSessionTable) {
+    std::mutex mutex;
+    std::condition_variable callback_ready;
+    std::uint64_t observed_session_id = 0;
+
+    RunningTcpServer server(1, [&](liteim::TcpServer& tcp_server, liteim::EventLoop&) {
+        tcp_server.setSessionOutputHighWaterMark(64);
+        tcp_server.setMessageCallback([&](const liteim::Session::Ptr& session, const liteim::Packet&) {
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                observed_session_id = session->id();
+            }
+            callback_ready.notify_one();
+        });
+    });
+
+    auto client = connectTo(server.port());
+    ASSERT_GE(client.fd(), 0);
+
+    const auto trigger = encodeOrDie(makePacket("trigger", 371));
+    writeAll(client.fd(), trigger);
+
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        ASSERT_TRUE(callback_ready.wait_for(lock, 2s, [&]() { return observed_session_id != 0; }));
+    }
+
+    const auto push_status = server.sendToSession(observed_session_id, makePacket(std::string(128, 'x'), 372));
+    ASSERT_TRUE(push_status.isOk()) << push_status.message();
+    ASSERT_TRUE(waitUntil([&]() { return server.sessionCount() == 0; }, 2s));
+
+    const auto retry_status = server.sendToSession(observed_session_id, makePacket("after close", 373));
+    EXPECT_FALSE(retry_status.isOk());
+    EXPECT_EQ(retry_status.code(), liteim::ErrorCode::NotFound);
 }
 
 TEST(TcpServerTest, SendToUnknownUserReturnsNotFound) {

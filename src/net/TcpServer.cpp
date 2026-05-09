@@ -48,6 +48,18 @@ void TcpServer::setHeartbeatOptions(std::chrono::milliseconds interval, std::chr
     heartbeat_timeout_ = timeout;
 }
 
+void TcpServer::setSessionOutputHighWaterMark(std::size_t high_water_mark) {
+    base_loop_->assertInLoopThread();
+    if (started_.load()) {
+        throw std::logic_error("session output high water mark must be set before TcpServer starts");
+    }
+    if (high_water_mark == 0) {
+        throw std::invalid_argument("session output high water mark must be positive");
+    }
+
+    session_output_high_water_mark_ = high_water_mark;
+}
+
 void TcpServer::start() {
     base_loop_->assertInLoopThread();
     if (started_.load()) {
@@ -176,6 +188,7 @@ void TcpServer::createSessionInLoop(EventLoop* io_loop, std::shared_ptr<UniqueFd
 
     const auto session_id = next_session_id_.fetch_add(1);
     auto session = std::make_shared<Session>(io_loop, std::move(*accepted_fd), session_id);
+    session->setOutputHighWaterMark(session_output_high_water_mark_);
     session->setMessageCallback(
         [this](const Session::Ptr& observed, const Packet& packet) { handleMessage(observed, packet); });
     session->setCloseCallback([this, session_id](const Session::Ptr&) { removeSession(session_id); });

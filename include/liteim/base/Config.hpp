@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -35,6 +36,7 @@ struct Config {
     std::uint16_t server_port{9000};
     std::uint32_t io_threads{4};
     std::uint32_t business_threads{4};
+    std::size_t session_output_high_water_mark{4 * 1024 * 1024};
     std::string log_level{"info"};
     MySqlConfig mysql;
     RedisConfig redis;

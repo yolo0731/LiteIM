@@ -98,6 +98,15 @@ Status Config::loadFromFile(const std::filesystem::path& path) {
             status = parseUint32(value, io_threads);
         } else if (key == "server.business_threads") {
             status = parseUint32(value, business_threads);
+        } else if (key == "server.output_high_water_mark_bytes") {
+            std::uint32_t high_water_mark = 0;
+            status = parseUint32(value, high_water_mark);
+            if (status.isOk()) {
+                if (high_water_mark == 0) {
+                    return Status::error(ErrorCode::InvalidArgument, "output high water mark must be positive");
+                }
+                session_output_high_water_mark = high_water_mark;
+            }
         } else if (key == "log.level") {
             log_level = value;
         } else if (key == "mysql.host") {

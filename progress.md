@@ -1,5 +1,73 @@
 # LiteIM Progress
 
+## 2026-05-09 Step 20 Slow-Client Backpressure Hardening
+
+本次进入 `Step 20: 完善慢客户端回压保护`，目标是在已有默认 4MB 超限关闭基础上，把输出缓冲区高水位整理为可配置、可观测、可测试的策略。
+
+概念边界：
+
+- `Session` 的输出高水位默认仍是 4MB。
+- 每次服务端发送编码后的 Packet 前，在 owner loop 中检查 `pending output + incoming encoded bytes`。
+- 超过高水位时记录 warning 日志，并关闭该 `Session`。
+- `TcpServer` 创建新 `Session` 时把 server 级高水位传入连接。
+- `Config` 新增 `server.output_high_water_mark_bytes` 配置键。
+- `pendingOutputBytes()` 仍然只能 owner-loop 查询。
+- 本次不做暂停读、低水位恢复、消息优先级丢弃、群聊广播优化、`Session::input_buffer_` 简化或状态机重构。
+
+TDD RED 已确认：
+
+```bash
+cmake --build build
+```
+
+新增测试先失败在 `Config::session_output_high_water_mark` 等接口缺失，证明测试覆盖了 Step 20 缺失能力。
+
+已完成代码：
+
+- `Config` 增加 `session_output_high_water_mark`，默认 `4 * 1024 * 1024`。
+- `Config::loadFromFile()` 支持 `server.output_high_water_mark_bytes`，并拒绝 0。
+- `Session` 增加 `kSessionDefaultOutputHighWaterMark`、`output_high_water_mark_`、`setOutputHighWaterMark()` 和 `outputHighWaterMark()`。
+- `Session::sendEncodedInLoop()` 改为使用实例级高水位；超限时记录 `pending`、`incoming`、`limit` 并 `closeInLoop()`。
+- `TcpServer` 增加 `setSessionOutputHighWaterMark()`，要求 base loop 线程、启动前调用、阈值大于 0。
+- `TcpServer::createSessionInLoop()` 在 I/O loop 中创建 `Session` 后设置输出高水位。
+- `server/main.cpp` 把 `Config` 中的输出高水位传入 `TcpServer`。
+
+新增/更新测试：
+
+- `ConfigTest.ZeroHighWaterMarkFails`
+- `SessionTest.DefaultOutputHighWaterMarkIsFourMegabytes`
+- `SessionTest.RejectsZeroOutputHighWaterMark`
+- `SessionTest.CloseWhenPendingOutputExceedsConfiguredHighWaterMark`
+- `TcpServerTest.NormalClientDoesNotTriggerConfiguredHighWaterMark`
+- `TcpServerTest.RejectsZeroSessionOutputHighWaterMark`
+- `TcpServerTest.SessionOutputHighWaterMarkMustBeSetBeforeStart`
+- `TcpServerTest.SlowClientIsClosedWhenOutputExceedsHighWaterMark`
+- `TcpServerTest.ClosedSlowClientIsRemovedFromSessionTable`
+- `ReactorInterfaceTest.SessionHeaderIsSelfContained`
+- `ReactorInterfaceTest.TcpServerHeaderIsSelfContained`
+
+已完成文档同步：
+
+- 更新 README，写入可配置输出高水位和配置键。
+- 更新 Step 2 Config 教程，补充新字段、新 key 和 0 值校验。
+- 更新 Step 14 Session 教程，把固定 4MB 文案改为 Step 20 可配置高水位。
+- 新增 `tutorials/step20_backpressure.md`。
+- 更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 中 Step 20 的配置键说明。
+- 更新 `task_plan.md`、`findings.md` 和 `progress.md`。
+
+最终验证：
+
+- `cmake --build build && ctest --test-dir build -R "(ConfigTest|SessionTest|TcpServerTest|ReactorInterfaceTest)" --output-on-failure`：42/42 通过。
+- `cmake --build build && ctest --test-dir build --output-on-failure`：181/181 通过。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，服务端收到 SIGTERM 后优雅退出。
+- `git diff --check`：通过。
+
+提交信息：
+
+```text
+feat(net): add session high water mark backpressure
+```
+
 ## 2026-05-09 Session Activity Semantics Fix
 
 本次只处理 P0：`last_active_time` 出站刷新语义错误。

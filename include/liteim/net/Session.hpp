@@ -17,7 +17,8 @@ namespace liteim {
 
 class EventLoop;
 
-inline constexpr std::size_t kSessionOutputHighWaterMark = 4 * 1024 * 1024;
+inline constexpr std::size_t kSessionDefaultOutputHighWaterMark = 4 * 1024 * 1024;
+inline constexpr std::size_t kSessionOutputHighWaterMark = kSessionDefaultOutputHighWaterMark;
 
 class Session : public std::enable_shared_from_this<Session> {
 public:
@@ -35,11 +36,13 @@ public:
     std::uint64_t id() const noexcept;
     EventLoop* ownerLoop() const noexcept;
     bool closed() const noexcept;
+    std::size_t outputHighWaterMark() const noexcept;
     std::size_t pendingOutputBytes() const;
     std::int64_t lastActiveTimeMilliseconds() const noexcept;
 
     void setMessageCallback(MessageCallback callback);
     void setCloseCallback(CloseCallback callback);
+    void setOutputHighWaterMark(std::size_t high_water_mark);
 
     void start();
     Status sendPacket(const Packet& packet);
@@ -61,6 +64,7 @@ private:
     FrameDecoder decoder_;
     Buffer input_buffer_;
     Buffer output_buffer_;
+    std::size_t output_high_water_mark_{kSessionDefaultOutputHighWaterMark};
     MessageCallback message_callback_;
     CloseCallback close_callback_;
     std::atomic_bool closed_{false};

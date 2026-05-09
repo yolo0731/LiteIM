@@ -8,6 +8,45 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-09 Step 20 Slow-Client Backpressure Findings
+
+本次进入 `Step 20: 完善慢客户端回压保护`，只处理输出缓冲区高水位，不混入 `Session` 输入路径简化或状态机重构。
+
+已经确认并采用的设计：
+
+- `Session` 默认输出高水位继续保持 4MB，并新增实例级 `output_high_water_mark_`。
+- `sendEncodedInLoop()` 在 append 到 `output_buffer_` 前检查阈值；超限时记录 warning 日志并关闭连接。
+- 超限日志记录 `session id`、当前 pending bytes、本次 incoming bytes 和 limit，便于后续定位慢客户端或异常 push。
+- `Session::setOutputHighWaterMark()` owner-loop-only，拒绝 0。
+- `TcpServer::setSessionOutputHighWaterMark()` 必须在 base loop 线程、`start()` 前调用，拒绝 0。
+- `TcpServer::createSessionInLoop()` 在目标 I/O loop 中创建 `Session` 后传入高水位，保持 `Session` 内部状态只在 owner loop 变更。
+- `Config` 新增 `session_output_high_water_mark` 字段和 `server.output_high_water_mark_bytes` key。
+- `server/main.cpp` 从 `Config` 把阈值传给 `TcpServer`。
+- `pendingOutputBytes()` 仍只允许 owner-loop 查询；外部线程如果要观测 pending bytes，后续必须投递到连接所属 loop。
+
+新增/更新测试：
+
+- `ConfigTest.ZeroHighWaterMarkFails`
+- `SessionTest.DefaultOutputHighWaterMarkIsFourMegabytes`
+- `SessionTest.RejectsZeroOutputHighWaterMark`
+- `SessionTest.CloseWhenPendingOutputExceedsConfiguredHighWaterMark`
+- `TcpServerTest.RejectsZeroSessionOutputHighWaterMark`
+- `TcpServerTest.SessionOutputHighWaterMarkMustBeSetBeforeStart`
+- `TcpServerTest.NormalClientDoesNotTriggerConfiguredHighWaterMark`
+- `TcpServerTest.SlowClientIsClosedWhenOutputExceedsHighWaterMark`
+- `TcpServerTest.ClosedSlowClientIsRemovedFromSessionTable`
+- Session / TcpServer header static assertions for new API.
+
+本次不采用/不改：
+
+- 不暂停读。
+- 不做低水位恢复。
+- 不做消息优先级丢弃。
+- 不做群聊广播优化。
+- 不删除 `Session::input_buffer_`。
+- 不把 `Session` 多个状态 bool 合并为状态机。
+- 不改变 P0 修复后的 heartbeat 语义：服务端出站写不刷新 `last_active_time`。
+
 ## 2026-05-09 Documentation Boundary Correction Findings
 
 本次只做文档职责边界纠正，不改 C++ 源码、CMake 或测试代码。

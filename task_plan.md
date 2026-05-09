@@ -33,6 +33,7 @@ The workspace documentation roles are now separated:
 | --- | --- | --- |
 | P0 session activity semantics fix | done | Fixed `last_active_time` so only complete inbound Packets refresh heartbeat activity; outbound server writes no longer keep an idle client alive. Targeted Session/TcpServer tests, server smoke, and full CTest 172/172 passed. |
 | Documentation boundary correction | done | Clarified that PROJECT_MEMORY is long-term design, AGENTS/CLAUDE are constraints, README is public overview, and planning files hold progress/process memory. |
+| Step 20 slow-client backpressure hardening | done | Added configurable per-Session output high-water mark, warning log on overflow, Config key `server.output_high_water_mark_bytes`, TcpServer propagation, slow-client close cleanup tests, server smoke, and full CTest 181/181. |
 | Step 0 concept | done | Step 0 is a cleanup/reset step, not feature implementation. |
 | Step 0 delete old route files | done | Removed old source, tests, docs/tutorials, SQLite/InMemoryStorage route files, and build output. |
 | Step 0 keep minimal root | done | Removed premature empty folders and `.gitkeep`; future directories will be created by the Step that needs them. |
@@ -191,7 +192,8 @@ Current route status:
 - Step 18 `TimerManager + timerfd heartbeat timeout` is complete.
 - Step 18.5 `muduo-style lifecycle ownership hardening` is complete.
 - Step 19 `signalfd graceful shutdown` is complete.
-- Default next implementation step is Step 20 `slow-client backpressure hardening`.
+- Step 20 `slow-client backpressure hardening` is complete.
+- Default next implementation step is Step 21 `IStorage / ICache abstractions`.
 - Optional Step 18.6 `Session` input-path simplification and Optional Step 18.7 `Session` state consolidation remain optional cleanup tasks unless the user explicitly asks for them.
 
 LiteIM phases:

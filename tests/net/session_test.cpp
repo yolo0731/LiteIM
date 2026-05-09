@@ -315,6 +315,38 @@ TEST(SessionTest, CloseWhenPendingOutputExceedsHighWaterMark) {
     EXPECT_EQ(session->pendingOutputBytes(), 0U);
 }
 
+TEST(SessionTest, DefaultOutputHighWaterMarkIsFourMegabytes) {
+    auto sockets = makeSocketPair();
+    liteim::EventLoop loop;
+    auto session = std::make_shared<liteim::Session>(&loop, std::move(sockets.server));
+
+    EXPECT_EQ(session->outputHighWaterMark(), liteim::kSessionDefaultOutputHighWaterMark);
+    session->close();
+}
+
+TEST(SessionTest, RejectsZeroOutputHighWaterMark) {
+    auto sockets = makeSocketPair();
+    liteim::EventLoop loop;
+    auto session = std::make_shared<liteim::Session>(&loop, std::move(sockets.server));
+
+    EXPECT_THROW(session->setOutputHighWaterMark(0), std::invalid_argument);
+    session->close();
+}
+
+TEST(SessionTest, CloseWhenPendingOutputExceedsConfiguredHighWaterMark) {
+    auto sockets = makeSocketPair();
+    liteim::EventLoop loop;
+    auto session = std::make_shared<liteim::Session>(&loop, std::move(sockets.server));
+    session->setOutputHighWaterMark(64);
+    session->start();
+
+    const auto status = session->sendPacket(makePacket(std::string(128, 'x'), 100));
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_TRUE(session->closed());
+    EXPECT_EQ(session->pendingOutputBytes(), 0U);
+}
+
 TEST(SessionTest, LastActiveTimeIsInitialized) {
     auto sockets = makeSocketPair();
     liteim::EventLoop loop;

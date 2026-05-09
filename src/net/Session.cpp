@@ -1,5 +1,6 @@
 #include "liteim/net/Session.hpp"
 
+#include "liteim/base/Logger.hpp"
 #include "liteim/base/Timestamp.hpp"
 #include "liteim/net/EventLoop.hpp"
 #include "liteim/net/SocketUtil.hpp"
@@ -52,6 +53,10 @@ bool Session::closed() const noexcept {
     return closed_.load();
 }
 
+std::size_t Session::outputHighWaterMark() const noexcept {
+    return output_high_water_mark_;
+}
+
 std::size_t Session::pendingOutputBytes() const {
     loop_->assertInLoopThread();
     return output_buffer_.readableBytes();
@@ -67,6 +72,15 @@ void Session::setMessageCallback(MessageCallback callback) {
 
 void Session::setCloseCallback(CloseCallback callback) {
     close_callback_ = std::move(callback);
+}
+
+void Session::setOutputHighWaterMark(std::size_t high_water_mark) {
+    loop_->assertInLoopThread();
+    if (high_water_mark == 0) {
+        throw std::invalid_argument("output high water mark must be positive");
+    }
+
+    output_high_water_mark_ = high_water_mark;
 }
 
 void Session::start() {
@@ -140,8 +154,14 @@ void Session::sendEncodedInLoop(Bytes encoded) {
         return;
     }
 
-    if (encoded.size() > kSessionOutputHighWaterMark ||
-        output_buffer_.readableBytes() > kSessionOutputHighWaterMark - encoded.size()) {
+    const auto pending_bytes = output_buffer_.readableBytes();
+    if (encoded.size() > output_high_water_mark_ ||
+        pending_bytes > output_high_water_mark_ - encoded.size()) {
+        Logger::get()->warn("Session {} output buffer high water mark exceeded: pending={}, incoming={}, limit={}",
+                            id_,
+                            pending_bytes,
+                            encoded.size(),
+                            output_high_water_mark_);
         closeInLoop();
         return;
     }

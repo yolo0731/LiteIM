@@ -14,6 +14,8 @@ TEST(ReactorInterfaceTest, SessionHeaderIsSelfContained) {
 
     static_assert(std::is_constructible_v<Session, liteim::EventLoop*, liteim::UniqueFd, std::uint64_t>);
     static_assert(!std::is_constructible_v<Session, liteim::EventLoop*, int, std::uint64_t>);
+    static_assert(std::is_same_v<decltype(&Session::setOutputHighWaterMark), void (Session::*)(std::size_t)>);
+    static_assert(std::is_same_v<decltype(&Session::outputHighWaterMark), std::size_t (Session::*)() const noexcept>);
     static_assert(std::is_same_v<decltype(&Session::pendingOutputBytes), std::size_t (Session::*)() const>);
 
     SUCCEED();

@@ -142,7 +142,7 @@ EPOLLOUT
 
 这就是输出缓冲区存在的原因：非阻塞 socket 写不完是正常情况，不能阻塞 I/O 线程等待客户端慢慢收。
 
-Step 17 后的 review hardening 已补上第一版高水位保护：`sendEncodedInLoop()` 在 append 前检查 `output_buffer_.readableBytes() + encoded.size()`，超过 `kSessionOutputHighWaterMark` 也就是 4MB 时直接 `closeInLoop()`。这不是复杂限流，而是最基础的慢客户端保护，防止客户端长期不读导致服务端内存无限增长。
+Step 17 后的 review hardening 已补上第一版高水位保护；Step 20 把它收敛成可配置策略：`sendEncodedInLoop()` 在 append 前检查 `output_buffer_.readableBytes() + encoded.size()`，超过 `output_high_water_mark_` 时记录日志并 `closeInLoop()`。默认值仍是 4MB，对应 `kSessionDefaultOutputHighWaterMark`。
 
 ## 7. 关闭路径
 
@@ -173,7 +173,7 @@ defer Channel destruction
 - 心跳超时。
 - 输出缓冲区高水位关闭策略。
 
-其中输出缓冲区高水位关闭策略已在 Step 17 后 review hardening 中补齐；心跳、业务路由和更细的限流策略仍属于后续 Step。
+其中输出缓冲区高水位关闭策略已在 Step 17 后 review hardening 中补齐基础版本，并在 Step 20 扩展为可配置阈值；心跳、业务路由和更细的限流策略仍属于后续 Step。
 
 ## 9. 测试
 
@@ -198,7 +198,7 @@ defer Channel destruction
 - 对端关闭能触发 close callback。
 - 其他线程调用 `sendPacket()` 能投递回 owner loop 并成功写出。
 - 大包在 peer 不读取时会留下 pending output，证明 output buffer 能接住未写完数据。
-- pending output 超过 4MB 时会关闭连接，证明慢客户端不会无限堆积内存。
+- pending output 超过配置的输出高水位时会关闭连接，证明慢客户端不会无限堆积内存。
 - `last_active_time` 初始化为有效时间戳。
 - 服务端持续写出不会刷新 heartbeat 活跃时间；只有客户端入站完整 Packet 会续期。
 - 非 owner 线程直接调用 `pendingOutputBytes()` 会触发线程归属错误，证明 `Buffer` 不被跨线程读取。
@@ -223,7 +223,7 @@ ctest --test-dir build --output-on-failure
 
 慢客户端保护可以这样补充：
 
-> 发送路径不会无限追加 output buffer。每次 append 前先检查当前待发送字节加本次编码包是否超过 4MB，高于上限就关闭连接。这是第一版高水位保护，简单直接，能防止慢客户端或异常网络把服务端内存耗尽。
+> 发送路径不会无限追加 output buffer。每次 append 前先检查当前待发送字节加本次编码包是否超过配置的输出高水位，默认是 4MB；高于上限就记录日志并关闭连接。这是第一版高水位保护，简单直接，能防止慢客户端或异常网络把服务端内存耗尽。
 
 ## 11. 常见追问
 
@@ -239,5 +239,5 @@ ctest --test-dir build --output-on-failure
 **`FrameDecoder` 和 `Session` 的边界是什么？**  
 `FrameDecoder` 只负责“字节流到 Packet”的解析，不读 socket、不管理连接生命周期。`Session` 负责 socket I/O 和连接关闭，并把读到的字节交给 decoder。
 
-**为什么 Step 14 当时不做心跳和高水位？**
-Step 14 先把连接读写生命周期打通。心跳依赖 `timerfd` / 定时器管理，仍然留到后续 Step；高水位保护已在 Step 17 后 review hardening 中补齐为 4MB 超限关闭。
+**为什么 Step 14 当时不做心跳和完整高水位配置？**
+Step 14 先把连接读写生命周期打通。心跳依赖 `timerfd` / 定时器管理，仍然留到后续 Step；高水位保护先在 Step 17 后 review hardening 中补齐为默认 4MB 超限关闭，再在 Step 20 扩展为可配置阈值、超限日志和 TcpServer 级测试。
