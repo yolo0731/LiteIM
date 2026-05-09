@@ -1,44 +1,44 @@
-# Net Lifecycle Review Hardening
+# 网络生命周期评审加固复盘
 
-Date: 2026-05-09
+日期：2026-05-09
 
-Context: after Step 17, an external review pointed out several lifecycle and slow-client risks in the network layer. This note records which points were accepted, how they were reproduced with tests, and what was changed.
+背景：Step 17 完成后，外部评审指出了网络层中的若干生命周期和慢客户端风险。本复盘记录哪些问题被接受、如何用回归测试复现，以及最终做了哪些修复。
 
-## Accepted Bugs
+## 已接受的问题
 
-### 1. EventLoopThread self-stop lifecycle
+### 1. EventLoopThread 自线程 stop 的生命周期问题
 
-Old shape:
+旧结构：
 
 ```text
-loop thread calls EventLoopThread::stop()
-  -> stop() calls loop_->quit()
-  -> stop() detaches its own std::thread
-  -> stop() clears loop_ / running_
-  -> threadFunc() later also clears loop_ / running_
+loop 线程调用 EventLoopThread::stop()
+  -> stop() 调用 loop_->quit()
+  -> stop() detach 自己管理的 std::thread
+  -> stop() 清空 loop_ / running_
+  -> threadFunc() 稍后也会清空 loop_ / running_
 ```
 
-The detach path avoided self-join, but it weakened ownership. The owner could think cleanup had completed while the worker was still executing. If the `EventLoopThread` object was destroyed before `threadFunc()` finished, the worker could still touch `this`.
+`detach` 路径避免了 self-join，但削弱了对象所有权边界。owner 线程可能以为清理已经完成，而 worker 线程其实还在执行。如果 `EventLoopThread` 对象在 `threadFunc()` 结束前析构，worker 线程仍可能继续访问 `this`。
 
-Fix:
+修复：
 
-- `stop()` only requests `loop_->quit()`.
-- `stop()` returns immediately when called from the managed worker thread.
-- owner-thread `stop()` joins the worker.
-- `loop_`, `thread_id_`, and `running_` are cleared only in `threadFunc()` when the worker is actually exiting.
-- `join_started_` prevents concurrent external stop calls from racing on `std::thread::join()`.
+- `stop()` 只请求 `loop_->quit()`。
+- 如果 `stop()` 是在被管理的 worker 线程内部调用，立即返回。
+- owner 线程调用 `stop()` 时负责 join worker。
+- `loop_`、`thread_id_` 和 `running_` 只在 worker 真正退出时由 `threadFunc()` 清理。
+- `join_started_` 防止多个外部 `stop()` 并发竞争同一个 `std::thread::join()`。
 
-Regression test:
+回归测试：
 
 ```cpp
 TEST(EventLoopThreadTest, OwnerStopWaitsAfterStopIsRequestedInsideLoop)
 ```
 
-The test queues a task that calls `thread.stop()` from inside the loop, then sleeps. The owner calls `stop()` and must wait until the task finishes and the worker exits.
+测试会向 loop 投递一个任务，让这个任务在 loop 内部调用 `thread.stop()`，然后 sleep 一段时间。owner 再调用 `stop()` 时，必须等待该任务结束并等待 worker 线程退出。
 
-### 2. Session output buffer had no high-water mark
+### 2. Session 输出缓冲区没有高水位限制
 
-Old shape:
+旧结构：
 
 ```text
 Session::sendEncodedInLoop()
@@ -46,25 +46,25 @@ Session::sendEncodedInLoop()
   -> enableWriting()
 ```
 
-If a client stopped reading, repeated sends could grow `output_buffer_` without an upper bound.
+如果客户端停止读取，服务端反复发送会让 `output_buffer_` 无上限增长。
 
-Fix:
+修复：
 
-- Added `kSessionOutputHighWaterMark = 4 * 1024 * 1024`.
-- Before appending, `Session` checks `pending bytes + encoded bytes`.
-- If the next append would exceed 4MB, the connection is closed in its owner I/O loop.
+- 新增 `kSessionOutputHighWaterMark = 4 * 1024 * 1024`。
+- append 前检查 `pending bytes + encoded bytes`。
+- 如果下一次 append 会超过 4MB，就在 Session 所属 I/O loop 内关闭连接。
 
-Regression test:
+回归测试：
 
 ```cpp
 TEST(SessionTest, CloseWhenPendingOutputExceedsHighWaterMark)
 ```
 
-The test queues multiple max-size packets while the peer does not read. The session must close and clear pending output when the high-water mark is exceeded.
+测试让对端不读取，然后连续投递多个最大尺寸 Packet。Session 必须在超过高水位时关闭，并清空待发送输出。
 
-### 3. TcpServer used fd as session identity
+### 3. TcpServer 使用 fd 作为 session 身份
 
-Old shape:
+旧结构：
 
 ```text
 session_id = accepted_fd
@@ -72,109 +72,111 @@ sessions_[session_id] = session
 close callback -> removeSession(session_id)
 ```
 
-fd is a kernel resource number, not a stable connection identity. After close, Linux can quickly reuse the same fd. If an old close callback is delayed and a new connection receives the same fd, the old remove can erase the new session.
+fd 是内核资源编号，不是稳定的连接身份。连接关闭后，Linux 可能很快复用同一个 fd。若旧连接的 close callback 延迟执行，而新连接刚好拿到同一个 fd，旧的 remove 可能误删新 Session。
 
-Fix:
+修复：
 
-- Added `next_session_id_`.
-- `TcpServer::createSessionInLoop()` assigns a monotonic `std::uint64_t` id.
-- `Session` stores the id and exposes `id()`.
-- `sessions_` is keyed by logical session id, not fd.
-- `sendToSession()` now accepts `std::uint64_t`.
+- 新增 `next_session_id_`。
+- `TcpServer::createSessionInLoop()` 分配单调递增的 `std::uint64_t` id。
+- `Session` 保存该 id，并暴露 `id()`。
+- `sessions_` 以逻辑 session id 为 key，不再以 fd 为 key。
+- `sendToSession()` 改为接收 `std::uint64_t`。
 
-Regression coverage:
+回归覆盖：
 
 ```cpp
 TEST(ReactorInterfaceTest, TcpServerHeaderIsSelfContained)
 TEST(TcpServerTest, SendToSessionFromOtherThreadDeliversPacket)
 ```
 
-The API and test now use `session->id()` instead of `session->fd()`.
+API 和测试现在使用 `session->id()`，不再使用 `session->fd()` 作为业务身份。
 
-### 4. Channel returned immediately after EPOLLERR
+### 4. Channel 遇到 EPOLLERR 后直接返回
 
-Old shape:
+旧结构：
 
 ```text
 EPOLLERR -> error callback -> return
 ```
 
-If epoll delivered `EPOLLERR | EPOLLIN`, the read callback was skipped. There can still be readable data or EOF state that `Session::handleRead()` should consume.
+如果 epoll 同时返回 `EPOLLERR | EPOLLIN`，read callback 会被跳过。但此时 socket 里可能仍有可读数据，或者需要让 `Session::handleRead()` 消费 EOF 状态。
 
-Fix:
+修复：
 
-- `EPOLLERR` still runs the error callback first.
-- It no longer returns immediately.
-- Read and write dispatch continue based on the same `revents_` snapshot.
+- `EPOLLERR` 仍然先执行 error callback。
+- 不再在 error callback 后立即返回。
+- 继续根据同一份 `revents_` 快照分发 read / write 事件。
 
-Regression test:
+回归测试：
 
 ```cpp
 TEST(ChannelTest, ErrorWithReadableEventInvokesErrorThenRead)
 ```
 
-### 5. Acceptor close could wait forever after loop exit race
+### 5. Acceptor close 在 loop 退出竞态下可能永久等待
 
-The review suggested making `Acceptor::close()` owner-loop-only. LiteIM already has a tested cross-thread close contract, so the contract was kept. But the review still exposed a real race in the current implementation:
+外部评审建议把 `Acceptor::close()` 改成 owner-loop-only。LiteIM 当前已经有测试覆盖的跨线程 close 契约，因此没有直接改掉这个契约。但这个建议暴露了当前实现中一个真实竞态：
 
 ```text
-non-loop thread calls Acceptor::close()
-  -> loop is not stopped yet
-  -> close task is queued
-  -> close waits on future
-  -> loop exits before running the close task
-  -> future is never fulfilled
+非 loop 线程调用 Acceptor::close()
+  -> loop 当时还没停止
+  -> close task 被排队
+  -> close 等待 future
+  -> loop 在执行 close task 前退出
+  -> future 永远不会被 fulfilled
 ```
 
-Fix:
+修复：
 
-- Keep cross-thread close.
-- After queueing the close task, wait in short intervals.
-- If `EventLoop::isStopped()` becomes true before the future is ready, run the stopped-loop fallback cleanup and return.
+- 保留跨线程 close 契约。
+- close task 排队后，用短间隔等待。
+- 如果 future ready 前 `EventLoop::isStopped()` 变为 true，就执行 stopped-loop fallback cleanup 并返回。
 
-Regression test:
+回归测试：
 
 ```cpp
 TEST(AcceptorTest, CloseFromOtherThreadWhileLoopExitsWithQueuedCloseDoesNotBlock)
 ```
 
-The test holds the loop inside a pending task, starts cross-thread `close()`, then lets the task call `quit()` before the queued close task can run. The close call must return instead of blocking forever.
+测试让 loop 卡在一个 pending task 内，随后从其他线程调用 `close()`，再让 pending task 在 queued close task 执行前调用 `quit()`。`close()` 必须返回，不能永久阻塞。
 
-## Not Accepted As-Is
+## 未按原建议直接采纳的点
 
-### Acceptor::close owner-loop-only rewrite
+### Acceptor::close owner-loop-only 重写
 
-The owner-loop-only contract was not accepted as a direct rewrite. It is a valid muduo-style design, but the current LiteIM code already has explicit tests for cross-thread Acceptor close, including the case where the loop is created but not yet running. This pass kept that contract and fixed the concrete permanent-wait race instead. A future redesign can still simplify the contract if the higher-level owner lifecycle is changed at the same time.
+没有直接采纳把 `Acceptor::close()` 改成 owner-loop-only 的建议。这个方向符合 muduo-style，但当前 LiteIM 已经为跨线程 `Acceptor::close()` 写了明确测试，包括 loop 已创建但尚未运行的情况。本轮保留该契约，只修复具体的永久等待竞态。
 
-### ThreadPool swap-and-join rewrite
+如果未来上层 owner 生命周期整体收口，仍可以单独重新设计 `Acceptor::close()` 的契约。
 
-The review suggested replacing `stop_mutex_` with a swap-and-join shutdown. The current code already serializes external `stop()` calls and has regression coverage for concurrent stop. Worker-origin `stop()` is intentionally an owner-cleanup boundary: the worker only requests shutdown, and the owner later joins and clears `workers_`.
+### ThreadPool swap-and-join 重写
 
-Deleting a `ThreadPool` object from inside one of its own tasks remains unsupported. Even detaching the current worker would not make that safe, because the worker would return to `workerLoop()` and continue using `this` after the object was destroyed.
+外部评审建议用 swap-and-join 替代 `stop_mutex_`。当前代码已经序列化外部 `stop()` 调用，并且有并发 stop 回归测试。worker 内部调用 `stop()` 是刻意保留的 owner-cleanup 边界：worker 只请求停止，owner 后续 join 并清空 `workers_`。
 
-### Broad variable merges
+不支持在 `ThreadPool` 自己的任务内部 delete 这个 `ThreadPool` 对象。即使 detach 当前 worker，也不能让这种做法安全，因为 worker 返回后仍会继续进入 `workerLoop()` 并使用 `this`。
 
-Some suggested merges are good future cleanup candidates, but were not part of this pass:
+### 大范围变量合并
 
-- `Session` bools to a full enum state machine.
-- `EventLoop` flag reduction.
-- `FrameDecoder` input-buffer redesign.
-- Removing testing getters from `EventLoopThreadPool`.
+一些风格建议适合作为后续清理，但不应该混入本轮生命周期 bugfix：
 
-Those need separate tests and should not be mixed into lifecycle bug fixes.
+- 把 `Session` 多个 bool 收敛成完整 enum 状态机。
+- 精简 `EventLoop` flag。
+- 重做 `FrameDecoder` 输入缓冲结构。
+- 删除 `EventLoopThreadPool` 中偏测试用途的 getter。
 
-## Verification
+这些修改需要单独测试，不能和生命周期 bugfix 混在一起。
 
-Targeted verification:
+## 验证
+
+定向验证：
 
 ```bash
 cmake --build build
 ctest --test-dir build --output-on-failure -R "(Acceptor|EventLoopThread|Session|TcpServer|Channel)"
 ```
 
-Expected result: all targeted tests pass.
+预期结果：所有定向测试通过。
 
-Full verification for the final patch also runs:
+最终补丁还需要跑全量验证：
 
 ```bash
 ctest --test-dir build --output-on-failure
@@ -182,8 +184,8 @@ ctest --test-dir build --output-on-failure
 git diff --check
 ```
 
-## Interview Answer
+## 面试回答
 
-One concise answer:
+一个简洁说法：
 
-> After an external review I reproduced five real issues with regression tests: self-stop in `EventLoopThread`, a queued-close wait race in `Acceptor`, missing output-buffer high-water mark in `Session`, fd reuse in `TcpServer` session ids, and `Channel` returning after `EPOLLERR` even when readable data was pending. I fixed them by moving `EventLoopThread` state cleanup into `threadFunc()`, keeping `Acceptor` cross-thread close but adding a stopped-loop wait fallback, adding a 4MB output high-water close path, assigning monotonic logical session ids, and letting `EPOLLERR | EPOLLIN` dispatch error first and then read. I did not blindly accept all style suggestions; for `ThreadPool::stop()` and broad variable merges I kept the existing tested contracts and documented why the proposed rewrites should be separate design changes.
+> 外部评审后，我没有盲目接受所有风格建议，而是先用回归测试复现了 5 个真实问题：`EventLoopThread` 自线程 stop 的生命周期问题、`Acceptor` queued close 在 loop 退出竞态下永久等待、`Session` 缺少输出缓冲高水位、`TcpServer` 用 fd 当 session id 导致 fd 复用误删风险，以及 `Channel` 遇到 `EPOLLERR | EPOLLIN` 时先 error 后直接返回导致 read 被吞掉。修复上，我把 `EventLoopThread` 状态清理移动到 `threadFunc()` 退出路径，保留 `Acceptor` 跨线程 close 契约但增加 stopped-loop fallback，给 `Session` 增加 4MB 高水位关闭路径，给 `TcpServer` 改成单调递增逻辑 session id，并让 `Channel` 在 error callback 后继续处理同一轮 read 事件。对于 `ThreadPool::stop()` 和大范围变量合并，我保留当前已有测试覆盖的契约，把它们记录为后续独立设计问题。

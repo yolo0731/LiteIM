@@ -157,10 +157,24 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 18 docs | done | Synced README, docs, tutorials, findings, progress, task plan, and PROJECT_MEMORY for the timerfd heartbeat boundary. |
 | Step 18 verification | done | Build, server smoke, targeted timer/TcpServer tests, full CTest 164/164, diff check, `.gitkeep`, stale-route checks, and final diff review passed. |
 | Step 18 commit | done | Commit message: `feat(timer): integrate timerfd heartbeat timeout`. |
+| Step 18.5 concept | done | Accepted muduo-style owner-loop lifecycle hardening before signalfd, without mixing Session input/state rewrites. |
+| Step 18.5 tests | done | Added owner-loop death tests and Session `UniqueFd` / `pendingOutputBytes()` interface coverage. |
+| Step 18.5 code | done | `TcpServer` and `TimerManager` stop/destruct are owner-loop-only; `Session` now receives `UniqueFd`; server main starts a real echo server. |
+| Step 18.5 docs | done | Synced README, tutorials, findings, progress, task plan, and PROJECT_MEMORY with lifecycle hardening result. |
+| Step 18.5 verification | done | Build, server smoke, targeted tests, full CTest 167/167, diff check, stale-route checks, and final diff review passed. |
+| Step 18.5 commit | done | Commit: `146353a refactor(net): harden reactor owner loop lifetimes`. |
+| PROJECT_MEMORY markdown alignment | done | Merged muduo rewrite into the single authoritative `/home/yolo/jianli/PROJECT_MEMORY.md`, updated constraint docs, and translated the net lifecycle debug case to Chinese. |
 
 ## Current Decision
 
 Use `/home/yolo/jianli/PROJECT_MEMORY.md` as the source of truth.
+
+Current route status:
+
+- Step 18 `TimerManager + timerfd heartbeat timeout` is complete.
+- Step 18.5 `muduo-style lifecycle ownership hardening` is complete.
+- Default next implementation step is Step 19 `signalfd graceful shutdown`.
+- Optional Step 18.6 `Session` input-path simplification and Optional Step 18.7 `Session` state consolidation do not block Step 19 unless the user explicitly asks for that cleanup first.
 
 LiteIM phases:
 
@@ -182,6 +196,11 @@ LiteIM phases:
 - Do not use Boost.Asio.
 - Do not run MySQL / Redis calls in I/O threads.
 - Do not let business threads directly mutate `Session`; responses must go through `EventLoop::queueInLoop()` or `runInLoop()`.
+- Do not stop or destroy `TcpServer` outside the base loop thread.
+- Do not stop or destroy `TimerManager` outside its owner loop thread.
+- Do not queue destructor/stop cleanup as `queueInLoop([this] { ... })` for Reactor-owned objects.
+- Keep accepted fd ownership on `UniqueFd` from `Acceptor` through `TcpServer` into `Session`.
+- Treat `Session::pendingOutputBytes()` as owner-loop-only.
 - Do not embed Python/LangGraph into the C++ server; PersonaAgent connects as a BotClient.
 - PersonaAgent uses six core LangGraph nodes: `dialogue_policy`, `retrieve`, `tool_router`, `generate_reply`, `safety_check`, and `send_message`.
 - Authorized Style RAG data must have consent manifest, source metadata, allowed usage, PII redaction, revocation support, and SafetyGuard protection.
@@ -994,5 +1013,26 @@ cmake --build build
 ctest --test-dir build -R "(Session|TcpServer|TimerManager)" --output-on-failure
 timeout 1s ./build/server/liteim_server || test $? -eq 124
 ctest --test-dir build --output-on-failure
+git diff --check
+```
+
+## 2026-05-09 PROJECT_MEMORY Markdown Alignment
+
+This documentation-only pass follows the newly merged `/home/yolo/jianli/PROJECT_MEMORY.md`:
+
+- Keep only one authoritative project memory file: `/home/yolo/jianli/PROJECT_MEMORY.md`.
+- Treat Step 18 and Step 18.5 as complete.
+- Treat Step 19 `signalfd graceful shutdown` as the default next implementation step.
+- Keep Optional Step 18.6 and Step 18.7 as non-blocking future cleanup.
+- Update `/home/yolo/jianli/AGENTS.md` as the compact constraint file for future agents.
+- Update `/home/yolo/jianli/CLAUDE.md` so it no longer points agents at broad `LiteIM/docs/` maintenance.
+- Translate `docs/debug_cases/net_lifecycle_review_hardening.md` to Chinese while preserving the technical content.
+
+Verification commands:
+
+```bash
+find /home/yolo/jianli -maxdepth 1 -name 'PROJECT_MEMORY*.md' -printf '%f\n' | sort
+rg -n --glob '!task_plan.md' "下一步不要直接进入|用于替换或升级" /home/yolo/jianli/PROJECT_MEMORY.md /home/yolo/jianli/AGENTS.md /home/yolo/jianli/CLAUDE.md README.md findings.md progress.md tutorials docs
+rg -n "Current Status|当前状态|tutorials/README|docs/architecture|docs/project_layout|docs/roadmap" README.md tutorials /home/yolo/jianli/AGENTS.md /home/yolo/jianli/PROJECT_MEMORY.md
 git diff --check
 ```

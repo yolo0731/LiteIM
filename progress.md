@@ -1,5 +1,32 @@
 # LiteIM Progress
 
+## 2026-05-09 PROJECT_MEMORY Markdown Alignment
+
+本次按新版 `/home/yolo/jianli/PROJECT_MEMORY.md` 同步其余 Markdown，不改 C++ 代码。
+
+已完成：
+
+- 更新 `/home/yolo/jianli/AGENTS.md`，把它作为未来 agent 的约束文件：明确 Step 18 / Step 18.5 已完成、默认下一步是 Step 19 `signalfd graceful shutdown`，并补充 muduo-style owner-loop 生命周期规则。
+- 更新 `/home/yolo/jianli/CLAUDE.md`，同步当前进度、docs 边界、owner-loop 约束和 `docs/debug_cases/` 保留规则。
+- 将 `docs/debug_cases/net_lifecycle_review_hardening.md` 从英文完整改写为中文，保留复盘背景、已接受 bug、不采纳项、验证命令和面试回答。
+- 更新 `task_plan.md` 当前阶段，补上 Step 18.5 已完成记录和本轮 Markdown alignment 记录。
+- 更新 `findings.md` 权威来源和文档边界，避免旧的 “从 Step 0 重新开始” 口径压过当前真实进度。
+
+边界：
+
+- 没有修改 C++ 源码、CMake 或测试代码。
+- 没有恢复 `docs/architecture.md`、`docs/project_layout.md`、`docs/roadmap.md` 或 `tutorials/README.md`。
+- 没有把 Optional Step 18.6 / Step 18.7 变成 Step 19 前置条件。
+
+验证：
+
+- `find /home/yolo/jianli -maxdepth 1 -name 'PROJECT_MEMORY*.md' -printf '%f\n' | sort` 只输出 `PROJECT_MEMORY.md`。
+- `find docs -type f | sort` 只输出两个 debug case 文档。
+- `find tutorials -maxdepth 1 -type f -name 'README.md' -print` 无输出。
+- 合并残留和旧入口文案扫描无输出。
+- `rg -n "Current Status|当前状态" README.md` 无输出。
+- `git diff --check` 无输出。
+
 ## 2026-05-09 Muduo-style Lifecycle Hardening
 
 本次根据外部 review 做一轮小范围 hardening，目标是让 Reactor 对象生命周期更接近 muduo：对象在哪个 loop 线程拥有，就在哪个 loop 线程停止和析构。

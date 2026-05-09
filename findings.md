@@ -3,9 +3,26 @@
 ## 权威来源
 
 - `/home/yolo/jianli/PROJECT_MEMORY.md` 是 LiteIM 和 PersonaAgent 的唯一总方案来源。
-- LiteIM 现在从 `Step 0` 重新开始。
-- 当前路线是 `LiteIM High Performance + Qt Client + PersonaAgent Authorized Style RAG Edition`。
+- LiteIM 曾从 `Step 0` 重新开始；当前已完成 Step 18 和 Step 18.5。
+- 当前默认下一步是 `Step 19: signalfd graceful shutdown`。
+- Optional Step 18.6 `Session` 输入路径简化和 Optional Step 18.7 状态收敛不阻塞 Step 19，除非用户明确要求先继续清理。
+- 当前路线是 `LiteIM muduo-style 高性能 IM + Qt + PersonaAgent`。
 - 如果 `README.md`、`task_plan.md`、`progress.md`、教程或源码与 `PROJECT_MEMORY.md` 冲突，统一改回 `PROJECT_MEMORY.md` 的路线。
+
+## 2026-05-09 PROJECT_MEMORY Markdown Alignment Findings
+
+本次按新版 `/home/yolo/jianli/PROJECT_MEMORY.md` 同步其余 Markdown，不改代码。
+
+已经确认并采用的文档边界：
+
+- `/home/yolo/jianli/PROJECT_MEMORY.md` 是唯一总设计文件；不再保留第二份总设计文件。
+- `/home/yolo/jianli/AGENTS.md` 是未来 agent 的紧凑约束文件，需要显式写入 Step 18.5 已完成、Step 19 默认下一步、owner-loop 生命周期、禁止 `queueInLoop([this])` 异步清理、`UniqueFd` fd 所有权交接、`pendingOutputBytes()` owner-loop-only 等硬规则。
+- `/home/yolo/jianli/CLAUDE.md` 也需要同步同一口径，避免继续要求维护 broad `LiteIM/docs/` 或使用过期行数。
+- `docs/debug_cases/` 是保留的内部复盘目录；其中 `net_lifecycle_review_hardening.md` 应改为中文，方便后续教学和面试复盘。
+- `docs/architecture.md`、`docs/project_layout.md`、`docs/roadmap.md` 不恢复；`tutorials/README.md` 不恢复。
+- README 继续作为 GitHub 对外介绍，不加入 `Current Status` / `当前状态` 这种过程状态标题。
+
+本次没有修改 C++ 源码、CMake 或测试代码。
 
 ## 2026-05-09 Muduo-style Lifecycle Hardening Findings
 
