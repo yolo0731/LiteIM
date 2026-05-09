@@ -12,6 +12,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <exception>
@@ -174,6 +175,36 @@ TEST(SessionTest, HalfPacketDoesNotInvokeMessageCallback) {
     session->close();
 }
 
+TEST(SessionTest, SplitPacketAcrossReadsInvokesCallbackAfterSecondRead) {
+    auto sockets = makeSocketPair();
+    liteim::EventLoop loop;
+    auto session = std::make_shared<liteim::Session>(&loop, std::move(sockets.server));
+    const auto encoded = encodeOrDie(makePacket("split-complete", 9));
+    std::uint64_t observed_seq_id = 0;
+
+    session->setMessageCallback(
+        [&loop, &observed_seq_id](const std::shared_ptr<liteim::Session>&, const liteim::Packet& packet) {
+            observed_seq_id = packet.header.seq_id;
+            loop.quit();
+        });
+    session->start();
+
+    const auto split_pos = encoded.size() / 2;
+    const auto split_it = encoded.begin() + static_cast<std::ptrdiff_t>(split_pos);
+    const liteim::Bytes first_half(encoded.begin(), split_it);
+    const liteim::Bytes second_half(split_it, encoded.end());
+    writeAll(sockets.peer.fd(), first_half);
+    std::thread second_writer([&sockets, second_half]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        writeAll(sockets.peer.fd(), second_half);
+    });
+    loop.loop();
+    second_writer.join();
+
+    EXPECT_EQ(observed_seq_id, 9U);
+    session->close();
+}
+
 TEST(SessionTest, StickyPacketsInvokeCallbackForEachPacket) {
     auto sockets = makeSocketPair();
     liteim::EventLoop loop;
@@ -216,6 +247,28 @@ TEST(SessionTest, PeerCloseInvokesCloseCallback) {
     session->start();
 
     sockets.peer.reset();
+    loop.loop();
+
+    EXPECT_EQ(close_count, 1);
+    EXPECT_TRUE(session->closed());
+}
+
+TEST(SessionTest, MalformedPacketClosesSession) {
+    auto sockets = makeSocketPair();
+    liteim::EventLoop loop;
+    auto session = std::make_shared<liteim::Session>(&loop, std::move(sockets.server));
+    auto malformed = encodeOrDie(makePacket("bad-magic", 10));
+    malformed[0] = static_cast<liteim::Byte>(0);
+    int close_count = 0;
+
+    session->setCloseCallback([&loop, &close_count](const std::shared_ptr<liteim::Session>& closed) {
+        EXPECT_TRUE(closed->closed());
+        ++close_count;
+        loop.quit();
+    });
+    session->start();
+
+    writeAll(sockets.peer.fd(), malformed);
     loop.loop();
 
     EXPECT_EQ(close_count, 1);

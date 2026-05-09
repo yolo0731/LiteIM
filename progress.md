@@ -1,5 +1,49 @@
 # LiteIM Progress
 
+## 2026-05-09 Optional Step 18.6 Session Input Path Simplification
+
+本次按用户确认执行 `Optional Step 18.6: Session 输入路径简化`，目标是删除 `Session` 输入路径里多余的一层 `input_buffer_`。
+
+概念边界：
+
+- `FrameDecoder` 已经维护 TCP 半包 / 粘包所需的内部缓存。
+- `Session` 输入路径改为 `socket read -> FrameDecoder -> Packet callback`。
+- 只有成功解出完整入站 `Packet` 后才刷新 `last_active_time`。
+- 出站写仍不刷新 heartbeat 活跃时间。
+- 本次不改 output buffer、不改 Step 20 高水位回压、不改 `Session` 状态机、不改 Packet/TLV wire format。
+
+已完成代码：
+
+- 删除 `Session::input_buffer_` 成员。
+- 删除 `feedInputBuffer()`。
+- `Session::handleRead()` 在 `read() > 0` 后直接调用 `decoder_.feed(buffer.data(), n, packets)`。
+- `handleRead()` 继续保持 `EINTR` retry、`EAGAIN/EWOULDBLOCK` 返回、`n == 0` 关闭、解码失败关闭。
+- `closeInLoop()` 不再清理输入 buffer，只清理输出 buffer。
+
+新增测试：
+
+- `SessionTest.SplitPacketAcrossReadsInvokesCallbackAfterSecondRead`
+- `SessionTest.MalformedPacketClosesSession`
+
+已完成文档同步：
+
+- 更新 Step 14 Session 教程，把读路径改为直接喂 `FrameDecoder`。
+- 更新 Step 7 Buffer 教程，明确输入半包/粘包缓存由 `FrameDecoder` 维护，`Buffer` 主要用于输出缓冲。
+- 更新 `task_plan.md`、`findings.md` 和 `progress.md`。
+
+验证：
+
+- `cmake --build build && ctest --test-dir build -R "SessionTest|TcpServerTest|FrameDecoderTest" --output-on-failure`：37/37 通过。
+- `ctest --test-dir build --output-on-failure`：183/183 通过。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，服务端收到 SIGTERM 后优雅退出。
+- `git diff --check`：通过。
+
+提交信息：
+
+```text
+refactor(net): simplify session input decoding path
+```
+
 ## 2026-05-09 Step 20 Slow-Client Backpressure Hardening
 
 本次进入 `Step 20: 完善慢客户端回压保护`，目标是在已有默认 4MB 超限关闭基础上，把输出缓冲区高水位整理为可配置、可观测、可测试的策略。

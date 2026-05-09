@@ -2,10 +2,10 @@
 
 本 Step 进入网络层，但还不写 socket、epoll、Reactor 或 `Session`。
 
-目标是先实现一个可复用的字节缓冲区 `Buffer`。后续每个连接都会需要输入缓冲区和输出缓冲区：
+目标是先实现一个可复用的字节缓冲区 `Buffer`。它可以作为网络读写路径里的通用字节存储，后续连接发送路径会用它保存待写出的输出数据：
 
 ```text
-socket read -> input Buffer -> FrameDecoder -> Packet
+socket read -> FrameDecoder -> Packet
 Packet / response -> output Buffer -> socket write
 ```
 
@@ -195,7 +195,7 @@ ctest --test-dir build --output-on-failure
 
 可以这样讲：
 
-> 我在网络层实现了一个 socket-agnostic `Buffer`，用读写索引维护可读区和可写区，支持 append、retrieve、自动扩容和前部空间复用。这个 Buffer 后续会作为每个连接的输入缓冲区和输出缓冲区，配合 `FrameDecoder` 解决 TCP 半包/粘包，也为输出缓冲区高水位回压做准备。
+> 我在网络层实现了一个 socket-agnostic `Buffer`，用读写索引维护可读区和可写区，支持 append、retrieve、自动扩容和前部空间复用。这个 Buffer 后续主要作为每个连接的输出缓冲区，接住非阻塞 socket 暂时写不完的数据，也为输出缓冲区高水位回压做准备；输入半包/粘包缓存由 `FrameDecoder` 自己维护。
 
 注意不要把 Step 7 说成已经实现了 Reactor 或高并发服务器。当前只是网络层基础组件。
 

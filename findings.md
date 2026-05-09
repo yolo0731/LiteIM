@@ -8,6 +8,34 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-09 Optional Step 18.6 Session Input Path Simplification Findings
+
+本次执行 Optional Step 18.6，只简化 `Session` 输入路径，不进入 Step 21，也不合并 `Session` 状态。
+
+已经确认并采用的设计：
+
+- `FrameDecoder` 内部已经保存未消费字节，足以处理 TCP 半包 / 粘包。
+- `Session::input_buffer_` 只是在 socket read 和 `FrameDecoder::feed()` 之间做一次临时中转，当前没有独立状态职责。
+- `handleRead()` 可以直接把栈上临时数组读到的字节喂给 `FrameDecoder`。
+- `decoder_.feed()` 失败时继续关闭连接。
+- `decoder_.feed()` 成功输出 packets 后，`Session` 按顺序逐个刷新 `last_active_time` 并触发 `message_callback_`。
+- callback 过程中如果关闭了 session，后续 packet 不再继续派发。
+- `closeInLoop()` 不需要再清理输入 buffer；`FrameDecoder` 跟随 `Session` 生命周期销毁。
+
+新增测试：
+
+- `SessionTest.SplitPacketAcrossReadsInvokesCallbackAfterSecondRead`
+- `SessionTest.MalformedPacketClosesSession`
+
+本次不采用/不改：
+
+- 不改 output buffer。
+- 不改 Step 20 输出高水位回压。
+- 不改 `pendingOutputBytes()` owner-loop-only 契约。
+- 不改 Packet/TLV wire format。
+- 不重构 `FrameDecoder` 内部缓存结构。
+- 不把 `Session` 多个状态 bool 合并为状态机。
+
 ## 2026-05-09 Step 20 Slow-Client Backpressure Findings
 
 本次进入 `Step 20: 完善慢客户端回压保护`，只处理输出缓冲区高水位，不混入 `Session` 输入路径简化或状态机重构。

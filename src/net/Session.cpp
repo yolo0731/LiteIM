@@ -9,6 +9,7 @@
 #include <cerrno>
 #include <stdexcept>
 #include <string>
+#include <vector>
 #include <unistd.h>
 #include <utility>
 
@@ -187,13 +188,21 @@ void Session::handleRead() {
     while (fd_) {
         const auto n = ::read(fd_.fd(), buffer.data(), buffer.size());
         if (n > 0) {
-            const auto append_status = input_buffer_.append(buffer.data(), static_cast<std::size_t>(n));
-            if (!append_status.isOk()) {
+            std::vector<Packet> packets;
+            const auto status = decoder_.feed(buffer.data(), static_cast<std::size_t>(n), packets);
+            if (!status.isOk()) {
                 closeInLoop();
                 return;
             }
-            if (!feedInputBuffer()) {
-                return;
+
+            for (const auto& packet : packets) {
+                if (closed_.load()) {
+                    return;
+                }
+                updateLastActiveTime();
+                if (message_callback_) {
+                    message_callback_(shared_from_this(), packet);
+                }
             }
             continue;
         }
@@ -266,7 +275,6 @@ void Session::closeInLoop() {
     }
 
     fd_.reset();
-    input_buffer_.retrieveAll();
     output_buffer_.retrieveAll();
 
     auto self = shared_from_this();
@@ -279,32 +287,6 @@ void Session::closeInLoop() {
     if (close_callback_) {
         close_callback_(self);
     }
-}
-
-bool Session::feedInputBuffer() {
-    if (input_buffer_.readableBytes() == 0) {
-        return true;
-    }
-
-    std::vector<Packet> packets;
-    const auto status = decoder_.feed(input_buffer_.peek(), input_buffer_.readableBytes(), packets);
-    input_buffer_.retrieveAll();
-    if (!status.isOk()) {
-        closeInLoop();
-        return false;
-    }
-
-    for (const auto& packet : packets) {
-        if (closed_.load()) {
-            return false;
-        }
-        updateLastActiveTime();
-        if (message_callback_) {
-            message_callback_(shared_from_this(), packet);
-        }
-    }
-
-    return !closed_.load();
 }
 
 void Session::updateLastActiveTime() noexcept {

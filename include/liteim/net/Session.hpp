@@ -54,7 +54,6 @@ private:
     void handleRead();
     void handleWrite();
     void closeInLoop();
-    bool feedInputBuffer();
     void updateLastActiveTime() noexcept;
 
     EventLoop* loop_;
@@ -62,7 +61,6 @@ private:
     std::uint64_t id_{0};
     std::unique_ptr<Channel> channel_;
     FrameDecoder decoder_;
-    Buffer input_buffer_;
     Buffer output_buffer_;
     std::size_t output_high_water_mark_{kSessionDefaultOutputHighWaterMark};
     MessageCallback message_callback_;
