@@ -1,56 +1,109 @@
 # LiteIM
 
-LiteIM 是一个按 Step 手写推进的 C++17 高性能即时通讯服务端项目。当前主线是 Linux nonblocking socket、epoll LT、eventfd、one-loop-per-thread Reactor、业务线程池、timerfd 心跳超时，后续继续接入 signalfd、MySQL、Redis、CLI、Qt Widgets 客户端、benchmark、CI，以及通过 Python BotClient 接入的 PersonaAgent。
+LiteIM is a C++17 instant messaging server project built around Linux networking and a one-loop-per-thread Reactor model. The project is developed step by step so each layer remains understandable: protocol encoding, TCP stream decoding, nonblocking I/O, connection lifetime, multi-Reactor dispatch, business-thread isolation, timer-driven heartbeat cleanup, and later MySQL / Redis backed IM services.
 
-项目总路线以 `/home/yolo/jianli/PROJECT_MEMORY.md` 为准；Codex 协作规范以 `/home/yolo/jianli/AGENTS.md` 为准。本仓库对外说明集中在本 README；开发过程记忆只保留在 `task_plan.md`、`findings.md`、`progress.md` 和每个 Step 的 `tutorials/` 文件里。
-
-## Current Status
-
-当前完成到 `Step 18: implement TimerManager + timerfd heartbeat timeout`。
-
-已完成的核心模块：
-
-- `liteim_base`：`Config`、`Logger`、`ErrorCode`、`Status`、`Timestamp`、`Byte` / `Bytes`。
-- `liteim_protocol`：`MessageType`、`TlvType`、`ByteOrder`、`Packet`、`TlvCodec`、`FrameDecoder`。
-- `liteim_net`：`Buffer`、`SocketUtil`、`UniqueFd`、`Channel`、`Epoller`、`EventLoop`、`Acceptor`、`Session`、`EventLoopThread`、`EventLoopThreadPool`、`TcpServer`。
-- `liteim_concurrency`：固定大小业务 `ThreadPool`。
-- `liteim/timer`：`TimerHeap` 和 `TimerManager`。
-
-当前 `TcpServer` 已经可以把主 Reactor 的 `Acceptor`、子 Reactor 线程池和 `Session` 串起来，默认 echo 收到的 `Packet`。Step 18 通过 base-loop `TimerManager` 增加 idle session cleanup：默认每 5 秒检查一次，90 秒没有收到完整 `Packet` 的连接会关闭。
-
-下一步是 `Step 19: implement signalfd graceful shutdown`。
-
-## Architecture Boundary
-
-当前目标架构：
+The long-term target is a small but realistic IM system:
 
 ```text
-Client
-  -> LiteIM TCP Server
-  -> Session / MessageRouter
-  -> Business ThreadPool
-  -> MySQL / Redis
+Qt / CLI / Python Client
+    -> LiteIM C++ TCP Server
+    -> business ThreadPool
+    -> MySQL / Redis
+    -> BotGateway
+    -> PersonaAgent Python BotClient
 ```
 
-关键边界：
+PersonaAgent is intentionally a separate Python service. LiteIM exposes the protocol and Bot user boundary; Python, LangGraph, RAG, LLM calls, and safety logic do not run inside the C++ server process.
 
-- I/O 线程只处理 socket 读写、Packet/TLV 编解码和连接生命周期。
-- MySQL / Redis 等阻塞工作必须进入业务 `ThreadPool`。
-- 业务线程不能直接修改 `Session`；响应必须通过 `EventLoop::queueInLoop()` / `runInLoop()` 回到连接所属 I/O loop。
-- `Session` 生命周期使用 `shared_ptr` / `weak_ptr` 保护。
-- 慢客户端保护通过输出缓冲区高水位策略实现。
-- PersonaAgent 不嵌入 C++ 服务端，而是后续通过 Python BotClient 作为普通 Bot 用户接入 LiteIM。
+## Project Focus
+
+- High-performance C++ backend engineering with C++17, CMake, RAII, GoogleTest, and Linux system calls.
+- Nonblocking socket I/O with `epoll` LT mode, `eventfd` cross-thread wakeups, `timerfd` based timers, and planned `signalfd` shutdown handling.
+- Main Reactor + sub Reactor thread pool. I/O threads handle fd events, Packet/TLV codec work, output-buffer backpressure, and `Session` lifetime.
+- Business `ThreadPool` for future blocking work such as MySQL queries, Redis operations, password hashing, and history loading.
+- Custom TLV binary protocol with TCP sticky-packet / half-packet handling.
+- Safe cross-thread connection access through `EventLoop::runInLoop()` and `EventLoop::queueInLoop()`.
+- Future demo clients: CLI, Python E2E client, and Qt Widgets three-column chat client.
+
+## Architecture
+
+```text
+                         +----------------------+
+                         |  Qt / CLI / BotClient|
+                         +----------+-----------+
+                                    |
+                              TLV over TCP
+                                    |
++------------------------------- LiteIM Server -------------------------------+
+|                                                                            |
+|  Main Reactor                                                               |
+|  - nonblocking listen socket                                                |
+|  - epoll accept events                                                      |
+|  - dispatch accepted connections                                            |
+|                                                                            |
+|  Sub Reactor Thread Pool                                                    |
+|  - one EventLoop per I/O thread                                             |
+|  - eventfd queueInLoop wakeup                                               |
+|  - Session read/write lifecycle                                             |
+|  - FrameDecoder + Packet/TLV codec                                          |
+|  - output-buffer high-water-mark protection                                 |
+|                                                                            |
+|  Business Thread Pool                                                       |
+|  - AuthService / ChatService / GroupService / HistoryService                |
+|  - MySQL DAO and Redis cache operations                                     |
+|  - post responses back to the owning EventLoop                              |
+|                                                                            |
++---------------------------+----------------------+-------------------------+
+                            |                      |
+                         MySQL                  Redis
+                   persistent entities      online/unread/rate-limit
+```
+
+Important boundaries:
+
+- I/O threads must not execute MySQL or Redis blocking calls.
+- Business threads must not directly mutate `Session`.
+- Responses generated outside the owning I/O thread must be delivered through the owning `EventLoop`.
+- `Session` lifetime is protected with `shared_ptr` / `weak_ptr`, not long-lived raw pointers.
+- Redis is cache/state, not the final source of message truth. Message entities belong in MySQL.
+
+## Current Modules
+
+- `liteim_base`: `Config`, `Logger`, `ErrorCode`, `Status`, `Timestamp`, and raw-byte aliases `Byte` / `Bytes`.
+- `liteim_protocol`: `MessageType`, `TlvType`, `ByteOrder`, `Packet`, `TlvCodec`, and `FrameDecoder`.
+- `liteim_net`: `Buffer`, `SocketUtil`, `UniqueFd`, `Channel`, `Epoller`, `EventLoop`, `Acceptor`, `Session`, `EventLoopThread`, `EventLoopThreadPool`, and `TcpServer`.
+- `liteim_concurrency`: fixed-size business `ThreadPool`.
+- `liteim/timer`: `TimerHeap` and `TimerManager`, currently linked into the network layer because `TimerManager` depends on `EventLoop` and `Channel`.
 
 ## Build And Test
+
+Requirements:
+
+- Linux
+- CMake
+- A C++17 compiler
+- POSIX sockets, `epoll`, `eventfd`, and `timerfd`
+
+Build:
 
 ```bash
 cmake -S . -B build
 cmake --build build
+```
+
+Run the server smoke executable:
+
+```bash
 ./build/server/liteim_server
+```
+
+Run tests:
+
+```bash
 ctest --test-dir build --output-on-failure
 ```
 
-常用清理检查：
+Useful repository checks:
 
 ```bash
 git diff --check
@@ -64,9 +117,6 @@ find . -path ./build -prune -o -path ./.git -prune -o \( -path ./server/net -o -
 LiteIM/
 ├── CMakeLists.txt
 ├── README.md
-├── task_plan.md
-├── findings.md
-├── progress.md
 ├── include/liteim/
 │   ├── base/
 │   ├── concurrency/
@@ -86,29 +136,39 @@ LiteIM/
 │   ├── net/
 │   ├── protocol/
 │   └── timer/
-└── tutorials/
+├── tutorials/
+└── docs/
+    └── debug_cases/
 ```
 
-目录约定：
+Directory conventions:
 
-- 头文件放在 `include/liteim/<module>/`。
-- 库实现放在 `src/<module>/`。
-- 可执行入口放在 `server/`，后续 CLI / Qt / benchmark 分别放到 `client_cli/`、`client_qt/`、`bench/`。
-- 不再维护仓库内 `docs/` markdown；公开说明放 README，路线放 `/home/yolo/jianli/PROJECT_MEMORY.md`，过程记忆放 `task_plan.md`、`findings.md`、`progress.md`。
+- Public headers live under `include/liteim/<module>/`.
+- Library implementations live under `src/<module>/`.
+- Executable entry points live under `server/`, and future clients/tools belong in `client_cli/`, `client_qt/`, or `bench/`.
+- `tutorials/` contains per-step teaching notes.
+- `docs/debug_cases/` contains internal postmortems for useful bug and review hardening cases.
 
-## Development Notes
+## Debug Notes
 
-每个 LiteIM Step 按固定节奏推进：
+The repository keeps focused debug case writeups when they preserve useful engineering lessons:
 
-```text
-concept -> handwritten code -> tests -> commit
-```
+- `docs/debug_cases/net_lifecycle_review_hardening.md`
+- `docs/debug_cases/thread_pool_worker_stop.md`
 
-当前工作记忆：
+These are not a public architecture manual. They are retained because they document concrete lifetime, threading, and cleanup bugs that shaped the current implementation.
 
-- `task_plan.md`：只记录当前完成位置、下一步和本次活跃任务。
-- `findings.md`：只记录仍然有效的设计结论、风险和边界。
-- `progress.md`：只记录当前阶段的真实变更、验证结果和提交状态。
-- `tutorials/`：保留每个 Step 的教学解释、测试说明和面试复盘。
+## Roadmap
 
-旧路线的 SQLite、`InMemoryStorage`、单 Reactor 业务基线不再是主线；这些名字不应该重新出现在当前实现路径中。
+LiteIM is being built in phases:
+
+| Phase | Goal |
+| --- | --- |
+| Network base | CMake, GoogleTest, base utilities, TLV protocol, frame decoder, Buffer, socket helpers, Reactor interfaces, `Epoller`, `Channel`, `EventLoop`, `Acceptor`, `Session`, multi-Reactor `TcpServer`, business `ThreadPool`, timerfd heartbeat cleanup, and signalfd shutdown. |
+| Storage and cache | MySQL connection pool, RAII connection guard, prepared statement wrapper, DAO layer, Redis client/pool, online status, unread counters, and login rate limiting. |
+| IM services | Register/login, friend list, private chat, group chat, offline messages, history loading, heartbeat protocol, graceful shutdown, and BotGateway routing. |
+| Tooling and validation | CLI client, Python E2E tests, benchmark tooling, broader GoogleTest/gMock coverage, ASan/UBSan, and CI. |
+| Demo clients | Qt Widgets chat client with login, conversation list, message bubbles, group chat, AI Bot entry, heartbeat state, and disconnect feedback. |
+| PersonaAgent integration | Python BotClient and separate FastAPI / LangGraph AgentService using Knowledge, Memory, Authorized Style RAG, Persona, Safety, tracing, checkpointing, and evaluation. |
+
+README performance numbers and benchmark claims should only be added after real local measurements exist.

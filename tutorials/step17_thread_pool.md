@@ -69,7 +69,6 @@ tutorials/step17_thread_pool.md
 src/CMakeLists.txt
 tests/CMakeLists.txt
 README.md
-tutorials/README.md
 task_plan.md
 findings.md
 progress.md

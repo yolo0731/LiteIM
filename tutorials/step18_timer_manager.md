@@ -66,7 +66,6 @@ tests/CMakeLists.txt
 tests/net/tcp_server_header_test.cpp
 tests/net/tcp_server_test.cpp
 README.md
-tutorials/README.md
 task_plan.md
 findings.md
 progress.md

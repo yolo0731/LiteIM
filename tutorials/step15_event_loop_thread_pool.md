@@ -51,7 +51,6 @@ tests/net/event_loop_thread_pool_test.cpp
 src/net/CMakeLists.txt
 tests/CMakeLists.txt
 README.md
-tutorials/README.md
 task_plan.md
 findings.md
 progress.md
