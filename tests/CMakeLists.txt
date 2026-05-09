@@ -20,6 +20,8 @@ add_executable(liteim_tests
     net/acceptor_test.cpp
     net/session_header_test.cpp
     net/session_test.cpp
+    net/signal_watcher_header_test.cpp
+    net/signal_watcher_test.cpp
     net/socket_util_test.cpp
     net/tcp_server_header_test.cpp
     net/tcp_server_test.cpp
@@ -45,3 +47,8 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 gtest_discover_tests(liteim_tests)
+
+add_test(
+    NAME LiteIMServerSignalTest.TerminatesOnSigterm
+    COMMAND /bin/bash ${CMAKE_CURRENT_SOURCE_DIR}/server_signal_shutdown_test.sh $<TARGET_FILE:liteim_server>
+)

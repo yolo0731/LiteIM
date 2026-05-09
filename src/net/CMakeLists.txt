@@ -7,6 +7,7 @@ add_library(liteim_net
     EventLoopThreadPool.cpp
     Epoller.cpp
     Session.cpp
+    SignalWatcher.cpp
     SocketUtil.cpp
     TcpServer.cpp
     UniqueFd.cpp

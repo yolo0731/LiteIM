@@ -18,7 +18,7 @@ PersonaAgent is intentionally a separate Python service. LiteIM exposes the prot
 ## Project Focus
 
 - High-performance C++ backend engineering with C++17, CMake, RAII, GoogleTest, and Linux system calls.
-- Nonblocking socket I/O with `epoll` LT mode, `eventfd` cross-thread wakeups, `timerfd` based timers, and planned `signalfd` shutdown handling.
+- Nonblocking socket I/O with `epoll` LT mode, `eventfd` cross-thread wakeups, `timerfd` based timers, and `signalfd` graceful shutdown handling.
 - Main Reactor + sub Reactor thread pool. I/O threads handle fd events, Packet/TLV codec work, output-buffer backpressure, and `Session` lifetime.
 - Business `ThreadPool` for future blocking work such as MySQL queries, Redis operations, password hashing, and history loading.
 - Custom TLV binary protocol with TCP sticky-packet / half-packet handling.
@@ -40,6 +40,7 @@ PersonaAgent is intentionally a separate Python service. LiteIM exposes the prot
 |  - nonblocking listen socket                                                |
 |  - epoll accept events                                                      |
 |  - dispatch accepted connections                                            |
+|  - signalfd driven SIGINT / SIGTERM shutdown                                |
 |                                                                            |
 |  Sub Reactor Thread Pool                                                    |
 |  - one EventLoop per I/O thread                                             |
@@ -72,7 +73,7 @@ Important boundaries:
 
 - `liteim_base`: `Config`, `Logger`, `ErrorCode`, `Status`, `Timestamp`, and raw-byte aliases `Byte` / `Bytes`.
 - `liteim_protocol`: `MessageType`, `TlvType`, `ByteOrder`, `Packet`, `TlvCodec`, and `FrameDecoder`.
-- `liteim_net`: `Buffer`, `SocketUtil`, `UniqueFd`, `Channel`, `Epoller`, `EventLoop`, `Acceptor`, `Session`, `EventLoopThread`, `EventLoopThreadPool`, and `TcpServer`.
+- `liteim_net`: `Buffer`, `SocketUtil`, `UniqueFd`, `Channel`, `Epoller`, `EventLoop`, `Acceptor`, `Session`, `EventLoopThread`, `EventLoopThreadPool`, `SignalWatcher`, and `TcpServer`.
 - `liteim_concurrency`: fixed-size business `ThreadPool`.
 - `liteim/timer`: `TimerHeap` and `TimerManager`, currently linked into the network layer because `TimerManager` depends on `EventLoop` and `Channel`.
 
@@ -83,7 +84,7 @@ Requirements:
 - Linux
 - CMake
 - A C++17 compiler
-- POSIX sockets, `epoll`, `eventfd`, and `timerfd`
+- POSIX sockets, `epoll`, `eventfd`, `timerfd`, and `signalfd`
 
 Build:
 
@@ -98,7 +99,7 @@ Run the echo server executable:
 ./build/server/liteim_server
 ```
 
-The server starts a real `EventLoop + TcpServer` echo server on the configured host and port. Until the planned `signalfd` graceful shutdown step lands, stop it with `Ctrl-C`; for a bounded smoke check, use:
+The server starts a real `EventLoop + TcpServer` echo server on the configured host and port. It handles `Ctrl-C` / `SIGTERM` through `signalfd`, stops `TcpServer` in the base loop thread, and exits cleanly. For a bounded smoke check, use:
 
 ```bash
 timeout 1s ./build/server/liteim_server || test $? -eq 124

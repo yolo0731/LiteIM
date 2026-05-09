@@ -1,12 +1,71 @@
 # LiteIM Progress
 
+## 2026-05-09 Step 19 Signalfd Graceful Shutdown
+
+本次进入 `Step 19: signalfd graceful shutdown`，目标是让 `liteim_server` 收到 `SIGINT` / `SIGTERM` 后走 Reactor 内部优雅退出路径。
+
+概念边界：
+
+- 信号不在传统 signal handler 中清理资源。
+- `SIGINT` / `SIGTERM` 通过 `signalfd` 变成 fd 可读事件。
+- signal callback 在 base `EventLoop` 线程执行。
+- callback 中先 `server.stop()`，再 `loop.quit()`。
+- `SignalWatcher` 和 `TcpServer` 一样遵守 owner-loop-only stop/destruct 规则。
+
+TDD RED 已确认：
+
+```bash
+cmake --build build
+```
+
+新增测试后先失败于 `fatal error: liteim/net/SignalWatcher.hpp: No such file or directory`，证明测试覆盖了 Step 19 缺失接口。
+
+已完成代码：
+
+- 新增 `include/liteim/net/SignalWatcher.hpp`。
+- 新增 `src/net/SignalWatcher.cpp`。
+- `SignalWatcher` 使用 `pthread_sigmask()`、`signalfd()`、`Channel` 和 `EventLoop` 把信号接入 Reactor。
+- `SignalWatcher::start()` 要求 owner loop 线程调用，失败返回 `Status`。
+- `SignalWatcher::stop()` 和析构要求 owner loop 线程调用，非 owner 线程直接 stop 会 `std::terminate()`。
+- `server/main.cpp` 创建 `SignalWatcher(SIGINT, SIGTERM)`，启动后再启动 `TcpServer`，收到信号后停止 server 并退出主 loop。
+- `src/net/CMakeLists.txt` 已把 `SignalWatcher.cpp` 编入 `liteim_net`。
+
+新增测试：
+
+- `tests/net/signal_watcher_header_test.cpp`
+- `tests/net/signal_watcher_test.cpp`
+- `tests/server_signal_shutdown_test.sh`
+- `LiteIMServerSignalTest.TerminatesOnSigterm` CTest。
+
+定向验证已通过：
+
+```bash
+cmake --build build
+ctest --test-dir build -R "SignalWatcher|LiteIMServerSignal" --output-on-failure
+```
+
+结果：Step 19 相关 4/4 tests passed。
+
+最终验证已完成：
+
+- `cmake -S . -B build && cmake --build build` 通过。
+- `ctest --test-dir build -R "SignalWatcher|LiteIMServerSignal" --output-on-failure` 通过，4/4。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124` 通过，服务端收到 SIGTERM 后记录 graceful shutdown 日志。
+- `ctest --test-dir build --output-on-failure` 通过，171/171。
+- `git diff --check` 无输出。
+- `.gitkeep` 和旧 SQLite / `InMemoryStorage` / old `server/net` 路径扫描无输出。
+
+提交状态：
+
+- 将按 `PROJECT_MEMORY.md` 使用提交信息 `feat(server): add signalfd graceful shutdown` 完成 Step 19 commit。
+
 ## 2026-05-09 PROJECT_MEMORY Markdown Alignment
 
 本次按新版 `/home/yolo/jianli/PROJECT_MEMORY.md` 同步其余 Markdown，不改 C++ 代码。
 
 已完成：
 
-- 更新 `/home/yolo/jianli/AGENTS.md`，把它作为未来 agent 的约束文件：明确 Step 18 / Step 18.5 已完成、默认下一步是 Step 19 `signalfd graceful shutdown`，并补充 muduo-style owner-loop 生命周期规则。
+- 更新 `/home/yolo/jianli/AGENTS.md`，把它作为未来 agent 的约束文件：按当时进度写入 Step 18 / Step 18.5 已完成、后续进入 Step 19 `signalfd graceful shutdown`，并补充 muduo-style owner-loop 生命周期规则。
 - 更新 `/home/yolo/jianli/CLAUDE.md`，同步当前进度、docs 边界、owner-loop 约束和 `docs/debug_cases/` 保留规则。
 - 将 `docs/debug_cases/net_lifecycle_review_hardening.md` 从英文完整改写为中文，保留复盘背景、已接受 bug、不采纳项、验证命令和面试回答。
 - 更新 `task_plan.md` 当前阶段，补上 Step 18.5 已完成记录和本轮 Markdown alignment 记录。

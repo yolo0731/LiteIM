@@ -3,11 +3,39 @@
 ## 权威来源
 
 - `/home/yolo/jianli/PROJECT_MEMORY.md` 是 LiteIM 和 PersonaAgent 的唯一总方案来源。
-- LiteIM 曾从 `Step 0` 重新开始；当前已完成 Step 18 和 Step 18.5。
-- 当前默认下一步是 `Step 19: signalfd graceful shutdown`。
-- Optional Step 18.6 `Session` 输入路径简化和 Optional Step 18.7 状态收敛不阻塞 Step 19，除非用户明确要求先继续清理。
+- LiteIM 曾从 `Step 0` 重新开始；当前已完成 Step 18、Step 18.5 和 Step 19。
+- 当前默认下一步是 `Step 20: slow-client backpressure hardening`。
+- Optional Step 18.6 `Session` 输入路径简化和 Optional Step 18.7 状态收敛仍是可选清理，除非用户明确要求先继续清理。
 - 当前路线是 `LiteIM muduo-style 高性能 IM + Qt + PersonaAgent`。
 - 如果 `README.md`、`task_plan.md`、`progress.md`、教程或源码与 `PROJECT_MEMORY.md` 冲突，统一改回 `PROJECT_MEMORY.md` 的路线。
+
+## 2026-05-09 Step 19 Signalfd Graceful Shutdown Findings
+
+本次进入 `Step 19: signalfd graceful shutdown`，目标是在不引入传统 signal handler、不放松 owner-loop 生命周期约束的前提下，让 `liteim_server` 收到 `SIGINT` / `SIGTERM` 后优雅退出。
+
+已经确认并采用的设计：
+
+- 新增 `SignalWatcher`，头文件放在 `include/liteim/net/`，实现放在 `src/net/`，因为它直接依赖 `EventLoop`、`Channel` 和 `UniqueFd`。
+- `SignalWatcher` 用 `pthread_sigmask(SIG_BLOCK, ...)` 阻塞指定信号，再用 `signalfd(SFD_NONBLOCK | SFD_CLOEXEC)` 创建 signal fd，并通过 `Channel` 注册到 owner `EventLoop`。
+- signal callback 只在 owner loop 线程执行；`server/main.cpp` 把它绑定为 `server.stop(); loop.quit();`。
+- `SignalWatcher` 在 `server.start()` 前启动，让后续 I/O 线程继承被阻塞的 `SIGINT` / `SIGTERM` mask，避免信号被子线程按默认动作处理。
+- `SignalWatcher::stop()` 和析构同样 owner-loop-only；非 owner 线程直接 `stop()` 会 `std::terminate()`，不引入 `queueInLoop([this])` 异步清理。
+- 真实 `liteim_server` 的 SIGTERM 退出通过 CTest 脚本验证，要求退出码为 0。
+
+新增测试：
+
+- `ReactorInterfaceTest.SignalWatcherHeaderIsSelfContained`
+- `SignalWatcherTest.SignalfdDispatchesSignalInOwnerLoop`
+- `SignalWatcherTest.StopFromNonOwnerThreadTerminatesInsteadOfQueueingThis`
+- `LiteIMServerSignalTest.TerminatesOnSigterm`
+
+本次不采用/不改：
+
+- 不使用传统 `std::signal()` / `sigaction()` handler 做资源清理。
+- 不接入业务 `ThreadPool`、MySQL 或 Redis 的退出编排。
+- 不删除 `Session::input_buffer_`。
+- 不合并 `Session` 多 bool 状态。
+- 不把 `TimerManager` 改成动态 rearm 的通用 `TimerQueue`。
 
 ## 2026-05-09 PROJECT_MEMORY Markdown Alignment Findings
 

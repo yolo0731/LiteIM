@@ -164,6 +164,12 @@ LiteIM is planned as a C++17 high-performance IM system:
 | Step 18.5 verification | done | Build, server smoke, targeted tests, full CTest 167/167, diff check, stale-route checks, and final diff review passed. |
 | Step 18.5 commit | done | Commit: `146353a refactor(net): harden reactor owner loop lifetimes`. |
 | PROJECT_MEMORY markdown alignment | done | Merged muduo rewrite into the single authoritative `/home/yolo/jianli/PROJECT_MEMORY.md`, updated constraint docs, and translated the net lifecycle debug case to Chinese. |
+| Step 19 concept | done | Step 19 adds process-level graceful shutdown by routing SIGINT/SIGTERM through signalfd into the base EventLoop. |
+| Step 19 tests | done | Added SignalWatcher API/signalfd owner-loop tests and a real liteim_server SIGTERM CTest script. |
+| Step 19 code | done | Added `SignalWatcher`, wired it into `liteim_net`, and updated `server/main.cpp` to stop `TcpServer` then quit the base loop. |
+| Step 19 docs | done | Synced README, Step 19 tutorial, planning files, PROJECT_MEMORY, AGENTS, and CLAUDE. |
+| Step 19 verification | done | Configure/build, targeted signal tests, server SIGTERM smoke, full CTest 171/171, diff check, and stale-route scans passed. |
+| Step 19 commit | done | Commit message: `feat(server): add signalfd graceful shutdown`. |
 
 ## Current Decision
 
@@ -173,8 +179,9 @@ Current route status:
 
 - Step 18 `TimerManager + timerfd heartbeat timeout` is complete.
 - Step 18.5 `muduo-style lifecycle ownership hardening` is complete.
-- Default next implementation step is Step 19 `signalfd graceful shutdown`.
-- Optional Step 18.6 `Session` input-path simplification and Optional Step 18.7 `Session` state consolidation do not block Step 19 unless the user explicitly asks for that cleanup first.
+- Step 19 `signalfd graceful shutdown` is complete.
+- Default next implementation step is Step 20 `slow-client backpressure hardening`.
+- Optional Step 18.6 `Session` input-path simplification and Optional Step 18.7 `Session` state consolidation remain optional cleanup tasks unless the user explicitly asks for them.
 
 LiteIM phases:
 
@@ -932,7 +939,7 @@ Expected new tests:
 - `TEST(TcpServerTest, IdleSessionIsClosedByHeartbeatTimeout)`
 - `TEST(TcpServerTest, ActiveSessionSurvivesHeartbeatTimeout)`
 
-Next Step after completion: `Step 19: implement signalfd graceful shutdown`.
+Step 18 is complete. Step 19 implements `signalfd` graceful shutdown.
 
 ## Persistent Requirements
 
@@ -979,6 +986,15 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 git diff --check
 ```
+
+Verification results:
+
+- `cmake -S . -B build && cmake --build build` passed.
+- `ctest --test-dir build -R "SignalWatcher|LiteIMServerSignal" --output-on-failure` passed, 4/4.
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124` passed and logged SIGTERM graceful shutdown.
+- `ctest --test-dir build --output-on-failure` passed, 171/171.
+- `git diff --check` produced no output.
+- `.gitkeep` and old SQLite / `InMemoryStorage` / old `server/net` path scans produced no output.
 
 ## 2026-05-09 Muduo-style Lifecycle Hardening
 
@@ -1034,5 +1050,42 @@ Verification commands:
 find /home/yolo/jianli -maxdepth 1 -name 'PROJECT_MEMORY*.md' -printf '%f\n' | sort
 rg -n --glob '!task_plan.md' "下一步不要直接进入|用于替换或升级" /home/yolo/jianli/PROJECT_MEMORY.md /home/yolo/jianli/AGENTS.md /home/yolo/jianli/CLAUDE.md README.md findings.md progress.md tutorials docs
 rg -n "Current Status|当前状态|tutorials/README|docs/architecture|docs/project_layout|docs/roadmap" README.md tutorials /home/yolo/jianli/AGENTS.md /home/yolo/jianli/PROJECT_MEMORY.md
+git diff --check
+```
+
+## 2026-05-09 Step 19 Signalfd Graceful Shutdown
+
+This Step adds process-level graceful shutdown without weakening the Step 18.5 owner-loop lifecycle rules.
+
+Scope:
+
+- Add `SignalWatcher` as a Reactor-owned wrapper around `pthread_sigmask()`, `signalfd()`, `Channel`, and owner-loop signal callbacks.
+- Route `SIGINT` and `SIGTERM` through the base `EventLoop`.
+- Start `SignalWatcher` before `TcpServer` so I/O worker threads inherit the blocked signal mask.
+- In the signal callback, call `server.stop()` in the base loop thread, then `loop.quit()`.
+- Keep `TcpServer`, `TimerManager`, and `SignalWatcher` stop/destruct owner-loop-only.
+
+Do not include in this Step:
+
+- business `ThreadPool` shutdown sequencing;
+- MySQL / Redis connection pool cleanup;
+- traditional signal handlers;
+- Session input-path or state-machine refactors;
+- dynamic rearm `TimerManager`.
+
+New tests:
+
+- `ReactorInterfaceTest.SignalWatcherHeaderIsSelfContained`
+- `SignalWatcherTest.SignalfdDispatchesSignalInOwnerLoop`
+- `SignalWatcherTest.StopFromNonOwnerThreadTerminatesInsteadOfQueueingThis`
+- `LiteIMServerSignalTest.TerminatesOnSigterm`
+
+Verification commands:
+
+```bash
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build -R "SignalWatcher|LiteIMServerSignal" --output-on-failure
+ctest --test-dir build --output-on-failure
 git diff --check
 ```
