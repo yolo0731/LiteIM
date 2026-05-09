@@ -69,13 +69,13 @@ Important boundaries:
 - Reactor-owned objects such as `TcpServer` and `TimerManager` must stop and destruct in their owner loop thread.
 - Redis is cache/state, not the final source of message truth. Message entities belong in MySQL.
 
-## Current Modules
+## Core Components
 
 - `liteim_base`: `Config`, `Logger`, `ErrorCode`, `Status`, `Timestamp`, and raw-byte aliases `Byte` / `Bytes`.
 - `liteim_protocol`: `MessageType`, `TlvType`, `ByteOrder`, `Packet`, `TlvCodec`, and `FrameDecoder`.
 - `liteim_net`: `Buffer`, `SocketUtil`, `UniqueFd`, `Channel`, `Epoller`, `EventLoop`, `Acceptor`, `Session`, `EventLoopThread`, `EventLoopThreadPool`, `SignalWatcher`, and `TcpServer`.
 - `liteim_concurrency`: fixed-size business `ThreadPool`.
-- `liteim/timer`: `TimerHeap` and `TimerManager`, currently linked into the network layer because `TimerManager` depends on `EventLoop` and `Channel`.
+- `liteim/timer`: `TimerHeap` and `TimerManager`, linked into the network layer because `TimerManager` depends on `EventLoop` and `Channel`.
 
 ## Build And Test
 
@@ -164,7 +164,7 @@ The repository keeps focused debug case writeups when they preserve useful engin
 - `docs/debug_cases/net_lifecycle_review_hardening.md`
 - `docs/debug_cases/thread_pool_worker_stop.md`
 
-These are not a public architecture manual. They are retained because they document concrete lifetime, threading, and cleanup bugs that shaped the current implementation.
+These are not a public architecture manual. They are retained because they document concrete lifetime, threading, and cleanup bugs that shaped the network implementation.
 
 ## Roadmap
 

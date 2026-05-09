@@ -18,10 +18,20 @@ LiteIM is planned as a C++17 high-performance IM system:
 - Qt Widgets demo client with a familiar IM three-column chat layout.
 - PersonaAgent integration through a Python BotClient and a separate six-node LangGraph AgentService.
 
+## Documentation Boundary
+
+The workspace documentation roles are now separated:
+
+- `/home/yolo/jianli/PROJECT_MEMORY.md`: overall design, long-term route, architecture constraints, Step goals, boundaries, tests, and planned commit messages.
+- `/home/yolo/jianli/AGENTS.md` and `/home/yolo/jianli/CLAUDE.md`: agent work constraints and reading order; no completed-Step status, commit hashes, or active next task.
+- `LiteIM/README.md`: public project overview; no process progress, test counts, commit hashes, or default next Step.
+- `LiteIM/task_plan.md`, `LiteIM/findings.md`, and `LiteIM/progress.md`: active progress, process discoveries, verification results, and actual completion records.
+
 ## Current Phase
 
 | Phase | Status | Notes |
 | --- | --- | --- |
+| Documentation boundary correction | done | Clarified that PROJECT_MEMORY is long-term design, AGENTS/CLAUDE are constraints, README is public overview, and planning files hold progress/process memory. |
 | Step 0 concept | done | Step 0 is a cleanup/reset step, not feature implementation. |
 | Step 0 delete old route files | done | Removed old source, tests, docs/tutorials, SQLite/InMemoryStorage route files, and build output. |
 | Step 0 keep minimal root | done | Removed premature empty folders and `.gitkeep`; future directories will be created by the Step that needs them. |
@@ -173,7 +183,7 @@ LiteIM is planned as a C++17 high-performance IM system:
 
 ## Current Decision
 
-Use `/home/yolo/jianli/PROJECT_MEMORY.md` as the source of truth.
+Use `/home/yolo/jianli/PROJECT_MEMORY.md` as the source of truth for overall design, long-term route, and architecture constraints. Use this file plus `findings.md` and `progress.md` for active LiteIM progress.
 
 Current route status:
 

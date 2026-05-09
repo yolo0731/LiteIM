@@ -1,5 +1,32 @@
 # LiteIM Progress
 
+## 2026-05-09 Documentation Boundary Correction
+
+本次只修改 Markdown，目标是把文档职责重新分清：
+
+- `/home/yolo/jianli/PROJECT_MEMORY.md` 只保留总设计、长期路线、架构约束、Step 目标、边界、测试要求和计划 commit message。
+- `/home/yolo/jianli/AGENTS.md` 和 `/home/yolo/jianli/CLAUDE.md` 只保留 agent 约束和读取顺序，不记录 Step 完成状态、实际提交 hash 或活动下一步。
+- `LiteIM/README.md` 继续作为对外说明文档，不记录过程进度。
+- `task_plan.md`、`findings.md`、`progress.md` 负责进度、发现、验证结果和过程记忆。
+
+已完成：
+
+- 删除 `PROJECT_MEMORY.md` 顶部的优先级、完成状态、真实状态、最近提交、默认下一步等过程信息。
+- 将 Step 18、Step 18.5、Step 19 段落改回路线层描述，删除实际完成 hash 和完成验证命令。
+- 清理 `AGENTS.md` / `CLAUDE.md` 中的当前 Step 状态和默认下一步描述。
+- 将 README 的 `Current Modules` 改为 `Core Components`，移除 `currently/current implementation` 这类进度措辞。
+- 在 `task_plan.md`、`findings.md`、`progress.md` 靠前位置记录新的文档职责边界。
+
+验证：
+
+- 本次不改 C++、CMake 或测试代码，不需要重新编译。
+- `planning-with-files` 的 session catchup 仍提示旧的纯概念问答未同步；该上下文不对应本次文档修改。
+- `rg` 扫描确认 `AGENTS.md` / `CLAUDE.md` 不再包含当前状态、默认下一步或 Step 18/19 完成状态措辞。
+- `rg` 扫描确认 `PROJECT_MEMORY.md` 不再包含顶部优先级、最近提交、完成验证、完成提交或默认下一步等过程记录措辞。
+- `rg` 扫描确认 `README.md` 不再包含 `Current Status`、`当前状态`、`Current Modules`、`current` 或 `currently`。
+- `git diff --check` 通过；额外 trailing whitespace 扫描对目标 Markdown 无输出。
+- `git status --short` 显示 LiteIM Git 仓库内只修改 `README.md`、`task_plan.md`、`findings.md`、`progress.md`；根目录的 `PROJECT_MEMORY.md`、`AGENTS.md`、`CLAUDE.md` 位于 LiteIM 仓库外。
+
 ## 2026-05-09 Step 19 Signalfd Graceful Shutdown
 
 本次进入 `Step 19: signalfd graceful shutdown`，目标是让 `liteim_server` 收到 `SIGINT` / `SIGTERM` 后走 Reactor 内部优雅退出路径。

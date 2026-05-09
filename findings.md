@@ -2,12 +2,23 @@
 
 ## 权威来源
 
-- `/home/yolo/jianli/PROJECT_MEMORY.md` 是 LiteIM 和 PersonaAgent 的唯一总方案来源。
-- LiteIM 曾从 `Step 0` 重新开始；当前已完成 Step 18、Step 18.5 和 Step 19。
-- 当前默认下一步是 `Step 20: slow-client backpressure hardening`。
-- Optional Step 18.6 `Session` 输入路径简化和 Optional Step 18.7 状态收敛仍是可选清理，除非用户明确要求先继续清理。
-- 当前路线是 `LiteIM muduo-style 高性能 IM + Qt + PersonaAgent`。
-- 如果 `README.md`、`task_plan.md`、`progress.md`、教程或源码与 `PROJECT_MEMORY.md` 冲突，统一改回 `PROJECT_MEMORY.md` 的路线。
+- `/home/yolo/jianli/PROJECT_MEMORY.md` 是 LiteIM 和 PersonaAgent 的唯一总设计和长期路线来源。
+- `/home/yolo/jianli/AGENTS.md` 和 `/home/yolo/jianli/CLAUDE.md` 是 agent 工作约束文件，不记录完成状态、实际提交 hash 或活动下一步。
+- `LiteIM/README.md` 是对外说明文档，不记录过程进度、测试数量、提交历史或默认下一步。
+- `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
+- 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
+
+## 2026-05-09 Documentation Boundary Correction Findings
+
+本次只做文档职责边界纠正，不改 C++ 源码、CMake 或测试代码。
+
+已经确认并采用的边界：
+
+- `PROJECT_MEMORY.md` 收敛为总思路设计和长期路线设计，保留 Step 目标、边界、测试要求和计划 commit message。
+- Step 完成状态、完成验证命令、实际 commit hash、活动下一步和过程发现统一留在 `task_plan.md`、`findings.md`、`progress.md`。
+- `AGENTS.md` / `CLAUDE.md` 保持同一职责：读取顺序、工程约束、agent 行为规则，不写当前进度。
+- `README.md` 保持 GitHub 对外介绍职责，只描述项目能力、模块、架构、构建运行、目录布局和路线概览。
+- `planning-with-files` 三件套是之后恢复进度和过程上下文的来源。
 
 ## 2026-05-09 Step 19 Signalfd Graceful Shutdown Findings
 
