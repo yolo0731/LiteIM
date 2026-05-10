@@ -44,7 +44,6 @@ public:
     bool started() const noexcept;
 
     Status sendToSession(std::uint64_t session_id, const Packet& packet);
-    Status sendToUser(std::uint64_t user_id, const Packet& packet);
 
 private:
     void stopInLoop() noexcept;

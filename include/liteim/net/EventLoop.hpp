@@ -33,7 +33,6 @@ public:
     void removeChannel(Channel* channel);
 
     bool isInLoopThread() const noexcept;
-    bool isStopped() const noexcept;
     void assertInLoopThread() const;
 
 private:
@@ -43,7 +42,6 @@ private:
 
     std::atomic_bool looping_{false};
     std::atomic_bool quit_{false};
-    std::atomic_bool loop_exited_{false};
     const std::thread::id thread_id_;
     std::unique_ptr<Epoller> epoller_;
     UniqueFd wakeup_fd_;

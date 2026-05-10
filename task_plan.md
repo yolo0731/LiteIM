@@ -31,6 +31,7 @@ The workspace documentation roles are now separated:
 
 | Phase | Status | Notes |
 | --- | --- | --- |
+| Network lifecycle/API cleanup | done | Independent cleanup after Step 20: made `Acceptor::close()` owner-loop-only, removed `EventLoop::isStopped()`, removed premature public APIs, consolidated `SessionState`, tightened `sendToSession()` closed-session NotFound semantics, and added accumulated small-packet high-water coverage. |
 | P0 session activity semantics fix | done | Fixed `last_active_time` so only complete inbound Packets refresh heartbeat activity; outbound server writes no longer keep an idle client alive. Targeted Session/TcpServer tests, server smoke, and full CTest 172/172 passed. |
 | Documentation boundary correction | done | Clarified that PROJECT_MEMORY is long-term design, AGENTS/CLAUDE are constraints, README is public overview, and planning files hold progress/process memory. |
 | Step 20 slow-client backpressure hardening | done | Added configurable per-Session output high-water mark, warning log on overflow, Config key `server.output_high_water_mark_bytes`, TcpServer propagation, slow-client close cleanup tests, server smoke, and full CTest 181/181. |
@@ -123,8 +124,8 @@ The workspace documentation roles are now separated:
 | Step 13 hardening round 2 docs | done | Synced README, docs, findings, progress, task plan, and Step 2/10/11/12/13 tutorials for hardening round 2 behavior. |
 | Step 13 hardening round 2 verification | done | CMake configure/build, server smoke, targeted hardening tests, and full CTest 112/112 passed. |
 | Step 13 hardening round 3 concept | done | Evaluated follow-up review points and accepted the precise EventLoop stopped-state, Acceptor no-throw logging, and Channel no-copy callback contract fixes. |
-| Step 13 hardening round 3 tests | done | Added regressions for `isStopped()` before first `loop()`, `quit()` before first `loop()`, queued tasks when quit predates loop startup, and cross-thread Acceptor close before loop startup. |
-| Step 13 hardening round 3 code | done | Fixed `EventLoop::isStopped()` to use explicit loop-exited state, made loop drain pending tasks before honoring pre-start quit, protected Acceptor noexcept logging, and documented Channel callback lifetime requirements in the header. |
+| Step 13 hardening round 3 tests | done | Added regressions for the previous stopped-state API, queued tasks when quit predates loop startup, and the old cross-thread Acceptor close path; these stopped-state and cross-thread close contracts are now superseded by the network cleanup. |
+| Step 13 hardening round 3 code | done | Fixed the then-existing stopped-state API, made loop drain pending tasks before honoring pre-start quit, protected Acceptor noexcept logging, and documented Channel callback lifetime requirements; the stopped-state API was later removed. |
 | Step 13 hardening round 3 docs | done | Synced README, docs, findings, progress, task plan, and Step 11/12/13 tutorials for hardening round 3 behavior. |
 | Step 13 hardening round 3 verification | done | CMake build, targeted hardening tests, server smoke, full CTest 116/116, and diff whitespace check passed. |
 | Step 14 concept | done | Step 14 introduces `Session` as the owner of one connected fd, one `Channel`, input/output buffers, packet decode/encode, and close lifecycle. |
@@ -148,7 +149,7 @@ The workspace documentation roles are now separated:
 | Pre-Step 16 code cleanup docs | done | Synced README, docs, tutorials, findings, progress, task plan, and PROJECT_MEMORY with the cleanup result. |
 | Pre-Step 16 code cleanup verification | done | Build, server smoke, full CTest 136/136, diff check, stale-route checks, and final diff review passed. |
 | Step 16 concept | done | Step 16 implements the multi-Reactor `TcpServer` network coordinator above `Acceptor`, `EventLoopThreadPool`, and `Session`. |
-| Step 16 tests | done | Added RED tests for the `TcpServer` header, echo, multi-loop connection distribution, disconnect cleanup, cross-thread `sendToSession()`, and base `sendToUser()` behavior. |
+| Step 16 tests | done | Added RED tests for the `TcpServer` header, echo, multi-loop connection distribution, disconnect cleanup, and cross-thread `sendToSession()` behavior. |
 | Step 16 code | done | Added `TcpServer.hpp` / `TcpServer.cpp`, wired them into `liteim_net`, and passed targeted Step 16 tests. |
 | Step 16 docs | done | Synced README, docs, tutorial index, Step 16 tutorial, findings, progress, task plan, and PROJECT_MEMORY for the new `TcpServer` boundary. |
 | Step 16 verification | done | Build, server smoke, full CTest 142/142, diff check, `.gitkeep` check, stale-route path check, and final diff review passed. |
@@ -195,8 +196,8 @@ Current route status:
 - Step 19 `signalfd graceful shutdown` is complete.
 - Step 20 `slow-client backpressure hardening` is complete.
 - Optional Step 18.6 `Session` input-path simplification is complete.
+- Optional Step 18.7 `Session` state consolidation is complete as part of the independent network cleanup.
 - Default next implementation step is Step 21 `IStorage / ICache abstractions`.
-- Optional Step 18.7 `Session` state consolidation remains an optional cleanup task unless the user explicitly asks for it.
 
 LiteIM phases:
 
@@ -822,9 +823,8 @@ Expected new tests:
 - `TEST(AcceptorTest, ClientConnectionTriggersNewConnectionCallback)`
 - `TEST(AcceptorTest, MultiplePendingConnectionsAreAccepted)`
 - `TEST(AcceptorTest, ClosedListenSocketRejectsNewConnections)`
-- `TEST(AcceptorTest, CloseFromOtherThreadRemovesChannelBeforeClosingFd)`
 - `TEST(AcceptorTest, AcceptedFdIsClosedWhenCallbackThrowsBeforeTakingOwnership)`
-- `TEST(AcceptorTest, CloseFromOtherThreadAfterLoopStopsDoesNotBlock)`
+- `TEST(AcceptorTest, CloseFromNonOwnerThreadTerminates)`
 - `TEST(AcceptorTest, FdExhaustionRejectsPendingConnectionWithoutLaterCallback)`
 - `TEST(UniqueFdTest, DestructorClosesOwnedFd)`
 - `TEST(UniqueFdTest, ReleaseReturnsFdWithoutClosing)`

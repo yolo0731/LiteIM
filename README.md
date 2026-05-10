@@ -66,7 +66,7 @@ Important boundaries:
 - Business threads must not directly mutate `Session`.
 - Responses generated outside the owning I/O thread must be delivered through the owning `EventLoop`.
 - `Session` lifetime is protected with `shared_ptr` / `weak_ptr`, not long-lived raw pointers.
-- Reactor-owned objects such as `TcpServer` and `TimerManager` must stop and destruct in their owner loop thread.
+- Reactor-owned objects such as `Acceptor`, `TcpServer`, `TimerManager`, and `SignalWatcher` must stop and destruct in their owner loop thread.
 - Redis is cache/state, not the final source of message truth. Message entities belong in MySQL.
 
 ## Core Components

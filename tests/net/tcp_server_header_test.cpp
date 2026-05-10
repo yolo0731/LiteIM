@@ -33,8 +33,6 @@ TEST(ReactorInterfaceTest, TcpServerHeaderIsSelfContained) {
     static_assert(std::is_same_v<decltype(&TcpServer::started), bool (TcpServer::*)() const noexcept>);
     static_assert(std::is_same_v<decltype(&TcpServer::sendToSession),
                                  liteim::Status (TcpServer::*)(std::uint64_t, const liteim::Packet&)>);
-    static_assert(std::is_same_v<decltype(&TcpServer::sendToUser),
-                                 liteim::Status (TcpServer::*)(std::uint64_t, const liteim::Packet&)>);
 
     SUCCEED();
 }

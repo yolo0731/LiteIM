@@ -1,5 +1,53 @@
 # LiteIM Progress
 
+## 2026-05-10 Network Lifecycle/API Cleanup
+
+本次按用户给定计划执行独立网络层 cleanup/refactor，不命名为 Step 20.1，不进入 Step 21。
+
+概念边界：
+
+- `Acceptor::close()` 统一为 owner-loop-only，直接非 owner 调用终止进程。
+- `EventLoop` 删除 `isStopped()`，生命周期清理由 owner-loop-only API 契约保证。
+- public API 只保留当前真实可用的能力：删除 `Session::fd()`、`TcpServer::sendToUser()` 占位接口和 `kSessionOutputHighWaterMark` 兼容别名。
+- `SessionState` 收敛启动/关闭状态，但保留 `closed_` 给 `TcpServer` heartbeat/base loop 跨线程读关闭状态。
+- `sendToSession()` 查表失败、空 session、调用时已关闭 session 都返回 `NotFound`。
+
+已完成代码：
+
+- `Acceptor::close()` 删除跨线程 promise/future/wait fallback，非 owner loop 线程调用 `std::terminate()`。
+- `EventLoop` 删除 `loop_exited_` 和 `isStopped()`；`LoopingGuard` 只管理 `looping_`。
+- `Session` 新增 `SessionState`，`startInLoop()` 只允许 `kNew -> kStarted`，读写发送只在 `kStarted` 下工作，`closeInLoop()` 推进到 `kClosing/kClosed`。
+- `Session` 删除 public `fd()`，默认高水位只保留 `kSessionDefaultOutputHighWaterMark`。
+- `TcpServer` 删除 `sendToUser()`，并让 `sendToSession()` 对空/已关闭 session 返回 `NotFound`。
+
+新增/更新测试：
+
+- `AcceptorTest.CloseFromNonOwnerThreadTerminates`
+- `TcpServerTest.SlowClientAccumulatedSmallPacketsTriggerHighWaterMark`
+- `ReactorInterfaceTest.SessionHeaderIsSelfContained`
+- `ReactorInterfaceTest.TcpServerHeaderIsSelfContained`
+- 删除旧的跨线程 `Acceptor::close()` 成功返回测试、`EventLoop::isStopped()` 测试、`sendToUser()` 测试。
+
+已完成文档同步：
+
+- 更新 `/home/yolo/jianli/AGENTS.md` 和 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Acceptor owner-loop-only 口径。
+- 更新 README、Step 12/13/14/16/20 教程、网络生命周期 debug case、`task_plan.md`、`findings.md` 和本文件。
+
+验证：
+
+- `cmake --build build`：通过。
+- `ctest --test-dir build -R "Acceptor|EventLoop|Session|TcpServer|ReactorInterface" --output-on-failure`：59/59 通过。
+- `ctest --test-dir build --output-on-failure`：177/177 通过。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，服务端收到 SIGTERM 后优雅退出。
+- `git diff --check`：通过。
+- `.gitkeep` 和旧 `server/net`、`server/protocol`、SQLite、`InMemoryStorage`、`step15_sqlite` 路径检查无输出。
+
+提交信息：
+
+```text
+refactor(net): simplify owner loop cleanup and session state
+```
+
 ## 2026-05-09 Optional Step 18.6 Session Input Path Simplification
 
 本次按用户确认执行 `Optional Step 18.6: Session 输入路径简化`，目标是删除 `Session` 输入路径里多余的一层 `input_buffer_`。
@@ -554,7 +602,7 @@ cmake --build build
 - `TcpServer::createSessionInLoop()` 在目标 loop 中创建 `Session`、设置 message/close callback、写入 `sessions_` 表并启动读事件。
 - 默认 message callback 为空时执行 echo。
 - `sendToSession()` 支持从其他线程调用，实际发送仍回到 session 所属 loop。
-- `sendToUser()` 当前返回 `NotFound`，等待后续登录态和 user-session 绑定。
+- 当时曾保留用户发送占位接口并返回 `NotFound`；2026-05-10 cleanup 已删除该占位 API，等待后续登录态和 user-session 绑定实现真实用户路由。
 - `src/net/CMakeLists.txt` 已接入 `TcpServer.cpp`。
 
 新增测试：

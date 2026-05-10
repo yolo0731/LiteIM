@@ -281,7 +281,7 @@ server.setSessionOutputHighWaterMark(config.session_output_high_water_mark);
 - `Session::input_buffer_` 简化。
 - `Session` 状态机重构。
 
-这些会改变更多连接状态和业务语义，应该后续单独做。
+这些会改变更多连接状态和业务语义，应该后续单独做。其中 `Session::input_buffer_` 简化和 `SessionState` 状态收敛已经在后续独立 cleanup 中完成。
 
 ## 7. 测试设计
 
@@ -297,6 +297,7 @@ TEST(TcpServerTest, SessionOutputHighWaterMarkMustBeSetBeforeStart)
 TEST(TcpServerTest, NormalClientDoesNotTriggerConfiguredHighWaterMark)
 TEST(TcpServerTest, SlowClientIsClosedWhenOutputExceedsHighWaterMark)
 TEST(TcpServerTest, ClosedSlowClientIsRemovedFromSessionTable)
+TEST(TcpServerTest, SlowClientAccumulatedSmallPacketsTriggerHighWaterMark)
 ```
 
 测试覆盖四层语义：
@@ -305,6 +306,7 @@ TEST(TcpServerTest, ClosedSlowClientIsRemovedFromSessionTable)
 - `Session` 默认 4MB，且支持自定义阈值。
 - 正常小包 echo 不触发高水位。
 - 服务端 push 超过阈值时连接关闭，`TcpServer::sessions_` 会被 close callback 清理。
+- 多个单包都小于高水位的 server pushes，如果在 owner loop 写出前累计超过阈值，也会关闭连接。
 
 已有测试继续保留：
 

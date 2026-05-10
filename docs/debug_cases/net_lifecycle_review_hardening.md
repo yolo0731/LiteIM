@@ -4,6 +4,8 @@
 
 背景：Step 17 完成后，外部评审指出了网络层中的若干生命周期和慢客户端风险。本复盘记录哪些问题被接受、如何用回归测试复现，以及最终做了哪些修复。
 
+2026-05-10 后续 cleanup 已把当时暂缓的 owner-loop 和 API 简化继续收口：`Acceptor::close()` 现在是 owner-loop-only，`EventLoop::isStopped()` 已删除，`Session` 使用 `SessionState` 收敛启动/关闭状态，public `Session::fd()`、`TcpServer::sendToUser()` 占位接口和 `kSessionOutputHighWaterMark` 兼容别名都已删除。
+
 ## 已接受的问题
 
 ### 1. EventLoopThread 自线程 stop 的生命周期问题
@@ -50,7 +52,7 @@ Session::sendEncodedInLoop()
 
 修复：
 
-- 新增 `kSessionOutputHighWaterMark = 4 * 1024 * 1024`。
+- 新增默认输出高水位；后续统一为 `kSessionDefaultOutputHighWaterMark = 4 * 1024 * 1024`。
 - append 前检查 `pending bytes + encoded bytes`。
 - 如果下一次 append 会超过 4MB，就在 Session 所属 I/O loop 内关闭连接。
 
@@ -140,13 +142,13 @@ TEST(AcceptorTest, CloseFromOtherThreadWhileLoopExitsWithQueuedCloseDoesNotBlock
 
 测试让 loop 卡在一个 pending task 内，随后从其他线程调用 `close()`，再让 pending task 在 queued close task 执行前调用 `quit()`。`close()` 必须返回，不能永久阻塞。
 
+后续 cleanup 已删除这个跨线程 close 契约。当前代码用 owner-loop-only 规则直接避免这类等待分支：非 owner 线程调用 `Acceptor::close()` 会 `std::terminate()`，由 `AcceptorTest.CloseFromNonOwnerThreadTerminates` 覆盖。
+
 ## 未按原建议直接采纳的点
 
 ### Acceptor::close owner-loop-only 重写
 
-没有直接采纳把 `Acceptor::close()` 改成 owner-loop-only 的建议。这个方向符合 muduo-style，但当前 LiteIM 已经为跨线程 `Acceptor::close()` 写了明确测试，包括 loop 已创建但尚未运行的情况。本轮保留该契约，只修复具体的永久等待竞态。
-
-如果未来上层 owner 生命周期整体收口，仍可以单独重新设计 `Acceptor::close()` 的契约。
+这个建议在 2026-05-10 后续 cleanup 中已采纳。`Acceptor::close()` 不再投递任务、不等待 future，也不依赖 `EventLoop::isStopped()`；跨线程关闭由 `TcpServer` 或更上层先投递回 base loop，再在 owner loop 内同步关闭。
 
 ### ThreadPool swap-and-join 重写
 
@@ -158,8 +160,8 @@ TEST(AcceptorTest, CloseFromOtherThreadWhileLoopExitsWithQueuedCloseDoesNotBlock
 
 一些风格建议适合作为后续清理，但不应该混入本轮生命周期 bugfix：
 
-- 把 `Session` 多个 bool 收敛成完整 enum 状态机。
-- 精简 `EventLoop` flag。
+- 把 `Session` 多个 bool 收敛成完整 enum 状态机。（2026-05-10 已完成）
+- 精简 `EventLoop` flag。（2026-05-10 已删除 `isStopped()` / `loop_exited_`）
 - 重做 `FrameDecoder` 输入缓冲结构。
 - 删除 `EventLoopThreadPool` 中偏测试用途的 getter。
 

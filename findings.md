@@ -8,6 +8,36 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-10 Network Lifecycle/API Cleanup Findings
+
+本次执行独立网络层 cleanup/refactor，不命名为 Step 20.1，不进入 Step 21。
+
+已经确认并采用的设计：
+
+- `Acceptor::close()` 改为 owner-loop-only；非 owner 线程直接调用会 `std::terminate()`，跨线程停止由上层先投递回 base loop。
+- 删除 `EventLoop::isStopped()`、`loop_exited_` 和相关测试；`EventLoop` 不再为跨线程资源清理暴露 stopped 查询。
+- 删除 `kSessionOutputHighWaterMark` 兼容别名，只保留 `kSessionDefaultOutputHighWaterMark`。
+- 删除 public `Session::fd()`，业务身份统一使用逻辑 `Session::id()`。
+- 删除 `TcpServer::sendToUser()` 占位 API；等登录态和 user-session 绑定表实现时再引入真实接口。
+- `Session` 使用 `SessionState { kNew, kStarted, kClosing, kClosed }` 收敛启动/关闭状态，保留 `closed_` 作为跨线程只读关闭标记，保留 `channel_registered_` 表示 epoll 注册状态。
+- `sendToSession()` 对查表失败、空 session、调用时已关闭 session 都返回 `NotFound`；返回 `ok` 只表示调用时找到未关闭 session 并完成投递，不保证异步写出一定发生。
+
+新增/更新测试：
+
+- `AcceptorTest.CloseFromNonOwnerThreadTerminates`
+- 删除旧的跨线程 `Acceptor::close()` 成功返回测试。
+- 删除 `EventLoopTest.*isStopped*` 相关测试。
+- `ReactorInterfaceTest.SessionHeaderIsSelfContained` 确认 `SessionState` 存在且 public `fd()` 已删除。
+- `ReactorInterfaceTest.TcpServerHeaderIsSelfContained` 不再检查 `sendToUser()`。
+- `TcpServerTest.SlowClientAccumulatedSmallPacketsTriggerHighWaterMark`
+
+本次不采用/不改：
+
+- 不进入 Step 21 存储/缓存抽象。
+- 不引入用户登录态、user-session 绑定表或真实 `sendToUser()`。
+- 不改变 heartbeat 语义：只有完整、合法、成功解码的入站 Packet 刷新活动时间。
+- 不改变 `Session::pendingOutputBytes()` owner-loop-only 契约。
+
 ## 2026-05-09 Optional Step 18.6 Session Input Path Simplification Findings
 
 本次执行 Optional Step 18.6，只简化 `Session` 输入路径，不进入 Step 21，也不合并 `Session` 状态。
@@ -283,7 +313,7 @@
 - `sessions_` 使用 mutex 保护，覆盖 I/O loop close callback 删除、外部线程 `sendToSession()` 查询和测试诊断 `sessionCount()`。
 - 未设置业务 callback 时，`TcpServer` 默认 echo 收到的 `Packet`，用于验证网络底座。
 - `sendToSession()` 可以从其他线程调用，但真实 socket 写入仍由 `Session::sendPacket()` 投递回 session 所属 I/O loop。
-- `sendToUser()` 当前保留基础接口并返回 `NotFound`，因为 user-session 绑定属于后续登录业务 Step。
+- 当时曾保留用户发送占位接口；2026-05-10 cleanup 已删除该占位 API，等 user-session 绑定表实现时再引入真实用户路由。
 
 新增测试：
 

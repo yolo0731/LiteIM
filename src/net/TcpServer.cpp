@@ -128,11 +128,11 @@ Status TcpServer::sendToSession(std::uint64_t session_id, const Packet& packet) 
         session = it->second;
     }
 
-    return session->sendPacket(packet);
-}
+    if (session == nullptr || session->closed()) {
+        return Status::error(ErrorCode::NotFound, "session was not found");
+    }
 
-Status TcpServer::sendToUser(std::uint64_t, const Packet&) {
-    return Status::error(ErrorCode::NotFound, "user is not bound to a session");
+    return session->sendPacket(packet);
 }
 
 void TcpServer::stopInLoop() noexcept {

@@ -5,11 +5,10 @@
 #include "liteim/net/EventLoop.hpp"
 
 #include <arpa/inet.h>
-#include <chrono>
 #include <cerrno>
 #include <cstring>
+#include <exception>
 #include <fcntl.h>
-#include <future>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -128,27 +127,7 @@ bool Acceptor::listening() const noexcept {
 
 void Acceptor::close() noexcept {
     if (loop_ != nullptr && !loop_->isInLoopThread()) {
-        if (loop_->isStopped()) {
-            closeInLoop();
-            return;
-        }
-
-        try {
-            auto done = std::make_shared<std::promise<void>>();
-            auto future = done->get_future();
-            loop_->queueInLoop([this, done]() noexcept {
-                closeInLoop();
-                done->set_value();
-            });
-            while (future.wait_for(std::chrono::milliseconds(10)) != std::future_status::ready) {
-                if (loop_->isStopped()) {
-                    closeInLoop();
-                    return;
-                }
-            }
-        } catch (...) {
-        }
-        return;
+        std::terminate();
     }
 
     closeInLoop();

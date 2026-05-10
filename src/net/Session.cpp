@@ -38,10 +38,6 @@ Session::Session(EventLoop* loop, UniqueFd fd, std::uint64_t id)
     channel_ = std::make_unique<Channel>(loop_, fd_.fd());
 }
 
-int Session::fd() const noexcept {
-    return fd_.fd();
-}
-
 std::uint64_t Session::id() const noexcept {
     return id_;
 }
@@ -113,7 +109,7 @@ void Session::close() {
 
 void Session::startInLoop() {
     loop_->assertInLoopThread();
-    if (started_ || closed_.load()) {
+    if (state_ != SessionState::kNew || closed_.load()) {
         return;
     }
 
@@ -143,7 +139,7 @@ void Session::startInLoop() {
 
     channel_->enableReading();
     channel_registered_ = true;
-    started_ = true;
+    state_ = SessionState::kStarted;
     if (output_buffer_.readableBytes() > 0) {
         channel_->enableWriting();
     }
@@ -151,7 +147,7 @@ void Session::startInLoop() {
 
 void Session::sendEncodedInLoop(Bytes encoded) {
     loop_->assertInLoopThread();
-    if (closed_.load() || encoded.empty()) {
+    if (state_ != SessionState::kStarted || closed_.load() || encoded.empty()) {
         return;
     }
 
@@ -173,14 +169,14 @@ void Session::sendEncodedInLoop(Bytes encoded) {
         return;
     }
 
-    if (started_ && channel_ != nullptr && !channel_->isWriting()) {
+    if (state_ == SessionState::kStarted && channel_ != nullptr && !channel_->isWriting()) {
         channel_->enableWriting();
     }
 }
 
 void Session::handleRead() {
     loop_->assertInLoopThread();
-    if (closed_.load() || !fd_) {
+    if (state_ != SessionState::kStarted || closed_.load() || !fd_) {
         return;
     }
 
@@ -226,7 +222,7 @@ void Session::handleRead() {
 
 void Session::handleWrite() {
     loop_->assertInLoopThread();
-    if (closed_.load() || !fd_) {
+    if (state_ != SessionState::kStarted || closed_.load() || !fd_) {
         return;
     }
 
@@ -265,6 +261,7 @@ void Session::closeInLoop() {
     if (closed_.exchange(true)) {
         return;
     }
+    state_ = SessionState::kClosing;
 
     if (channel_ != nullptr && channel_registered_) {
         try {
@@ -287,6 +284,7 @@ void Session::closeInLoop() {
     if (close_callback_) {
         close_callback_(self);
     }
+    state_ = SessionState::kClosed;
 }
 
 void Session::updateLastActiveTime() noexcept {

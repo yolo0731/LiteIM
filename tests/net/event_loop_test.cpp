@@ -218,20 +218,6 @@ TEST(EventLoopTest, ChannelCallbackExceptionDoesNotEscapeLoop) {
     EXPECT_FALSE(exception_escaped.load());
 }
 
-TEST(EventLoopTest, IsStoppedIsFalseBeforeLoopEverStarts) {
-    liteim::EventLoop loop;
-
-    EXPECT_FALSE(loop.isStopped());
-}
-
-TEST(EventLoopTest, IsStoppedIsFalseAfterQuitBeforeLoopEverStarts) {
-    liteim::EventLoop loop;
-
-    loop.quit();
-
-    EXPECT_FALSE(loop.isStopped());
-}
-
 TEST(EventLoopTest, LoopRunsQueuedTaskWhenQuitWasRequestedBeforeStart) {
     liteim::EventLoop loop;
     bool ran = false;
@@ -241,29 +227,4 @@ TEST(EventLoopTest, LoopRunsQueuedTaskWhenQuitWasRequestedBeforeStart) {
     loop.loop();
 
     EXPECT_TRUE(ran);
-    EXPECT_TRUE(loop.isStopped());
-}
-
-TEST(EventLoopTest, IsStoppedBecomesTrueAfterLoopReturns) {
-    LoopThreadHandle handle;
-    std::atomic_bool stopped_after_loop{false};
-
-    std::thread loop_thread([&handle, &stopped_after_loop]() {
-        liteim::EventLoop loop;
-        {
-            std::lock_guard<std::mutex> lock(handle.mutex);
-            handle.loop = &loop;
-        }
-        handle.ready.notify_one();
-
-        loop.loop();
-        stopped_after_loop = loop.isStopped();
-    });
-
-    auto* loop = waitForLoop(handle);
-    loop->queueInLoop([loop]() { loop->quit(); });
-
-    loop_thread.join();
-
-    EXPECT_TRUE(stopped_after_loop.load());
 }

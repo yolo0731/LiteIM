@@ -18,7 +18,13 @@ namespace liteim {
 class EventLoop;
 
 inline constexpr std::size_t kSessionDefaultOutputHighWaterMark = 4 * 1024 * 1024;
-inline constexpr std::size_t kSessionOutputHighWaterMark = kSessionDefaultOutputHighWaterMark;
+
+enum class SessionState {
+    kNew,
+    kStarted,
+    kClosing,
+    kClosed,
+};
 
 class Session : public std::enable_shared_from_this<Session> {
 public:
@@ -32,7 +38,6 @@ public:
     Session(const Session&) = delete;
     Session& operator=(const Session&) = delete;
 
-    int fd() const noexcept;
     std::uint64_t id() const noexcept;
     EventLoop* ownerLoop() const noexcept;
     bool closed() const noexcept;
@@ -66,7 +71,7 @@ private:
     MessageCallback message_callback_;
     CloseCallback close_callback_;
     std::atomic_bool closed_{false};
-    bool started_{false};
+    SessionState state_{SessionState::kNew};
     bool channel_registered_{false};
     std::atomic<std::int64_t> last_active_time_ms_{0};
 };

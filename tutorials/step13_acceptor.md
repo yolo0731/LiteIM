@@ -43,7 +43,7 @@ tests/net/unique_fd_test.cpp
 - `Acceptor.hpp` / `Acceptor.cpp`：实现监听器。它创建 listen socket，注册 listen `Channel`，在 listen fd 可读时循环 `accept4()`，然后把新连接 fd 交给上层 callback。
 - `UniqueFd.hpp` / `UniqueFd.cpp`：实现轻量 RAII fd owner。它不代表 socket 业务语义，只表达“谁负责关闭这个 fd”。
 - `acceptor_header_test.cpp`：验证 `Acceptor.hpp` 可以独立包含，避免头文件依赖不完整。
-- `acceptor_test.cpp`：验证监听、连接接入、多连接 accept、关闭监听、跨线程关闭和 callback 异常路径。
+- `acceptor_test.cpp`：验证监听、连接接入、多连接 accept、关闭监听、owner-loop-only close 和 callback 异常路径。
 - `unique_fd_test.cpp`：验证 fd 析构关闭、`release()` 不关闭、move 转移所有权、`reset()` 关闭旧 fd。
 
 ## Acceptor.hpp / UniqueFd.hpp 接口说明
@@ -68,7 +68,7 @@ tests/net/unique_fd_test.cpp
 - 析构调用 `close()`。
 - `setNewConnectionCallback()` 安装新连接回调。
 - `listenFd()`、`port()`、`listening()` 是状态查询。
-- `close()` 保留经过测试的跨线程关闭契约：尽量把清理投递回 owner loop；如果 loop 已停止，则走 fallback 清理。
+- `close()` 必须在 owner/base loop 线程调用；非 owner 线程直接调用会 `std::terminate()`。
 
 关键 private 成员：
 
@@ -165,7 +165,7 @@ EAGAIN / EWOULDBLOCK 表示本轮积压连接接完
 
 小例子：测试用端口 0 构造 `Acceptor`，内核分配可用端口，`port()` 返回实际端口。客户端连接后，callback 收到一个 `UniqueFd`；如果 callback 没有把它移走，离开作用域时自动关闭，避免 fd 泄漏。
 
-边界：`Acceptor` 默认属于 base loop，构造和 Channel 注册必须在 owner loop 线程；`Channel` 不拥有 listen fd；accepted fd 从 `Acceptor` 到 `TcpServer` 到 `Session` 应全程用 `UniqueFd` 移动；`Acceptor::close()` 保留已经测试过的跨线程关闭契约，不作为其他 Reactor 对象的默认规则。
+边界：`Acceptor` 默认属于 base loop，构造、Channel 注册和 `close()` 都必须在 owner loop 线程；`Channel` 不拥有 listen fd；accepted fd 从 `Acceptor` 到 `TcpServer` 到 `Session` 应全程用 `UniqueFd` 移动。跨线程停止服务端时，上层应先把停止动作投递回 base loop，再在 base loop 内调用 `Acceptor::close()`。
 
 ## Acceptor 的职责
 
@@ -184,7 +184,7 @@ enableReading()
 
 这里的 `enableReading()` 会通过 `Channel::update()` 注册到所属 `EventLoop`，所以 `Acceptor` 必须在它所属的 loop 线程里创建。
 
-本次 review hardening 后，`Acceptor::close()` 可以从非 loop 线程发起，但真正的 `removeChannel()` 和 listen fd 关闭仍然回到所属 loop 线程执行。这样 `Epoller` 的 `fd -> Channel*` 映射不会留下旧 fd 对应的旧 `Channel*`。
+本次 cleanup 后，`Acceptor::close()` 统一为 owner-loop-only：真正的 `removeChannel()` 和 listen fd 关闭只在所属 loop 线程执行，非 owner 线程直接调用会终止进程。这样不会在析构或停止路径里排入捕获裸 `this` 的清理任务，也不会让非 owner 线程碰 `Epoller` 内部状态。
 
 `UniqueFd` 是一个很小的 RAII 工具：对象析构时关闭自己持有的 fd，move 表示把所有权交给另一个 owner。`Acceptor` 用它保护 listen fd 和 accepted fd，尤其是 callback 抛异常时，accepted fd 不会泄漏。
 
@@ -281,11 +281,15 @@ sockaddr_in      对端地址
 
 关闭后 `listenFd()` 返回 `kInvalidFd`，`listening()` 返回 false，新客户端不能再连接到这个监听 socket。
 
-跨线程调用 `close()` 时，如果 `EventLoop` 仍在运行，`Acceptor` 会通过 `EventLoop::queueInLoop()` 把 `closeInLoop()` 投递给 loop 线程，并等待清理完成。这个设计保留 one-loop-per-thread 边界：`Epoller::removeChannel()` 仍然只在 owner loop 线程执行。
+`Acceptor::close()` 不再支持跨线程调用，也不再等待 `future` 或查询 `EventLoop::isStopped()`。如果调用方在非 owner 线程想停止监听，正确方式是在更高一层把动作投递回 base loop：
 
-如果 `EventLoop::loop()` 已经退出，`isStopped()` 会返回 true，此时再投递任务没有线程会执行，`Acceptor::close()` 会进入 fallback 路径，在调用线程释放 `Channel`、listen fd 和 idle fd。Step 17 后的 review hardening 还补了一个竞态：如果 close task 已经投递，但 loop 在执行这个 task 前退出，`future.wait()` 不能无限等下去；现在 close 会周期性检查 `isStopped()`，发现 loop 已退出后走同样的 fallback。这个路径只用于 loop 已停止后的确定性清理。
+```cpp
+base_loop->queueInLoop([&server]() {
+    server.stop();
+});
+```
 
-Step 13 hardening round 3 明确了一个容易混淆的状态：`EventLoop` 刚构造但还没进入 `loop()` 时，不算 stopped。这个时候跨线程调用 `Acceptor::close()` 仍然要通过 `queueInLoop()` 等 owner loop 线程执行 `removeChannel()`；否则调用线程直接释放 listen `Channel` 后，`Epoller` 内部的 `fd -> Channel*` 映射会残留，后续同一个 fd 号被复用时会触发 `fd already belongs to a different channel`。
+然后由 `TcpServer::stopInLoop()` 在 base loop 内关闭 `Acceptor`。这个约束和 `TcpServer` / `TimerManager` / `SignalWatcher` 的 owner-loop-only 生命周期保持一致。
 
 `EMFILE` / `ENFILE` 处理函数保留 `noexcept`，因为 fd 用尽路径不应再向外抛异常。但这些函数内部会写 warn 日志，所以日志调用被包在 no-throw wrapper 里：即使 `spdlog` sink 或格式化抛异常，也只丢弃这次日志，不让服务进程在异常资源状态下 `std::terminate()`。
 
@@ -311,11 +315,8 @@ Step 13 hardening round 3 明确了一个容易混淆的状态：`EventLoop` 刚
 - `AcceptorTest.ClientConnectionTriggersNewConnectionCallback`
 - `AcceptorTest.MultiplePendingConnectionsAreAccepted`
 - `AcceptorTest.ClosedListenSocketRejectsNewConnections`
-- `AcceptorTest.CloseFromOtherThreadRemovesChannelBeforeClosingFd`
 - `AcceptorTest.AcceptedFdIsClosedWhenCallbackThrowsBeforeTakingOwnership`
-- `AcceptorTest.CloseFromOtherThreadAfterLoopStopsDoesNotBlock`
-- `AcceptorTest.CloseFromOtherThreadWhileLoopExitsWithQueuedCloseDoesNotBlock`
-- `AcceptorTest.CloseFromOtherThreadBeforeLoopStartsStillRemovesChannel`
+- `AcceptorTest.CloseFromNonOwnerThreadTerminates`
 - `AcceptorTest.FdExhaustionRejectsPendingConnectionWithoutLaterCallback`
 - `UniqueFdTest.DestructorClosesOwnedFd`
 - `UniqueFdTest.ReleaseReturnsFdWithoutClosing`
@@ -341,4 +342,4 @@ ctest --test-dir build --output-on-failure
 
 review hardening 后还可以补充：
 
-> listen fd、accepted fd 和 idle fd 都用 RAII 思路兜底。`Acceptor::close()` 即使从其他线程发起，也会把真正的 epoll 删除和 fd 关闭投递回 owner loop；如果 loop 尚未启动但还会启动，close 会等待 owner loop 执行清理；如果 loop 已经显式退出，或 close task 排队后 loop 在执行前退出，才走 fallback 直接释放资源，避免永久等待。fd 用尽时用 idle fd 套路拒绝一个 pending connection，避免 LT 模式下 `EMFILE` 触发 busy loop，且该异常路径中的日志不会从 `noexcept` helper 里继续抛出。`Channel::tie()` 则为下一步 `Session` 的 `shared_ptr` / `weak_ptr` 生命周期模型预留了基础。
+> listen fd、accepted fd 和 idle fd 都用 RAII 思路兜底。`Acceptor::close()` 必须在 owner/base loop 线程调用；跨线程停止由 `TcpServer` 或更上层先投递回 base loop，再同步关闭 listen Channel 和 fd。这个硬边界避免在 close/析构路径里捕获裸 `this` 排异步任务。fd 用尽时用 idle fd 套路拒绝一个 pending connection，避免 LT 模式下 `EMFILE` 触发 busy loop，且该异常路径中的日志不会从 `noexcept` helper 里继续抛出。`Channel::tie()` 则为下一步 `Session` 的 `shared_ptr` / `weak_ptr` 生命周期模型预留了基础。

@@ -16,18 +16,15 @@ namespace liteim {
 namespace {
 class LoopingGuard {
 public:
-    LoopingGuard(std::atomic_bool& looping, std::atomic_bool& loop_exited)
-        : looping_(looping), loop_exited_(loop_exited) {
+    explicit LoopingGuard(std::atomic_bool& looping) : looping_(looping) {
         bool expected = false;
         if (!looping_.compare_exchange_strong(expected, true)) {
             throw std::logic_error("EventLoop::loop is already running");
         }
-        loop_exited_ = false;
     }
 
     ~LoopingGuard() {
         looping_ = false;
-        loop_exited_ = true;
     }
 
     LoopingGuard(const LoopingGuard&) = delete;
@@ -35,7 +32,6 @@ public:
 
 private:
     std::atomic_bool& looping_;
-    std::atomic_bool& loop_exited_;
 };
 
 int createEventFd() {
@@ -67,7 +63,7 @@ EventLoop::~EventLoop() {
 
 void EventLoop::loop() {
     assertInLoopThread();
-    LoopingGuard looping_guard(looping_, loop_exited_);
+    LoopingGuard looping_guard(looping_);
     Epoller::ChannelList active_channels;
 
     while (true) {
@@ -154,10 +150,6 @@ void EventLoop::removeChannel(Channel* channel) {
 
 bool EventLoop::isInLoopThread() const noexcept {
     return std::this_thread::get_id() == thread_id_;
-}
-
-bool EventLoop::isStopped() const noexcept {
-    return loop_exited_.load() && !looping_.load();
 }
 
 void EventLoop::assertInLoopThread() const {

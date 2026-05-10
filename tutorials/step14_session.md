@@ -48,7 +48,7 @@ tutorials/step14_session.md
 类型、常量和构造：
 
 - `kSessionDefaultOutputHighWaterMark = 4 * 1024 * 1024`，默认输出缓冲高水位。
-- `kSessionOutputHighWaterMark` 是兼容旧测试/文档的同值别名。
+- `SessionState` 表达连接生命周期：`kNew -> kStarted -> kClosing -> kClosed`。
 - `Session::Ptr = std::shared_ptr<Session>`，连接生命周期由 shared_ptr 管理。
 - `MessageCallback` 在完整 Packet 到达时执行。
 - `CloseCallback` 在连接关闭时执行。
@@ -56,7 +56,6 @@ tutorials/step14_session.md
 
 状态查询：
 
-- `fd()` 返回当前 fd，关闭后是无效 fd。
 - `id()` 返回逻辑 session id，避免 fd 复用影响连接表。
 - `ownerLoop()` 返回连接归属的 EventLoop。
 - `closed()` 查询是否已经关闭。
@@ -84,7 +83,7 @@ tutorials/step14_session.md
 - `decoder_` 处理 TCP 半包和粘包。
 - `output_buffer_` 保存待写出字节。
 - `output_high_water_mark_` 支撑慢客户端保护。
-- `closed_`、`started_`、`channel_registered_` 管理连接生命周期状态。
+- `state_` 管理启动/关闭状态，`closed_` 保留给跨线程只读判断，`channel_registered_` 只表示是否已注册到 epoll。
 - `last_active_time_ms_` 支撑 heartbeat timeout。
 
 关键 private helper：
@@ -153,7 +152,9 @@ business thread or I/O thread
 - `output_buffer_` 保存非阻塞写未完成的 bytes。
 - `output_high_water_mark_` 是单连接输出缓冲上限。
 - `last_active_time_ms_` 只表示完整入站 Packet 活跃时间。
-- `closed_`、`started_`、`channel_registered_` 控制生命周期。
+- `state_` 表达 `kNew`、`kStarted`、`kClosing`、`kClosed` 生命周期。
+- `closed_` 用于 `TcpServer` heartbeat/base loop 的跨线程关闭判断。
+- `channel_registered_` 只跟踪 epoll 注册状态，避免重复 remove。
 
 核心函数流程：
 
@@ -162,7 +163,7 @@ business thread or I/O thread
 - `sendPacket()`：编码 Packet，并通过 `runInLoop()` / `queueInLoop()` 回到 owner loop。
 - `sendEncodedInLoop()`：append 前做 `pending + incoming` 高水位检查，超限直接关闭。
 - `handleWrite()`：write 可读区，成功后 retrieve，清空后 disable writing。
-- `closeInLoop()`：owner loop 内移除 Channel、释放 fd、延迟 reset Channel、触发 close callback。
+- `closeInLoop()`：用 `closed_.exchange(true)` 保证一次性关闭，把 `state_` 推到 closing/closed，移除 Channel、释放 fd、延迟 reset Channel、触发 close callback。
 
 读路径可以理解成：
 
@@ -230,6 +231,7 @@ closeInLoop() 关闭慢连接
 - `std::unique_ptr<Channel> channel_`：fd 的 epoll 事件代理。
 - `FrameDecoder decoder_`：把 TCP 字节流解成完整 Packet。
 - `Buffer output_buffer_`：保存还没写完的待发送字节。
+- `SessionState state_`：收敛启动/关闭状态。
 - `message_callback_`：完整 Packet 到达时通知上层。
 - `close_callback_`：连接关闭时通知上层。
 - `last_active_time_ms_`：记录最近一次完整入站 Packet 活跃时间。
@@ -368,6 +370,7 @@ defer Channel destruction
 - `SessionTest.CloseWhenPendingOutputExceedsHighWaterMark`
 - `SessionTest.LastActiveTimeIsInitialized`
 - `SessionTest.PendingOutputBytesRequiresOwnerLoopThread`
+- header static assertions 覆盖 `SessionState` 存在，并确认 public `fd()` 已删除。
 
 测试重点：
 

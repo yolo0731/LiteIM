@@ -210,14 +210,6 @@ public:
         return server->sendToSession(session_id, packet);
     }
 
-    liteim::Status sendToUser(std::uint64_t user_id, const liteim::Packet& packet) {
-        auto* server = serverPtr();
-        if (server == nullptr) {
-            return liteim::Status::error(liteim::ErrorCode::InvalidArgument, "server is stopped");
-        }
-        return server->sendToUser(user_id, packet);
-    }
-
     void stop() noexcept {
         liteim::EventLoop* loop = nullptr;
         liteim::TcpServer* server = nullptr;
@@ -455,13 +447,57 @@ TEST(TcpServerTest, ClosedSlowClientIsRemovedFromSessionTable) {
     EXPECT_EQ(retry_status.code(), liteim::ErrorCode::NotFound);
 }
 
-TEST(TcpServerTest, SendToUnknownUserReturnsNotFound) {
-    RunningTcpServer server(0);
+TEST(TcpServerTest, SlowClientAccumulatedSmallPacketsTriggerHighWaterMark) {
+    std::mutex mutex;
+    std::condition_variable callback_ready;
+    std::condition_variable release_ready;
+    std::uint64_t observed_session_id = 0;
+    bool callback_entered = false;
+    bool release_callback = false;
 
-    const auto status = server.sendToUser(42, makePacket("not bound", 401));
+    RunningTcpServer server(1, [&](liteim::TcpServer& tcp_server, liteim::EventLoop&) {
+        tcp_server.setSessionOutputHighWaterMark(128);
+        tcp_server.setMessageCallback([&](const liteim::Session::Ptr& session, const liteim::Packet&) {
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                observed_session_id = session->id();
+                callback_entered = true;
+            }
+            callback_ready.notify_one();
 
-    EXPECT_FALSE(status.isOk());
-    EXPECT_EQ(status.code(), liteim::ErrorCode::NotFound);
+            std::unique_lock<std::mutex> lock(mutex);
+            release_ready.wait(lock, [&]() { return release_callback; });
+        });
+    });
+
+    auto client = connectTo(server.port());
+    ASSERT_GE(client.fd(), 0);
+
+    const auto trigger = encodeOrDie(makePacket("trigger", 401));
+    writeAll(client.fd(), trigger);
+
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        ASSERT_TRUE(callback_ready.wait_for(lock, 2s, [&]() { return callback_entered; }));
+    }
+
+    bool all_sends_accepted = true;
+    for (std::uint64_t seq_id = 402; seq_id < 405; ++seq_id) {
+        const auto status = server.sendToSession(observed_session_id, makePacket(std::string(32, 'x'), seq_id));
+        if (!status.isOk()) {
+            all_sends_accepted = false;
+            ADD_FAILURE() << status.message();
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        release_callback = true;
+    }
+    release_ready.notify_one();
+
+    ASSERT_TRUE(all_sends_accepted);
+    EXPECT_TRUE(waitUntil([&]() { return server.sessionCount() == 0; }, 2s));
 }
 
 TEST(TcpServerTest, StopFromNonOwnerThreadTerminatesInsteadOfQueueingThis) {
