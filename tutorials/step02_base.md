@@ -100,6 +100,129 @@ add_library(liteim_base
 
 这说明 `base` 是公共库，不是 server 入口文件里的临时工具函数。
 
+## Config.hpp / ErrorCode.hpp / Status.hpp / Logger.hpp / Timestamp.hpp 接口说明
+
+`Config.hpp` 定义配置数据的结构边界：
+
+- `MySqlConfig` 保存 `host`、`port`、`user`、`password`、`database`、`pool_size`，后续 MySQL 连接池按这些字段初始化。
+- `RedisConfig` 保存 `host`、`port`、`password`、`db`、`pool_size`，后续 Redis pool 不从业务代码里硬编码连接参数。
+- `QtClientConfig` 保存 demo 客户端默认连接地址。
+- `Config` 保存 server host/port、I/O 线程数、业务线程数、`session_output_high_water_mark`、日志级别以及 MySQL/Redis/Qt 子配置。
+- `Config::defaults()` 返回带默认值的配置对象。
+- `loadFromFile(path)` 读取简单 `key=value` 文件，成功返回 `Status::ok()`；文件不存在返回 `NotFound`；未知 key、非法端口、非法整数或 0 高水位返回错误 `Status`。
+- `Config` 是普通值类型，没有 fd、线程或外部资源所有权。
+
+`ErrorCode.hpp` 定义统一错误分类：
+
+- `Ok` 表示成功。
+- `InvalidArgument` 表示调用参数不合法。
+- `NotFound` 表示文件、字段、session 等不存在。
+- `IoError` 表示系统调用或 I/O 操作失败。
+- `ParseError` 表示配置、协议或字节解析失败。
+- `ConfigError` 预留给更复杂配置校验。
+- `InternalError` 表示内部状态或平台能力不满足预期。
+- `toString()` 用于日志和测试，不抛异常。
+
+`Status.hpp` 定义错误返回对象：
+
+- 默认构造和 `Status::ok()` 都表示成功。
+- `Status::error(code, message)` 创建失败状态并携带可读消息。
+- `isOk()`、`code()`、`message()` 都是只读查询。
+- 关键成员变量是 `code_` 和 `message_`。`code_` 支撑程序判断，`message_` 支撑日志和测试断言。
+- `Status` 不负责线程同步，调用方按值返回即可。
+
+`Logger.hpp` 定义日志入口：
+
+- `LogLevel` 覆盖 trace/debug/info/warn/error/critical/off。
+- `parseLogLevel()` 把配置字符串转成枚举，未知值回退到 `Info`。
+- `Logger::init()` 创建或更新全局 `spdlog` logger。
+- `Logger::get()` 返回共享 logger，未初始化时会按 info 级别懒创建。
+- `Logger::setLevel()` 只调整级别。
+- 关键内部状态在 `.cpp` 中是全局 `shared_ptr<spdlog::logger>` 和 mutex，保证重复 init/get 不把 logger 状态弄乱。
+
+`Timestamp.hpp` 定义时间值对象：
+
+- `Clock` 是 `std::chrono::system_clock`，用于日志、消息创建时间和可读时间。
+- 默认构造保存当前时间。
+- 显式构造接收 `Clock::time_point`，便于测试固定时间。
+- `now()` 返回当前时间戳。
+- `millisecondsSinceEpoch()` 返回毫秒级 epoch。
+- `toIso8601String()` 返回 UTC 可读字符串。
+- 关键成员变量 `time_point_` 是值语义，没有外部资源所有权。
+
+## Base 基础模块的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+Base 模块是所有后续模块的公共地基：server 启动时用 `Config` 决定监听地址、线程数和输出高水位，用 `Logger` 初始化日志；网络、协议、存储和缓存模块用 `Status` / `ErrorCode` 返回可恢复错误，用 `Timestamp` 记录连接活跃时间。
+
+### 2. 上下层调用连接
+
+```text
+server/main.cpp
+    -> Config::defaults() / Config::loadFromFile()
+    -> parseLogLevel()
+    -> Logger::init()
+    -> TcpServer / Session / TimerManager
+        -> Status / ErrorCode / Timestamp / Logger
+        -> 上层决定继续、关闭连接或拒绝启动
+```
+
+上游是进程启动和各业务/网络模块；下游是标准库文件读取、spdlog、时间库和统一错误对象。
+
+### 3. 整体运行链路
+
+1. 进程启动时先拿到默认配置；当前入口在 [server/main.cpp](../server/main.cpp#L11)。
+2. 如果后续启用配置文件，调用 [Config::loadFromFile()](../src/base/Config.cpp#L56) 覆盖默认值。
+3. 用 [parseLogLevel()](../src/base/Logger.cpp#L48) 把字符串级别转成枚举。
+4. 调用 [Logger::init()](../src/base/Logger.cpp#L70) 初始化进程级 logger。
+5. `TcpServer` 读取配置中的 host、port、I/O 线程数和输出高水位。
+6. 后续任意模块失败时返回 `Status::error()`，上层根据错误语义决定处理方式。
+
+### 4. 自身内部运行流程
+
+整体可以看成 5 步：配置快照、配置解析、日志初始化、错误返回、时间取值。
+
+核心成员或数据职责：
+
+- `Config` 是启动期配置快照，里面包含 server、MySQL、Redis、Qt client 等分组字段。
+- `ErrorCode` 是稳定错误分类，避免上层只解析字符串。
+- `Status` 是错误信封，携带 `ErrorCode` 和 message。
+- `Logger` 包一层全局 spdlog logger。
+- `Timestamp` 是真实墙钟时间值，用于日志和 Session 活跃时间。
+
+核心函数流程：
+
+- [Config::defaults()](../src/base/Config.cpp#L52)：直接返回默认构造的配置快照。
+- [Config::loadFromFile()](../src/base/Config.cpp#L56)：逐行读取、去注释、trim、按 `key=value` 拆分，再按 key 写入字段。
+- [parseLogLevel()](../src/base/Logger.cpp#L48)：把 `debug`、`warn`、`error` 等字符串映射为 `LogLevel`，未知值回落到 info。
+- [Logger::init()](../src/base/Logger.cpp#L70)：加锁创建或复用 spdlog logger，并设置当前级别。
+- [Status::ok() / Status::error()](../src/base/Status.cpp#L8)：构造成功或失败返回值，不抛异常。
+- [Timestamp::now()](../src/base/Timestamp.cpp#L15)：取当前 system clock，用于对外可理解的时间点。
+
+`Config::loadFromFile()` 伪流程：
+
+```text
+loadFromFile(path)
+    open file
+    for each line:
+        remove text after '#'
+        trim whitespace
+        if empty: continue
+        split by '='
+        store key/value in map
+    for each key/value:
+        parse and assign field
+        if parse failed: return Status::error(...)
+    return Status::ok()
+```
+
+### 5. 小例子和边界
+
+小例子：配置文件写 `server.output_high_water_mark_bytes=0` 时，[Config::loadFromFile()](../src/base/Config.cpp#L101) 返回 `InvalidArgument`，server 不应该继续启动一个“任何发送都会超限”的配置。
+
+边界：`Config` 当前是启动期快照，不做动态 reload；`Logger` 内部加锁，适合多线程共享；`Status` 用于可恢复错误，不替代构造函数里无法继续的异常；`Timestamp` 使用 system clock，定时器到期计算由 `TimerManager` 使用 steady clock。
+
 ## 4. Config 设计
 
 `Config` 当前保存这些配置：

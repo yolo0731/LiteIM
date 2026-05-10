@@ -51,6 +51,119 @@ tests/CMakeLists.txt
 liteim_net
 ```
 
+## Buffer.hpp 接口说明
+
+`Buffer.hpp` 定义网络层通用字节缓冲区。
+
+常量和构造：
+
+- `kDefaultBufferSize = 1024` 是默认初始容量。
+- `Buffer(initial_size)` 创建内部 `Bytes`。如果传入 0，会至少创建 1 字节容量，避免空 vector 后续指针语义混乱。
+
+public 查询：
+
+- `readableBytes()` 返回 `write_index_ - read_index_`。
+- `writableBytes()` 返回 `buffer_.size() - write_index_`。
+- `peek()` 返回当前可读区域起始地址，不移动读指针。
+
+append 系列：
+
+- `append(const Byte* data, len)` 追加原始字节。`data == nullptr && len != 0` 返回 `InvalidArgument`，`len == 0` 是 no-op。
+- `append(const Bytes&)` 追加项目统一字节数组。
+- `append(const std::string&)` 追加文本内容的原始字节，主要方便测试和文本 payload。
+
+retrieve 系列：
+
+- `retrieve(len)` 消费指定字节。超过 `readableBytes()` 返回 `InvalidArgument`，并且不修改索引。
+- `retrieveAll()` 把读写索引都归零，不释放容量。
+- `retrieveAllAsString()` 复制所有可读字节为字符串，然后清空可读区域。
+
+关键 private 成员和 helper：
+
+- `buffer_` 是实际连续内存。
+- `read_index_` 指向可读区域起点。
+- `write_index_` 指向可写区域起点。
+- `ensureWritableBytes(len)` 先尝试复用前面已读空间，再决定扩容。
+
+线程和所有权边界：
+
+- `Buffer` 是值对象，不拥有 fd。
+- 一个实例通常只在所属 owner loop 中访问，例如 `Session` 输出缓冲。
+- `peek()` 返回的指针只在下一次修改 buffer 前有效，调用方不能长期保存。
+
+## Buffer 的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+当前路线里输入半包缓存由 `FrameDecoder` 维护，`Buffer` 主要服务 `Session` 输出路径：当非阻塞 socket 一次写不完 encoded Packet 时，剩余字节留在 `output_buffer_`，等下一次 `EPOLLOUT` 继续写。
+
+### 2. 上下层调用连接
+
+```text
+Session::sendEncodedInLoop()
+    -> output_buffer_.append(encoded)
+    -> Channel::enableWriting()
+    -> EventLoop / Epoller 关注 EPOLLOUT
+    -> Session::handleWrite()
+    -> write(fd, output_buffer_.peek(), readableBytes())
+    -> output_buffer_.retrieve(n)
+```
+
+上游是 `Session` 的发送逻辑，下游是非阻塞 `write()` 和 `Channel` 写事件开关。
+
+### 3. 整体运行链路
+
+1. `Session` 已经把 `Packet` 编码成 `Bytes`。
+2. `sendEncodedInLoop()` 在 append 前做输出高水位检查。
+3. [Buffer::append()](../src/net/Buffer.cpp#L25) 确保尾部有足够可写空间。
+4. 如果空间不足，[ensureWritableBytes()](../src/net/Buffer.cpp#L71) 先复用已读前缀，仍不够再扩容。
+5. `Session` 开启写事件。
+6. `handleWrite()` 用 `peek()` 和 `readableBytes()` 写 socket。
+7. 写出多少字节就 [retrieve()](../src/net/Buffer.cpp#L47) 多少字节。
+8. 缓冲区清空时关闭 `EPOLLOUT`。
+
+### 4. 自身内部运行流程
+
+整体可以看成 3 步：追加、消费、复用空间。
+
+核心成员职责：
+
+- `buffer_` 是底层连续字节数组。
+- `read_index_` 指向可读区起点。
+- `write_index_` 指向可读区终点和可写区起点。
+- 可读区是 `[read_index_, write_index_)`，可写区是 `[write_index_, buffer_.size())`。
+
+核心函数流程：
+
+- [append(const Byte*, size_t)](../src/net/Buffer.cpp#L25)：空输入成功，非空空指针失败，正常路径先确保空间再 `memcpy`。
+- [append(const Bytes&)](../src/net/Buffer.cpp#L39)：复用 raw bytes 入口。
+- [retrieve(size_t)](../src/net/Buffer.cpp#L47)：消费指定字节，越界返回错误且不改变状态。
+- [retrieveAll()](../src/net/Buffer.cpp#L60)：读写索引归零。
+- [retrieveAllAsString()](../src/net/Buffer.cpp#L65)：把当前可读区复制成字符串后清空。
+- [ensureWritableBytes()](../src/net/Buffer.cpp#L71)：先看尾部空间，再移动可读区到开头，最后才扩容。
+
+`ensureWritableBytes(len)` 伪流程：
+
+```text
+if writableBytes() >= len:
+    return
+readable = readableBytes()
+if read_index_ + writableBytes() >= len:
+    move readable bytes to buffer_.begin()
+    read_index_ = 0
+    write_index_ = readable
+    return
+if read_index_ != 0:
+    compact readable bytes to front
+resize buffer_ to write_index_ + len
+```
+
+### 5. 小例子和边界
+
+小例子：容量 8，写入 `abcdef` 后消费 4 字节，再追加 `WXYZ`。尾部只剩 2 字节，但前面有 4 字节已读空间，`ensureWritableBytes()` 会先把 `ef` 移到开头，再追加新数据，避免扩容。
+
+边界：追加空数据成功；追加非空但指针为空是调用错误；消费超过可读字节不会改变索引。`Buffer` 没有锁，必须由所属 `Session` 的 owner loop 线程访问。
+
 ## 3. Buffer 的公开接口
 
 ```cpp

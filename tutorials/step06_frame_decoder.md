@@ -110,6 +110,106 @@ public:
 - 1 个 Packet：刚好拼出一个包。
 - 多个 Packet：输入里有粘包。
 
+## FrameDecoder.hpp 接口说明
+
+`FrameDecoder` 是 socket 无关的 TCP 切包器。
+
+public 接口：
+
+- `feed(const Byte* data, std::size_t len, std::vector<Packet>& output)` 接收一段新字节，清空并填充 `output`。成功返回 `Status::ok()`；输入指针为空但长度非 0 返回 `InvalidArgument`；header 解析失败会进入 error 状态并返回对应 `ParseError`。
+- `feed(const Bytes& data, output)` 是字节数组版本，语义相同。
+- `hasError()` 查询解码器是否已经进入错误状态。
+- `bufferedBytes()` 返回内部尚未组成完整 Packet 的字节数。
+- `reset()` 清空缓存并退出 error 状态，通常只在测试或明确重新同步协议时使用。
+
+关键 private 成员：
+
+- `buffer_` 保存跨多次 `feed()` 的未消费字节，是处理 TCP 半包的核心。
+- `error_` 记录不可恢复解析错误。进入 error 后，后续 `feed()` 会直接返回错误，避免继续在错位字节流上解析。
+
+内部 helper 来自 Packet 层：
+
+- `parseHeader()` 读取前 20 字节。
+- `validateHeader()` 间接校验 magic、version 和 body 长度。
+
+线程和所有权边界：
+
+- 一个 `FrameDecoder` 实例应归属于一个连接的 owner loop，不跨多个连接共享。
+- `feed()` 修改内部 `buffer_` 和 `error_`，同一个实例不能多线程并发调用。
+- 输出的 `Packet` 按值放进调用方 vector，解码器不持有回调或 fd。
+
+## FrameDecoder 的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+`FrameDecoder` 解决 TCP 半包和粘包。`Session::handleRead()` 每次从 socket 读到一段字节后直接喂给 `FrameDecoder::feed()`；decoder 内部保存跨 read 事件的残留字节，一次可以输出 0 个、1 个或多个完整 `Packet`。
+
+### 2. 上下层调用连接
+
+```text
+Session::handleRead()
+    -> read(fd, stack buffer)
+    -> FrameDecoder::feed(bytes)
+    -> parseHeader() / Packet
+    -> vector<Packet>
+    -> Session MessageCallback
+```
+
+上游是 `Session` 的 socket 读事件，下游是 Step 4 `Packet` 解析和上层 message callback。
+
+### 3. 整体运行链路
+
+1. `EPOLLIN` 到来后，`Session` 循环 `read()` 到 `EAGAIN`。
+2. 每次读到 `n > 0` 的字节就调用 [FrameDecoder::feed()](../src/protocol/FrameDecoder.cpp#L9)。
+3. `feed()` 把新字节追加到内部 `buffer_`。
+4. 只要 `buffer_` 至少有 20 字节，就调用 `parseHeader()`。
+5. 如果 header 合法但 body 不完整，保留缓存并返回成功。
+6. 如果完整，就构造 `Packet`、删除已消费字节，并继续尝试解析后续粘包。
+7. `Session` 对输出的每个 Packet 刷新活跃时间并调用 message callback。
+
+### 4. 自身内部运行流程
+
+整体可以看成 4 步：拒绝错误状态、追加新字节、循环切包、维护缓存。
+
+核心成员职责：
+
+- `buffer_` 保存跨多次 read 的累计字节流。
+- `error_` 表示已经遇到协议错位；置位后后续 feed 直接失败。
+- `output` 是本次 feed 解析出的完整 Packet 列表，由调用方传入。
+
+核心函数流程：
+
+- [feed(const Byte*, size_t, vector<Packet>&)](../src/protocol/FrameDecoder.cpp#L9)：主解析入口。
+- [feed(const Bytes&, vector<Packet>&)](../src/protocol/FrameDecoder.cpp#L48)：轻量转调，方便测试和上层用 `Bytes`。
+- [bufferedBytes()](../src/protocol/FrameDecoder.cpp#L56)：暴露当前残留字节数，主要用于测试。
+- [reset()](../src/protocol/FrameDecoder.cpp#L60)：清空缓存并清 error，生产连接通常关闭而不是重同步。
+
+`feed()` 伪流程：
+
+```text
+output.clear()
+if error_: return parse error
+if data null and len != 0: return invalid argument
+append new bytes to buffer_
+while buffer_.size >= packet header size:
+    parseHeader(buffer_ first 20 bytes)
+    if parse failed:
+        error_ = true
+        return error
+    frame_size = 20 + header.body_len
+    if buffer_.size < frame_size:
+        break
+    output.push_back(Packet(header, body bytes))
+    erase consumed frame bytes
+return ok
+```
+
+### 5. 小例子和边界
+
+小例子：第一次收到 10 字节时，`bufferedBytes()` 是 10，输出 0 个 Packet。第二次收到剩余 header 和 body 后，`feed()` 拼出完整 Packet，输出 1 个 Packet，并把已消费字节删除。
+
+边界：magic 错误会把 `error_` 置 true，上层通常关闭连接；body 长度上限由 Packet 层拒绝；decoder 不关心 fd、线程或业务语义，只处理字节流到 Packet 的边界。
+
 ## 4. 内部缓冲
 
 `FrameDecoder` 内部有：

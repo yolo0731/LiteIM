@@ -169,6 +169,94 @@ bool started() const noexcept;
 - `pendingTaskCount()` 返回还在队列里等待执行的任务数，不包含正在执行的任务。
 - `started()` 表示线程池当前是否处于启动状态。
 
+### 关键成员变量
+
+`ThreadPool` 的关键成员包括：
+
+- `worker_count_`：固定 worker 数，构造后不变化。
+- `mutex_`：保护任务队列和 workers 容器相关状态。
+- `stop_mutex_`：串行化外部 stop/join 清理。
+- `condition_`：worker 等待新任务或停止信号。
+- `tasks_`：FIFO 任务队列。
+- `workers_`：实际 `std::thread` 容器。
+- `running_`：是否继续接收新任务，也是 worker 退出条件的一部分。
+
+private helper：
+
+- `workerLoop()` 是每个 worker 的主循环。它等待任务，取出队首任务，在 catch 边界内执行，任务异常不会杀死线程池。
+
+## ThreadPool 的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+`ThreadPool` 是后续业务层执行阻塞工作的地方：MySQL 查询、Redis 操作、密码哈希和历史消息读取都不能跑在 I/O loop 里。I/O 线程只做收发和轻量协议解析，业务任务完成后再通过 `Session::sendPacket()` 或 `EventLoop::queueInLoop()` 回到连接 owner loop。
+
+### 2. 上下层调用连接
+
+```text
+Session MessageCallback / TcpServer business callback
+    -> business ThreadPool::submit(task)
+    -> workerLoop()
+    -> blocking MySQL / Redis / CPU work
+    -> Session::sendPacket(response)
+    -> Session owner EventLoop
+```
+
+上游是网络层收到的 Packet 和未来 service，下游是 worker 线程、任务队列和回投到 I/O loop 的响应。
+
+### 3. 整体运行链路
+
+1. server 或 service 创建固定 worker 数的 `ThreadPool`。
+2. 启动期调用 [ThreadPool::start()](../src/concurrency/ThreadPool.cpp#L40)。
+3. I/O loop 收到业务 Packet 后调用 [submit()](../src/concurrency/ThreadPool.cpp#L79)。
+4. `submit()` 把任务放入队列并 `notify_one()`。
+5. worker 在 [workerLoop()](../src/concurrency/ThreadPool.cpp#L146) 中等待 condition variable。
+6. worker 取出任务，在锁外执行阻塞业务逻辑。
+7. 任务完成后通过 `Session::sendPacket()` 把响应安全投递回 owner loop。
+8. 停止时，[stop()](../src/concurrency/ThreadPool.cpp#L96) 停止接收新任务，唤醒 worker，等待队列排空并 join。
+
+### 4. 自身内部运行流程
+
+整体可以看成 4 步：启动 worker、提交任务、worker 消费、停止清理。
+
+核心成员职责：
+
+- `worker_count_` 是固定 worker 数。
+- `workers_` 拥有 `std::thread`。
+- `tasks_` 是等待执行的 `deque<Task>`。
+- `mutex_` / `condition_` 保护队列并让 worker 休眠。
+- `running_` 表示是否接收新任务。
+- `stop_mutex_` 串行化外部 stop / join。
+- `thread_local current_thread_pool` 识别 worker 内部 self-stop。
+
+核心函数流程：
+
+- `start()`：拒绝 0 worker 和重复启动，置 running 后创建固定 worker。
+- `submit()`：拒绝空任务和非 running 状态，入队后唤醒一个 worker。
+- `workerLoop()`：等待“停止或有任务”，取队首任务，锁外执行，吞掉单个任务异常。
+- `stop()`：置 running false，唤醒所有 worker；外部线程 join，worker 内部调用只发停止请求。
+- `pendingTaskCount()`：只统计仍在队列等待的任务，不统计正在执行的任务。
+
+`workerLoop()` 伪流程：
+
+```text
+mark current_thread_pool
+while true:
+    lock mutex
+    wait until !running_ or !tasks_.empty()
+    if tasks_.empty(): return
+    task = pop front
+    unlock
+    try task()
+    catch all: continue
+```
+
+### 5. 小例子和边界
+
+小例子：登录请求到达 I/O loop 后，后续业务层提交一个任务做密码哈希和 MySQL 查询。任务完成后不能直接改 `Session` 内部状态，而是调用 `session->sendPacket(response)`，由 Session 自己投递回 owner loop。
+
+边界：`ThreadPool` 不知道 `Session` 生命周期，业务任务捕获连接时应使用 `weak_ptr` 或短期 `shared_ptr`；不要在 I/O 线程等待业务任务完成；stop 后不接收新任务，但已入队任务会执行完；worker 内部调用 stop 不 join 自己。
+
 ## 4. ThreadPool.cpp 实现思路
 
 核心数据结构是：

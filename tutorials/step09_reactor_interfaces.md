@@ -59,6 +59,115 @@ src/net/EventLoop.cpp
 
 因为当前只验证接口和头文件依赖关系，不实现运行时行为。
 
+## Channel.hpp / Epoller.hpp / EventLoop.hpp 接口说明
+
+`Channel.hpp` 定义单个 fd 的事件代理：
+
+- `EventCallback = std::function<void()>`，由上层对象绑定读、写、关闭、错误处理函数。
+- `kNoneEvent`、`kReadEvent`、`kWriteEvent` 是 epoll 事件关注常量。
+- 构造函数接收 `EventLoop* owner_loop` 和裸 fd。`Channel` 不拥有 fd，只保存 fd 值。
+- `fd()`、`events()`、`revents()`、`setRevents()` 用于 `Epoller` 和 `EventLoop` 之间传递事件状态。
+- `isNoneEvent()`、`isReading()`、`isWriting()` 查询当前关注集合。
+- `enableReading()`、`disableReading()`、`enableWriting()`、`disableWriting()`、`disableAll()` 修改关注事件并通知 owner loop。
+- `setReadCallback()`、`setWriteCallback()`、`setCloseCallback()`、`setErrorCallback()` 安装事件回调。
+- `tie(shared_ptr<void>)` 用弱引用保护 owner 生命周期，避免事件分发期间 owner 被释放。
+- `handleEvent()` 按 `revents_` 分发回调。
+- 关键成员 `events_` 表示“想监听什么”，`revents_` 表示“本轮发生了什么”，`tie_` 表示 owner 生命周期保护。
+
+`Epoller.hpp` 定义 Linux epoll 封装边界：
+
+- `ChannelList = std::vector<Channel*>` 是本轮活跃 Channel 列表。
+- 构造函数接收 owner `EventLoop*` 并创建 epoll fd。
+- `poll(timeout_ms, active_channels)` 调用 `epoll_wait()`，把活跃事件写回 Channel。
+- `updateChannel(channel)` 根据 Channel 当前关注事件做 add/mod/del。
+- `removeChannel(channel)` 从 epoll 中删除 Channel。
+- 关键成员 `epoll_fd_` 拥有 epoll 实例 fd，`events_` 是 `epoll_wait()` 输出缓冲，`channels_` 是 fd 到 Channel 的映射。
+- `validateChannelOwner()` 防止把别的 loop 的 Channel 注册到当前 epoll。
+
+`EventLoop.hpp` 定义 Reactor 调度边界：
+
+- `Functor = std::function<void()>` 表示投递到 owner loop 线程执行的任务。
+- `loop()` 进入事件循环。
+- `quit()` 请求退出。
+- `runInLoop()` 同线程立即执行，跨线程入队。
+- `queueInLoop()` 总是入队，必要时用 eventfd 唤醒。
+- `updateChannel()` 和 `removeChannel()` 是 Channel 到 Epoller 的桥。
+- `isInLoopThread()`、`isStopped()`、`assertInLoopThread()` 明确线程归属。
+- 关键成员包括 `epoller_`、`wakeup_fd_`、`wakeup_channel_`、`pending_tasks_`、`mutex_` 和线程状态原子变量。
+
+## Reactor 接口层的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+Step 9 先定义 `Epoller`、`Channel`、`EventLoop` 的接口边界，后续 `Acceptor`、`Session`、`TimerManager`、`SignalWatcher` 都只面对 `EventLoop` 和 `Channel`，不直接散落 `epoll_ctl()` / `epoll_wait()` 调用。
+
+### 2. 上下层调用连接
+
+```text
+fd owner(Acceptor / Session / TimerManager / SignalWatcher)
+    -> Channel(owner_loop, fd)
+    -> EventLoop::updateChannel()
+    -> Epoller::updateChannel()
+    -> epoll_ctl()
+    -> epoll_wait()
+    -> Channel::handleEvent()
+    -> fd owner callback
+```
+
+上游是 fd owner，下游是 Linux epoll。接口层把“谁拥有 fd”和“谁分发事件”分开。
+
+### 3. 整体运行链路
+
+1. fd owner 创建 `Channel(owner_loop, fd)`。
+2. fd owner 设置 read/write/close/error callback。
+3. fd owner 调用 `enableReading()` 或 `enableWriting()`。
+4. `Channel` 通过 owner `EventLoop` 更新事件关注。
+5. `EventLoop` 把更新交给 `Epoller`。
+6. `EventLoop::loop()` 调用 `Epoller::poll()`。
+7. `Epoller` 把内核返回的事件写回 `Channel::revents_`。
+8. `EventLoop` 调用 `Channel::handleEvent()`，回调回 fd owner。
+
+### 4. 自身内部运行流程
+
+整体可以看成 3 个接口角色：`Channel` 描述 fd 事件，`Epoller` 适配 epoll，`EventLoop` 绑定线程并驱动循环。
+
+核心成员职责：
+
+- [Channel.hpp](../include/liteim/net/Channel.hpp#L9) 保存 fd、关注事件、实际事件、回调和弱生命周期保护。
+- [Epoller.hpp](../include/liteim/net/Epoller.hpp#L14) 保存 epoll fd、事件数组和 fd 到 Channel 的映射。
+- [EventLoop.hpp](../include/liteim/net/EventLoop.hpp#L14) 保存 owner 线程、wakeup fd、pending task 队列和 Epoller。
+
+核心函数流程：
+
+- `Channel::enableReading()` / `enableWriting()`：改变关注事件，然后走 `update()`。
+- `Epoller::updateChannel()`：根据 Channel 是否已注册和事件集合选择 add/mod/del。
+- `Epoller::poll()`：等待活跃 fd，并把 `revents` 写回 Channel。
+- `EventLoop::runInLoop()` / `queueInLoop()`：保证跨线程任务回到 owner loop。
+- `Channel::tie()`：事件分发期间尝试锁住 owner，防止回调对象已销毁。
+
+伪流程：
+
+```text
+fd owner enables read
+    Channel.events_ |= READ
+    Channel.update()
+    EventLoop.updateChannel(channel)
+    Epoller.updateChannel(channel)
+    epoll_ctl(ADD or MOD)
+
+fd becomes readable
+    Epoller.poll() returns Channel*
+    channel.revents_ = kernel events
+    EventLoop calls channel.handleEvent()
+    Channel calls read callback
+```
+
+### 5. 小例子和边界
+
+小例子：listen fd 可读时，`Acceptor` 的 `listen_channel_` 收到 `EPOLLIN`，`handleEvent()` 调用 `Acceptor::handleRead()`，里面循环 `accept4()` 接收连接。
+
+边界：`Channel` 不关闭 fd，fd owner 负责资源释放；`Channel` 注册、更新和移除必须发生在 owner loop 线程；`Epoller` 只保存 `Channel*`，所以 Channel 必须先从 epoll 移除再析构；跨线程任务应通过 `EventLoop::queueInLoop()` 回到 owner loop。
+
 ## 3. Channel 接口
 
 `Channel` 表示一个 fd 在 Reactor 里的事件代理。

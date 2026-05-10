@@ -171,6 +171,117 @@ Status sendToUser(std::uint64_t user_id, const Packet& packet);
 
 当前还没有登录态，也没有 `user_id -> session_id` 绑定表，所以本 Step 固定返回 `NotFound`。
 
+### 关键成员变量和内部 helper
+
+`TcpServer` 的关键成员包括：
+
+- `base_loop_`：主 Reactor，拥有 `Acceptor`、heartbeat timer 和 server 生命周期。
+- `listen_ip_` / `requested_port_` / `port_`：监听地址、请求端口和实际端口。
+- `io_threads_`：I/O `EventLoopThreadPool`。
+- `acceptor_`：listen socket owner，只在 base loop 创建和关闭。
+- `heartbeat_timer_`：Step 18 接入的 base-loop timerfd 管理器。
+- `mutex_` 和 `sessions_`：保护逻辑 session id 到 `Session::Ptr` 的连接表。
+- `message_callback_`：上层业务入口，未设置时默认 echo。
+- `heartbeat_interval_` / `heartbeat_timeout_`：空闲连接扫描配置。
+- `session_output_high_water_mark_`：Step 20 传给每个 Session 的输出高水位。
+- `next_session_id_`：生成不会被 fd 复用影响的逻辑连接 id。
+- `started_`：启动状态。
+
+内部 helper：
+
+- `stopInLoop()` 只在 base loop 清理 `Acceptor`、timer、session 表和 I/O pool。
+- `handleNewConnection()` 从 `Acceptor` 接收 `UniqueFd`，选择 I/O loop。
+- `createSessionInLoop()` 在目标 I/O loop 创建 Session、设置 callback 和高水位、写入 session 表。
+- `handleMessage()` 调用用户 callback，未设置时 echo。
+- `removeSession()` 在 close callback 中删除 session 表项。
+- `startHeartbeatTimer()`、`scheduleHeartbeatCheck()`、`closeIdleSessions()` 支撑 Step 18 heartbeat timeout。
+
+## TcpServer 的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+`TcpServer` 是当前网络层协调器：它把 base loop、`Acceptor`、I/O `EventLoopThreadPool`、`Session`、heartbeat `TimerManager` 和上层 message callback 串起来。它不处理登录、好友、群聊、MySQL 或 Redis。
+
+### 2. 上下层调用连接
+
+```text
+server/main.cpp
+    -> EventLoop base_loop
+    -> TcpServer(base_loop, host, port, io_threads)
+    -> SignalWatcher / Config options
+    -> TcpServer::start()
+        -> EventLoopThreadPool
+        -> Acceptor
+        -> TimerManager heartbeat
+    -> Session callbacks
+    -> business MessageCallback or echo fallback
+```
+
+新连接链路：
+
+```text
+Acceptor callback(UniqueFd)
+    -> TcpServer::handleNewConnection()
+    -> io_threads_.getNextLoop()
+    -> io_loop->queueInLoop(createSessionInLoop)
+    -> Session::start()
+```
+
+### 3. 整体运行链路
+
+1. `server/main.cpp` 创建 base `EventLoop` 和 `TcpServer`。
+2. 上层可在启动前设置 message callback、heartbeat options 和 session 输出高水位。
+3. [TcpServer::start()](../src/net/TcpServer.cpp#L63) 在 base loop 启动 I/O 线程池。
+4. `start()` 创建 Acceptor 并设置 new connection callback。
+5. `start()` 标记 started 后启动 heartbeat timer。
+6. 新连接进入 [handleNewConnection()](../src/net/TcpServer.cpp#L172)，选择 I/O loop 并排队创建 Session。
+7. [createSessionInLoop()](../src/net/TcpServer.cpp#L183) 在目标 I/O loop 创建 `Session`、设置回调、加入 `sessions_`、启动读事件。
+8. Packet 到来后，`Session` 回调 [handleMessage()](../src/net/TcpServer.cpp#L204)。
+9. 如果业务 callback 存在，交给业务；否则第一版 echo 原 Packet。
+10. 连接关闭时，[removeSession()](../src/net/TcpServer.cpp#L220) 删除 session 表项。
+11. [stopInLoop()](../src/net/TcpServer.cpp#L138) 停止接入、timer、sessions 和 I/O 线程池。
+
+### 4. 自身内部运行流程
+
+整体可以看成 5 步：启动、接入、建连接、收发消息、关闭和心跳。
+
+核心成员职责：
+
+- `base_loop_` 是 owner loop，`TcpServer` start/stop/destruct 都在这里。
+- `acceptor_` 负责 listen fd 和 accept。
+- `io_threads_` 负责连接 I/O loop 分配。
+- `sessions_` 保存逻辑 session id 到 `Session::Ptr` 的映射。
+- `message_callback_` 是后续业务层入口。
+- `heartbeat_timer_` 是 base loop 上的 `TimerManager`。
+- `session_output_high_water_mark_` 是新 Session 的输出缓冲阈值快照。
+
+核心函数流程：
+
+- `start()`：启动 I/O pool、创建 Acceptor、启动 heartbeat；失败时回滚 timer、acceptor 和线程池。
+- `handleNewConnection()`：只在 base loop 接收 `UniqueFd`，选择 I/O loop，把 fd 放进 shared holder 后排队。
+- `createSessionInLoop()`：目标 I/O loop 中消费 `UniqueFd`，创建并启动 Session。
+- `handleMessage()`：拿 callback 快照，有业务 callback 则调用，否则 echo。
+- `removeSession()`：按逻辑 id 从 `sessions_` 删除，避免 fd 复用误删。
+- [scheduleHeartbeatCheck()](../src/net/TcpServer.cpp#L236)：one-shot 续排 heartbeat 检查。
+- [closeIdleSessions()](../src/net/TcpServer.cpp#L248)：扫描 session 快照，关闭超时连接。
+
+`handleNewConnection()` 伪流程：
+
+```text
+assert base loop
+if not started or fd invalid: return
+io_loop = io_threads_.getNextLoop()
+accepted_holder = shared_ptr<UniqueFd>(move accepted_fd)
+io_loop.queueInLoop(lambda:
+    createSessionInLoop(io_loop, accepted_holder))
+```
+
+### 5. 小例子和边界
+
+小例子：如果没有设置业务 callback，客户端发送一个 `LoginRequest` Packet，`TcpServer` 不理解登录语义，只把原 Packet echo 回去。这证明网络底座可用，但注册登录业务仍在后续 Step。
+
+边界：`TcpServer` start/stop/destruct 必须在 base loop 线程；accepted fd 全程通过 `UniqueFd` 移动，直到交给 `Session`；`sessions_` 用 mutex 保护跨线程读取；业务线程想发消息应调用 `sendToSession()`，最终由 `Session` 投递回 owner I/O loop。
+
 ## 4. TcpServer.cpp 实现思路
 
 ### `handleNewConnection()`

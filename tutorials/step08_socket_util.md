@@ -40,6 +40,116 @@ tests/CMakeLists.txt
 
 `SocketUtil.cpp` 被加入现有 `liteim_net` target，后续网络层代码可以直接复用。
 
+## SocketUtil.hpp 接口说明
+
+`SocketUtil.hpp` 是 Linux socket 系统调用的薄封装。
+
+常量：
+
+- `kInvalidFd = -1` 统一表示无效 fd。
+
+创建和模式：
+
+- `createNonBlockingSocket(int& fd)` 创建 `AF_INET` / `SOCK_STREAM` socket，同时带 `SOCK_NONBLOCK` 和 `SOCK_CLOEXEC`。成功后写入 fd；失败时把 fd 设为 `kInvalidFd` 并返回 `IoError`。
+- `setNonBlocking(fd)` 对已有 fd 设置 `O_NONBLOCK`。fd 无效返回 `InvalidArgument`；`fcntl` 失败返回 `IoError`。
+
+socket options：
+
+- `setReuseAddr(fd, enabled)` 设置 `SO_REUSEADDR`。
+- `setReusePort(fd, enabled)` 设置 `SO_REUSEPORT`，平台不支持时返回 `InternalError`。
+- `setTcpNoDelay(fd, enabled)` 设置 `TCP_NODELAY`。
+- `setKeepAlive(fd, enabled)` 设置 `SO_KEEPALIVE`。
+- 这些函数都通过统一内部 helper 检查 fd 并调用 `setsockopt()`。
+
+关闭和错误查询：
+
+- `closeFd(int& fd)` 关闭 fd，并先把变量置为 `kInvalidFd`，降低重复关闭风险。无效 fd 视为成功。
+- `getSocketError(fd, error_code)` 读取 `SO_ERROR`，用于非阻塞连接完成判断和异常诊断。
+
+关键 private helper 在 `.cpp` 中：
+
+- `invalidFdStatus()` 统一生成无效 fd 错误。
+- `errnoStatus(action, errno)` 统一把系统调用失败转成 `Status`。
+- `setSocketOption()` 复用 `setsockopt()` 参数和错误处理。
+
+线程和所有权边界：
+
+- `SocketUtil` 函数不拥有 fd，只操作传入的 fd 值或 fd 引用。
+- fd 的长期所有权后续交给 `UniqueFd`、`Acceptor`、`Session`。
+- `closeFd(int&)` 只能保护同一个变量，不能保护被复制出去的裸 fd。
+
+## SocketUtil 的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+`SocketUtil` 是 Linux socket 系统调用的小工具层：`Acceptor` 用它创建和配置 listen fd，`Session` 用它确保 accepted fd 非阻塞，`UniqueFd` 用它关闭 fd，后续非阻塞 connect 或错误诊断用 `getSocketError()` 判断真实连接结果。
+
+### 2. 上下层调用连接
+
+```text
+Acceptor
+    -> createNonBlockingSocket()
+    -> setReuseAddr() / setReusePort()
+    -> bind() / listen()
+    -> Channel(listen fd)
+
+Session
+    -> setNonBlocking(accepted fd)
+    -> read/write nonblocking socket
+
+UniqueFd
+    -> closeFd(fd)
+    -> fd = kInvalidFd
+```
+
+上游是持有 fd 的网络对象，下游是 Linux `socket`、`fcntl`、`setsockopt`、`getsockopt` 和 `close`。
+
+### 3. 整体运行链路
+
+1. `Acceptor` 构造时调用 [createNonBlockingSocket()](../src/net/SocketUtil.cpp#L38) 得到 listen fd。
+2. `Acceptor` 调用 [setReuseAddr()](../src/net/SocketUtil.cpp#L69) 和 [setReusePort()](../src/net/SocketUtil.cpp#L73)。
+3. `Acceptor` 自己完成 bind/listen 并把 fd 注册给 Channel。
+4. `accept4()` 返回 accepted fd 后，`Session` 构造里调用 [setNonBlocking()](../src/net/SocketUtil.cpp#L48) 做兜底。
+5. 资源释放时，`UniqueFd::reset()` 调用 [closeFd()](../src/net/SocketUtil.cpp#L91)。
+6. 如果后续实现非阻塞 connect，fd 可写后调用 [getSocketError()](../src/net/SocketUtil.cpp#L106) 判断连接是否真的成功。
+
+### 4. 自身内部运行流程
+
+整体可以看成 4 步：创建 fd、设置 option、关闭 fd、查询 pending error。
+
+核心数据职责：
+
+- `int fd` 是内核资源句柄。
+- `kInvalidFd` 是无效 fd 哨兵。
+- `Status` 把系统调用错误变成上层可处理结果。
+
+核心函数流程：
+
+- `createNonBlockingSocket()`：直接用 `SOCK_NONBLOCK | SOCK_CLOEXEC` 创建 socket，减少创建后再设置的竞态窗口。
+- `setNonBlocking()`：先 `F_GETFL`，如果已经非阻塞直接成功，否则 `F_SETFL` 加 `O_NONBLOCK`。
+- `setReuseAddr()` / `setReusePort()` / `setTcpNoDelay()` / `setKeepAlive()`：统一走内部 `setSocketOption()`。
+- `closeFd(int&)`：先保存当前 fd，再把引用置为 `kInvalidFd`，最后调用 `close()`。
+- `getSocketError()`：通过 `getsockopt(SO_ERROR)` 读取内核保存的 socket 错误。
+
+`closeFd(fd)` 伪流程：
+
+```text
+if fd < 0:
+    fd = kInvalidFd
+    return ok
+current_fd = fd
+fd = kInvalidFd
+if close(current_fd) failed:
+    return io error
+return ok
+```
+
+### 5. 小例子和边界
+
+小例子：非阻塞 `connect()` 返回 `EINPROGRESS` 后，后续 fd 可写不代表一定连接成功，需要调用 `getSocketError()`。`error_code == 0` 才表示连接成功。
+
+边界：对无效 fd 设置 option 是调用错误；关闭无效 fd 返回成功，方便 RAII 析构保持幂等；`SO_REUSEPORT` 在不支持的平台返回错误，不静默假装成功。
+
 ## 3. SocketUtil 的公开接口
 
 ```cpp

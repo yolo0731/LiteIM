@@ -115,6 +115,131 @@ Step 16 前代码清理后，Packet 和 TLV 不再各自维护一套大端读写
 include/liteim/protocol/ByteOrder.hpp
 ```
 
+## Packet.hpp 接口说明
+
+`Packet.hpp` 是 LiteIM 外层包格式的契约。
+
+常量：
+
+- `kPacketMagic = 0x4C494D31`，字节含义是 `"LIM1"`，用于快速识别协议。
+- `kPacketVersion = 1`，当前协议版本。
+- `kPacketFlagsNone = 0`，flags 当前预留。
+- `kPacketHeaderSize = 20`，固定 header 长度。
+- `kMaxPacketBodyLength = 1024 * 1024`，单包 body 最大 1MB，防止异常客户端制造超大包。
+
+`PacketHeader` 字段：
+
+- `magic`、`version`、`flags` 是协议识别和扩展字段。
+- `msg_type` 是 `MessageType`，决定业务路由。
+- `seq_id` 用于 request/response 匹配。
+- `body_len` 是 body 字节数，由编码函数按 `body.size()` 填充。
+
+`Packet` 字段：
+
+- `header` 保存外层元信息。
+- `body` 是 `liteim::Bytes`，当前由 Step 5 的 TLV 编码填充。
+
+函数：
+
+- `validateHeader(header)` 校验 magic、version 和 body 长度，失败返回 `ParseError`。
+- `encodePacket(packet, output)` 先清空 `output`，再校验并按大端序写 header，最后追加 body。body 超过上限返回 `InvalidArgument`。
+- `parseHeader(data, len, output)` 从至少 20 字节中解析 header；`data == nullptr` 返回 `InvalidArgument`，长度不足或字段非法返回 `ParseError`。
+
+关键内部 helper 在 `ByteOrder.hpp`：
+
+- `appendUint16BE/appendUint32BE/appendUint64BE` 按网络字节序写整数。
+- `readUint16BE/readUint32BE/readUint64BE` 按网络字节序读整数。
+- 这些 helper 避免直接 `memcpy` C++ struct 导致 padding 和大小端问题。
+
+线程和所有权边界：
+
+- Packet 编解码函数只操作调用方传入的内存，不持有 fd、线程或全局状态。
+- `output` 由调用方拥有；函数成功后保存完整 wire bytes，失败时不代表连接必须关闭，由上层决定。
+- `body` 只表达原始字节，不在本 Step 解析 TLV。
+
+## Packet 的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+`Packet` 是 LiteIM TCP 连接上真正发送和接收的完整协议包：业务层把 TLV body 放进 `Packet.body`，`Session::sendPacket()` 调用 `encodePacket()` 变成网络字节；`Session::handleRead()` 读到 TCP 字节后由 `FrameDecoder` 调用 `parseHeader()` 切出完整 Packet。
+
+### 2. 上下层调用连接
+
+```text
+发送方向：业务字段
+    -> TlvCodec 生成 body
+    -> Packet(header + body)
+    -> encodePacket()
+    -> Session output Buffer
+    -> TCP write
+
+接收方向：TCP read bytes
+    -> FrameDecoder::feed()
+    -> parseHeader() / validateHeader()
+    -> Packet
+    -> Session MessageCallback
+```
+
+上游是业务字段和 `TlvCodec`，下游是 TCP 字节流、`FrameDecoder` 和 `Session` 回调。
+
+### 3. 整体运行链路
+
+1. 发送方设置 `PacketHeader.msg_type`、`seq_id` 和 body。
+2. [encodePacket()](../src/protocol/Packet.cpp#L19) 根据 `body.size()` 重写 `body_len`。
+3. `encodePacket()` 校验 magic、version 和最大 body 长度。
+4. `encodePacket()` 按网络字节序写入固定 20 字节 header，再追加 body。
+5. 接收方先积累到至少 20 字节。
+6. [parseHeader()](../src/protocol/Packet.cpp#L45) 从字节流读出 header 并校验。
+7. `FrameDecoder` 根据 `body_len` 判断是否已经收到完整包。
+8. 完整后构造 `Packet` 并交给 `Session` 上层 callback。
+
+### 4. 自身内部运行流程
+
+整体可以看成 3 步：校验 header、编码完整包、解析固定 header。
+
+核心成员和常量职责：
+
+- `PacketHeader` 保存 magic、version、flags、`msg_type`、`seq_id` 和 `body_len`。
+- `Packet.body` 保存 TLV body，不理解字段含义。
+- `kPacketHeaderSize` 固定为 20 字节，让 TCP 切包有明确边界。
+- `kMaxPacketBodyLength` 限制 body，避免异常包撑爆内存和输出缓冲。
+- `Bytes` 是统一 wire bytes 容器。
+
+核心函数流程：
+
+- [validateHeader()](../src/protocol/Packet.cpp#L6)：检查 magic、version 和 body 上限。
+- [encodePacket()](../src/protocol/Packet.cpp#L19)：清空输出、重算 body_len、校验 header、按大端序写字段、追加 body。
+- [parseHeader()](../src/protocol/Packet.cpp#L45)：检查指针和长度，从固定偏移读字段，再调用 `validateHeader()`。
+
+`encodePacket(packet, output)` 伪流程：
+
+```text
+output.clear()
+if packet.body too large: return error
+header = packet.header
+header.body_len = packet.body.size()
+validateHeader(header)
+append magic/version/flags/msg_type/seq_id/body_len in network byte order
+append packet.body
+return ok
+```
+
+`parseHeader(data, len, output)` 伪流程：
+
+```text
+if data null or len < 20: return error
+read fixed fields from offsets 0,4,5,6,8,16
+validateHeader(header)
+output = header
+return ok
+```
+
+### 5. 小例子和边界
+
+小例子：登录请求可以设置 `msg_type = LoginRequest`、`seq_id = 42`，body 是用户名和密码 TLV。服务端响应时使用 `LoginResponse` 和相同 `seq_id`，客户端就能把响应配回请求。
+
+边界：header 不足 20 字节是 TCP 半包，不是协议错误；magic 或 version 不合法通常说明协议不匹配，上层应关闭连接；body 超过 1MB 时拒绝编码或解析，避免异常客户端拖垮内存。
+
 ## 5. `validateHeader()`
 
 `validateHeader()` 只校验 header 级别的规则：

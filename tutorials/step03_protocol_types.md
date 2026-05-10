@@ -55,6 +55,101 @@ tests/protocol/
 
 后续协议、网络、CLI、Qt 和 Python BotClient 都应该围绕这些类型保持一致。
 
+## MessageType.hpp / Tlv.hpp 接口说明
+
+`MessageType.hpp` 定义 Packet header 中 `msg_type` 字段的取值：
+
+- 底层类型是 `std::uint16_t`，对应 Packet header 里的 2 字节字段。
+- `Unknown = 0` 用于默认值或未识别类型，不作为正常业务消息。
+- `HeartbeatRequest/Response` 使用 1-2，作为连接保活控制消息。
+- 100 段是注册、登录、登出。
+- 200 段是好友相关请求和响应。
+- 300 段是私聊请求、响应和服务端推送。
+- 400 段是群组和群聊消息。
+- 500 段是离线消息和历史消息。
+- 600 段是 Bot / PersonaAgent 消息。
+- `ErrorResponse = 900` 用于统一错误响应。
+- `toString(MessageType)` 返回稳定可读名称，未知值返回 `Unknown`。
+- `isRequestType()`、`isResponseType()`、`isPushType()` 按消息语义分类，不读取 Packet body。
+
+`Tlv.hpp` 定义 Packet body 中 TLV 字段的 type：
+
+- 底层类型同样是 `std::uint16_t`，对应 TLV header 的 2 字节 type。
+- 用户和认证字段包括 `Username`、`Password`、`UserId`、`Nickname`、`Token`、`SessionId`。
+- 好友字段包括 `FriendId`、`TargetUserId`。
+- 群组字段包括 `GroupId`、`GroupName`。
+- 消息字段包括 `ConversationType`、`ConversationId`、`MessageId`、`MessageText`、`SenderId`、`ReceiverId`、`TimestampMs`、`Offset`、`Limit`、`UnreadCount`。
+- 错误字段包括 `ErrorCode`、`ErrorMessage`。
+- Bot 字段包括 `BotId`、`PersonaId`。
+- `toString(TlvType)` 只做字段名转换，不解析 value。
+
+这两个头文件没有类构造/析构语义，也没有 fd、线程或内存所有权。它们是跨模块、跨语言协议常量，值一旦发布就应保持兼容。
+
+## Protocol Types 的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+`MessageType` 是 Packet 级路由键，决定这是登录、私聊、群聊、Bot 还是错误响应；`TlvType` 是 body 字段键，决定用户名、密码、用户 ID、消息文本等字段怎么读。LiteIM server、Qt client 和 PersonaAgent BotClient 必须共享同一套数字值。
+
+### 2. 上下层调用连接
+
+```text
+业务动作
+    -> MessageType / TlvType
+    -> Packet.header.msg_type / TLV body
+    -> encodePacket() / parseHeader()
+    -> TlvCodec parse/get
+    -> MessageRouter / service / BotGateway 后续处理
+```
+
+上游是业务语义，下游是 Step 4 `Packet` 和 Step 5 `TlvCodec`。这些枚举自己不做 I/O，只给协议层提供稳定数字。
+
+### 3. 整体运行链路
+
+1. 发送方根据业务动作选择一个 `MessageType`，例如登录请求使用 `LoginRequest`。
+2. 发送方根据字段含义选择 `TlvType`，例如用户名使用 `Username`。
+3. Step 5 把字段写成 TLV body。
+4. Step 4 把 `MessageType` 写进 Packet header。
+5. 接收方先从 header 读 `msg_type`，决定交给哪类业务处理。
+6. 业务处理再从 `TlvMap` 按 `TlvType` 取字段。
+7. 日志和测试用 `toString()` 把枚举转成可读名称。
+
+### 4. 自身内部运行流程
+
+整体可以看成 3 步：定义协议数字、提供可读字符串、提供轻量分类。
+
+核心数据职责：
+
+- [MessageType.hpp](../include/liteim/protocol/MessageType.hpp#L7) 保存消息级枚举数字。
+- [Tlv.hpp](../include/liteim/protocol/Tlv.hpp#L7) 保存字段级枚举数字。
+- `toString()` 只服务日志和测试，不参与 wire format。
+- `isRequestType()` / `isResponseType()` / `isPushType()` 帮助上层做基础分类。
+
+核心函数流程：
+
+- [toString(MessageType)](../src/protocol/MessageType.cpp#L5)：`switch` 枚举，返回稳定字符串。
+- [isRequestType()](../src/protocol/MessageType.cpp#L78)：列出所有 request 类型，其他返回 false。
+- [isResponseType()](../src/protocol/MessageType.cpp#L120)：列出所有 response 类型，push 不算 response。
+- [isPushType()](../src/protocol/MessageType.cpp#L162)：只识别服务端主动推送类型。
+- [toString(TlvType)](../src/protocol/Tlv.cpp#L5)：把字段枚举转成日志字符串。
+
+分类函数伪流程：
+
+```text
+isRequestType(type)
+    switch type:
+        case HeartbeatRequest / LoginRequest / PrivateMessageRequest / ...:
+            return true
+        default:
+            return false
+```
+
+### 5. 小例子和边界
+
+小例子：服务端主动把私聊消息推给接收方时，`msg_type` 应该是 `PrivateMessagePush`，不是 `PrivateMessageResponse`。Push 没有一一对应的客户端请求序列，客户端不能靠 `seq_id` 把它配回某个请求。
+
+边界：枚举是纯常量，可跨线程读取；分类函数无状态、无锁、不持有资源。业务代码不要写裸数字，统一使用枚举，避免 C++ server、Qt client 和 Python BotClient 的协议值漂移。
+
 ## 3. MessageType 设计
 
 `MessageType` 的底层类型是 `std::uint16_t`：

@@ -113,6 +113,127 @@ Step 16 前代码清理后，TLV 和 Packet 共用同一个大端工具头：
 include/liteim/protocol/ByteOrder.hpp
 ```
 
+## TlvCodec.hpp 接口说明
+
+`TlvCodec.hpp` 负责 Packet body 内部字段编解码。
+
+常量和类型：
+
+- `kTlvHeaderSize = 6`，每个字段固定 `type(2) + len(4)`。
+- `kMaxTlvValueLength = 1024 * 1024`，单个 TLV value 最大 1MB。
+- `TlvValue = Bytes`，表示一个字段值的原始字节。
+- `TlvValues = std::vector<TlvValue>`，表示同一种字段可以出现多次。
+- `TlvMap = std::unordered_map<TlvType, TlvValues>`，解析后的字段表。
+
+append 系列：
+
+- `appendString(type, value, output)` 写入字符串字段。`Unknown` type、非空 value 但 data 为空、value 超限都会返回错误。
+- `appendUint64(type, value, output)` 先把整数按大端序编码成 8 字节，再写入 TLV。
+- append 函数不会清空 `output`，因为调用方经常要连续追加多个字段。
+
+parse 系列：
+
+- `parseTlvMap(data, len, output)` 先清空 `output`，再顺序解析所有 TLV。
+- `parseTlvMap(body, output)` 是 `Bytes` 版本的便利重载。
+- header 不完整、value 长度超限、value 长度超过 body 剩余字节都会返回 `ParseError`。
+- 空 body 解析成功，得到空 map。
+
+get 系列：
+
+- `getString()` 读取指定字段的第一个 value 并转成字符串。
+- `getUint64()` 要求第一个 value 正好 8 字节，再按大端序读整数。
+- `getRepeatedString()` 返回同 type 的所有字符串值。
+- `getRepeatedUint64()` 返回同 type 的所有 8 字节整数值。
+- 缺失字段返回 `NotFound`，整数长度错误返回 `ParseError`。
+
+关键 private helper 在 `.cpp` 中：
+
+- `appendValue()` 统一写 TLV header、长度检查和 value 追加。
+- `findValues()` 统一处理字段缺失和空数组检查，避免四个 get 函数重复判断。
+
+线程和所有权边界：
+
+- TLV 编解码函数无全局状态，可以跨线程并发调用不同输入输出。
+- `output` 和 `TlvMap` 由调用方拥有。
+- 这里不决定业务字段是否必填，只提供“取不到就返回错误”的基础语义。
+
+## TlvCodec 的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+`TlvCodec` 负责 Packet body 的字段编解码。登录、私聊、群聊、历史消息和 Bot 请求都可以复用同一个 `type(2) + len(4) + value` 格式，把业务字段装进 `Packet.body`，接收方再解析成 `TlvMap` 按字段读取。
+
+### 2. 上下层调用连接
+
+```text
+发送方向：业务字段
+    -> appendString() / appendUint64()
+    -> body Bytes
+    -> Packet.body
+    -> encodePacket()
+    -> Session::sendPacket()
+
+接收方向：Session MessageCallback(Packet)
+    -> parseTlvMap(packet.body)
+    -> getString() / getUint64() / getRepeated*()
+    -> 业务 service
+```
+
+上游是业务字段，下游是 `Packet` body。`TlvCodec` 不判断登录态、权限或路由，只保证字段格式正确。
+
+### 3. 整体运行链路
+
+1. 发送方创建空 `Bytes body`。
+2. 每个字段调用 `appendString()` 或 `appendUint64()` 写入 type、len、value。
+3. body 放进 `Packet.body` 后交给 `encodePacket()`。
+4. 接收方拿到完整 `Packet` 后调用 `parseTlvMap()`。
+5. parser 从 offset 0 循环读取 TLV header 和 value。
+6. 同一个 `TlvType` 可以出现多次，全部追加到 `TlvValues`。
+7. 业务代码用 `getString()`、`getUint64()` 或 repeated getter 读取字段。
+
+### 4. 自身内部运行流程
+
+整体可以看成 3 步：append 生成字段、parse 分组字段、get 做类型读取。
+
+核心数据职责：
+
+- `Bytes` 保存原始 body。
+- `TlvMap` 是 `TlvType -> vector<Bytes>`，支持重复字段。
+- `kTlvHeaderSize` 固定 6 字节。
+- `kMaxTlvValueLength` 限制单个字段 value。
+
+核心函数流程：
+
+- [appendValue()](../src/protocol/TlvCodec.cpp#L12)：校验 type、指针和长度，然后写 type、len、value。
+- [appendString()](../src/protocol/TlvCodec.cpp#L42)：把 string 视为原始字节交给 `appendValue()`。
+- [appendUint64()](../src/protocol/TlvCodec.cpp#L46)：先按大端序生成 8 字节，再写 TLV。
+- [parseTlvMap()](../src/protocol/TlvCodec.cpp#L53)：循环读取 TLV header，检查长度，再把 value 复制到 map。
+- [getString()](../src/protocol/TlvCodec.cpp#L88)：取第一个 value 并转成 string。
+- [getUint64()](../src/protocol/TlvCodec.cpp#L99)：要求 value 正好 8 字节，再按大端序读整数。
+- [getRepeatedUint64()](../src/protocol/TlvCodec.cpp#L128)：遍历同一字段下的所有 value。
+
+`parseTlvMap(data, len, output)` 伪流程：
+
+```text
+output.clear()
+offset = 0
+while offset < len:
+    if remaining < 6: return parse error
+    type = readUint16BE(data + offset)
+    value_len = readUint32BE(data + offset + 2)
+    offset += 6
+    if value_len too large or exceeds remaining: return parse error
+    output[type].push_back(value bytes)
+    offset += value_len
+return ok
+```
+
+### 5. 小例子和边界
+
+小例子：好友列表响应可以多次写入 `TlvType::FriendId`。解析后 `TlvMap[FriendId]` 里有多个 8 字节 value，`getRepeatedUint64()` 返回所有好友 ID。
+
+边界：重复字段是合法行为，单值 get 默认取第一个；未知 `TlvType` 数字仍进入 map，便于老版本忽略新字段；value 长度越界说明 body 损坏，上层可以返回错误响应或关闭连接。
+
 ## 5. `TlvMap` 的设计
 
 代码在：

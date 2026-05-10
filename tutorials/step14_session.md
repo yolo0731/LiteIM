@@ -41,6 +41,169 @@ tutorials/step14_session.md
 - `src/CMakeLists.txt`：构建顺序改成 `base -> protocol -> net`，因为 `Session` 需要 `Packet` / `FrameDecoder`。
 - `tests/CMakeLists.txt`：加入 Session 测试。
 
+## Session.hpp 接口说明
+
+`Session.hpp` 定义单个已连接 TCP fd 的 owner。
+
+类型、常量和构造：
+
+- `kSessionDefaultOutputHighWaterMark = 4 * 1024 * 1024`，默认输出缓冲高水位。
+- `kSessionOutputHighWaterMark` 是兼容旧测试/文档的同值别名。
+- `Session::Ptr = std::shared_ptr<Session>`，连接生命周期由 shared_ptr 管理。
+- `MessageCallback` 在完整 Packet 到达时执行。
+- `CloseCallback` 在连接关闭时执行。
+- `Session(EventLoop* loop, UniqueFd fd, std::uint64_t id = 0)` 在指定 owner loop 中接管已连接 fd。`loop == nullptr` 或 fd 无效会抛异常；构造中会确保 fd 非阻塞。
+
+状态查询：
+
+- `fd()` 返回当前 fd，关闭后是无效 fd。
+- `id()` 返回逻辑 session id，避免 fd 复用影响连接表。
+- `ownerLoop()` 返回连接归属的 EventLoop。
+- `closed()` 查询是否已经关闭。
+- `outputHighWaterMark()` 返回当前输出高水位。
+- `pendingOutputBytes()` 返回输出缓冲待写字节，必须在 owner loop 线程调用。
+- `lastActiveTimeMilliseconds()` 返回最近一次完整入站 Packet 的时间。
+
+配置和回调：
+
+- `setMessageCallback()` 安装上层消息处理入口。
+- `setCloseCallback()` 安装关闭通知入口。
+- `setOutputHighWaterMark()` 设置输出高水位，要求 owner loop 线程，拒绝 0。
+
+运行接口：
+
+- `start()` 通过 `runInLoop()` 回到 owner loop，设置 Channel 回调并开启读事件。
+- `sendPacket(packet)` 先编码 Packet；编码失败返回错误；成功后同线程直接追加输出缓冲，跨线程投递到 owner loop。
+- `close()` 通过 `runInLoop()` 回到 owner loop 执行关闭。
+
+关键 private 成员：
+
+- `loop_` 是线程归属边界。
+- `fd_` 是 socket fd owner。
+- `channel_` 是 epoll 事件代理，不拥有 fd。
+- `decoder_` 处理 TCP 半包和粘包。
+- `output_buffer_` 保存待写出字节。
+- `output_high_water_mark_` 支撑慢客户端保护。
+- `closed_`、`started_`、`channel_registered_` 管理连接生命周期状态。
+- `last_active_time_ms_` 支撑 heartbeat timeout。
+
+关键 private helper：
+
+- `startInLoop()` 安装 Channel 回调、tie owner 并注册读事件。
+- `sendEncodedInLoop()` 检查高水位、追加 output buffer、开启写事件。
+- `handleRead()` 循环读 socket、喂给 `FrameDecoder`、派发 Packet。
+- `handleWrite()` 尽量写出 output buffer，写空后关闭写关注。
+- `closeInLoop()` 移除 Channel、关闭 fd、清空输出缓冲并触发 close callback。
+- `updateLastActiveTime()` 只在完整入站 Packet 后刷新。
+
+## Session 的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+`Session` 表示一个已经 accept 的 TCP 连接。`TcpServer` 在目标 I/O loop 创建它；它负责连接 fd 的读写、Packet 编解码、输出缓冲、高水位保护、活跃时间和关闭回调。业务线程不能直接操作它的 fd 或 Buffer，只能通过 `sendPacket()` 投递回 owner loop。
+
+### 2. 上下层调用连接
+
+```text
+Acceptor
+    -> TcpServer::handleNewConnection(UniqueFd)
+    -> TcpServer::createSessionInLoop(io_loop)
+    -> Session(owner_loop, UniqueFd, id)
+    -> Channel / FrameDecoder / output Buffer
+    -> MessageCallback(Session, Packet)
+    -> TcpServer / business service
+```
+
+发送方向：
+
+```text
+business thread or I/O thread
+    -> Session::sendPacket()
+    -> encodePacket()
+    -> runInLoop / queueInLoop
+    -> sendEncodedInLoop()
+    -> output_buffer_ / Channel EPOLLOUT
+    -> handleWrite()
+```
+
+### 3. 整体运行链路
+
+1. `TcpServer` 把 accepted `UniqueFd` move 给 [Session 构造函数](../src/net/Session.cpp#L24)。
+2. `Session` 兜底设置 fd 非阻塞，创建连接 `Channel`。
+3. [start()](../src/net/Session.cpp#L87) 捕获 `shared_from_this()`，把 [startInLoop()](../src/net/Session.cpp#L114) 放到 owner loop。
+4. `startInLoop()` 设置 Channel 回调、`tie()` 生命周期保护并开启读事件。
+5. fd 可读时，[handleRead()](../src/net/Session.cpp#L181) 循环 read 到 `EAGAIN`。
+6. `handleRead()` 调用 `FrameDecoder::feed()` 得到完整 packets。
+7. 每个完整入站 Packet 刷新 `last_active_time_ms_` 并调用 message callback。
+8. 发送时，[sendPacket()](../src/net/Session.cpp#L92) 先调用 `encodePacket()`，再根据线程决定立即执行或排队。
+9. [sendEncodedInLoop()](../src/net/Session.cpp#L152) 检查高水位、append 输出 Buffer、开启写事件。
+10. fd 可写时，[handleWrite()](../src/net/Session.cpp#L227) 尽量 write 并 retrieve 已写字节。
+11. 关闭时，[closeInLoop()](../src/net/Session.cpp#L263) 移除 Channel、释放 fd、清输出 Buffer、通知 close callback。
+
+### 4. 自身内部运行流程
+
+整体可以看成 5 步：启动、读、发、写、关。
+
+核心成员职责：
+
+- `loop_` 是 owner I/O loop。
+- `fd_` 是连接 fd 的 `UniqueFd` owner。
+- `channel_` 代理 fd 事件，不拥有 fd。
+- `decoder_` 保存输入半包/粘包状态。
+- `output_buffer_` 保存非阻塞写未完成的 bytes。
+- `output_high_water_mark_` 是单连接输出缓冲上限。
+- `last_active_time_ms_` 只表示完整入站 Packet 活跃时间。
+- `closed_`、`started_`、`channel_registered_` 控制生命周期。
+
+核心函数流程：
+
+- `start()`：要求对象已由 `shared_ptr` 管理，投递到 owner loop。
+- `handleRead()`：循环 read，交给 decoder，逐个派发 Packet。
+- `sendPacket()`：编码 Packet，并通过 `runInLoop()` / `queueInLoop()` 回到 owner loop。
+- `sendEncodedInLoop()`：append 前做 `pending + incoming` 高水位检查，超限直接关闭。
+- `handleWrite()`：write 可读区，成功后 retrieve，清空后 disable writing。
+- `closeInLoop()`：owner loop 内移除 Channel、释放 fd、延迟 reset Channel、触发 close callback。
+
+`handleRead()` 伪流程：
+
+```text
+while fd valid:
+    n = read(fd, stack_buffer)
+    if n > 0:
+        packets = decoder.feed(bytes)
+        if decode failed: closeInLoop(); return
+        for packet in packets:
+            if closed: return
+            updateLastActiveTime()
+            message_callback(shared_from_this(), packet)
+        continue
+    if n == 0: closeInLoop(); return
+    if errno == EINTR: continue
+    if errno == EAGAIN: return
+    closeInLoop(); return
+```
+
+`sendEncodedInLoop()` 伪流程：
+
+```text
+assert owner loop
+if closed or encoded empty: return
+pending = output_buffer_.readableBytes()
+if encoded.size > high_water or pending > high_water - encoded.size:
+    log warning
+    closeInLoop()
+    return
+output_buffer_.append(encoded)
+if started and not channel.isWriting():
+    channel.enableWriting()
+```
+
+### 5. 小例子和边界
+
+小例子：业务线程拿到一个 `Session::Ptr` 后调用 `sendPacket()`。如果它不在 I/O loop 线程，`sendPacket()` 不会直接 `write(fd)`，而是把 `sendEncodedInLoop()` 投递回 owner loop，避免跨线程操作 `output_buffer_` 和 `Channel`。
+
+边界：`shared_from_this()` 要求 `Session` 已经由 `shared_ptr` 管理；`pendingOutputBytes()` 只能 owner-loop 查询；服务端出站写不刷新活跃时间，只有完整入站 Packet 才算客户端活跃；Channel 不拥有 fd，关闭顺序是先从 EventLoop 移除 Channel，再释放 `UniqueFd`。
+
 ## 3. Session 的职责
 
 `Session` 持有：

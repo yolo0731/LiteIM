@@ -140,6 +140,110 @@ int signalFd() const noexcept;
 
 测试会用它们确认 watcher 已经启动，并且确实创建了 signal fd。
 
+### 关键成员变量和 private helper
+
+`SignalWatcher` 的关键成员包括：
+
+- `loop_`：owner EventLoop，通常是 base loop。
+- `signals_`：要接管的信号列表。
+- `callback_`：收到信号后在 owner loop 线程执行。
+- `signal_set_`：传给 `pthread_sigmask()` 和 `signalfd()` 的信号集合。
+- `old_signal_set_`：启动前的线程 signal mask，用于 stop 时恢复。
+- `signal_mask_saved_`：是否已经保存旧 mask。
+- `signal_fd_`：signalfd 的 RAII owner。
+- `signal_channel_`：把 signal fd 可读事件接入 EventLoop。
+- `started_`、`channel_registered_`、`handling_signal_event_`：管理启动、注册和回调栈内清理。
+
+private helper：
+
+- `startInLoop()` 校验参数、阻塞信号、创建 signalfd 并注册 Channel。
+- `stopInLoop()` 移除 Channel、关闭 fd、恢复旧 signal mask。
+- `rebuildSignalSet()` 重新构造 `sigset_t`。
+- `blockSignals()` 保存旧 mask 并阻塞目标信号。
+- `restoreSignalMask()` 恢复旧 mask。
+- `handleRead()` 循环读取 `signalfd_siginfo` 并执行 callback。
+
+## SignalWatcher 的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+`SignalWatcher` 把 `SIGINT` / `SIGTERM` 转成 signalfd 可读事件，让 `liteim_server` 在 base `EventLoop` 线程里执行优雅退出。它替代传统 signal handler，避免在异步信号上下文中直接清理 C++ 对象。
+
+### 2. 上下层调用连接
+
+```text
+server/main.cpp
+    -> SignalWatcher(base_loop, SIGINT/SIGTERM, callback)
+    -> pthread_sigmask(SIG_BLOCK)
+    -> signalfd
+    -> Channel / EventLoop / Epoller
+    -> SignalWatcher::handleRead()
+    -> callback(signo)
+    -> TcpServer::stop()
+    -> EventLoop::quit()
+```
+
+上游是 server 入口和操作系统信号，下游是 signalfd、Channel 和 shutdown callback。
+
+### 3. 整体运行链路
+
+1. `server/main.cpp` 在 base loop 中创建 `SignalWatcher`。
+2. [start()](../src/net/SignalWatcher.cpp#L49) 检查必须在 owner loop 线程调用。
+3. [startInLoop()](../src/net/SignalWatcher.cpp#L77) 校验 signal 列表和 callback。
+4. `startInLoop()` 调用 [rebuildSignalSet()](../src/net/SignalWatcher.cpp#L146) 构造 `sigset_t`。
+5. `startInLoop()` 调用 [blockSignals()](../src/net/SignalWatcher.cpp#L156) 阻塞这些信号并保存旧 mask。
+6. `startInLoop()` 创建 signalfd，创建 Channel，注册读事件。
+7. SIGTERM 到来时，EventLoop 调用 [handleRead()](../src/net/SignalWatcher.cpp#L175)。
+8. `handleRead()` 读出一个或多个 `signalfd_siginfo`，逐个调用 callback。
+9. callback 里先 `server.stop()`，再 `loop.quit()`。
+10. [stopInLoop()](../src/net/SignalWatcher.cpp#L123) 移除 Channel、关闭 fd、恢复旧 signal mask。
+
+### 4. 自身内部运行流程
+
+整体可以看成 5 步：构造 signal set、阻塞信号、创建 signalfd、分发 signal callback、停止恢复。
+
+核心成员职责：
+
+- `loop_` 是 owner EventLoop。
+- `signals_` 是要接管的信号列表。
+- `callback_` 是收到 signal 后的上层行为。
+- `signal_set_` 是 signalfd 监听集合。
+- `old_signal_set_` 用于 stop 时恢复线程 signal mask。
+- `signal_fd_` 是 signalfd 的 `UniqueFd` owner。
+- `signal_channel_` 代理 signalfd 读事件，不拥有 fd。
+- `handling_signal_event_` 用于 callback 栈内停止时延迟释放 Channel。
+
+核心函数流程：
+
+- `start()`：拒绝非 owner 线程，转入 `startInLoop()`。
+- `startInLoop()`：校验、构造 signal set、阻塞信号、创建 signalfd、注册 Channel。
+- `rebuildSignalSet()`：清空 set 后逐个 `sigaddset()`。
+- `blockSignals()`：调用 `pthread_sigmask(SIG_BLOCK, ...)` 并保存旧 mask。
+- `handleRead()`：循环读取 signalfd，处理 `EINTR` / `EAGAIN`，每个 signo 调 callback。
+- `stopInLoop()`：移除 Channel、关闭 fd、恢复旧 mask。
+
+`handleRead()` 伪流程：
+
+```text
+if signal_fd_ invalid: return
+handling_signal_event_ = true
+while signal_fd_ valid:
+    n = read(signal_fd, signalfd_siginfo)
+    if n == sizeof(info):
+        callback(info.ssi_signo)
+        continue
+    if errno == EINTR: continue
+    if errno == EAGAIN: break
+    break
+handling_signal_event_ = false
+```
+
+### 5. 小例子和边界
+
+小例子：`SIGTERM` 到来时，callback 先 `server.stop()`，再 `loop.quit()`。顺序不能反过来，否则 loop 先退出后，`TcpServer` 可能没有机会在 base loop 中清理 `Acceptor`、`TimerManager` 和 sessions。
+
+边界：`SignalWatcher::start()` 应在 `server.start()` 前调用，让之后创建的 I/O 线程继承被阻塞的 signal mask；signal callback 在 base loop 线程执行，可以安全调用 owner-loop-only 的 `TcpServer::stop()`；不在传统 signal handler 中操作 C++ 对象；`signal_channel_` 不拥有 fd，`signal_fd_` 才是 owner。
+
 ## 5. server/main.cpp 如何退出
 
 `server/main.cpp` 现在是真正的 echo server 入口：

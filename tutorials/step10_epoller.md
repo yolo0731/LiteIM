@@ -41,6 +41,116 @@ tests/CMakeLists.txt
 
 `Channel.cpp` 在本 Step 只实现最小状态函数，用于支撑 `Epoller` 测试。它还不实现 `handleEvent()` 回调分发，也不实现自动 `update()`。
 
+## Epoller.hpp 接口说明
+
+`Epoller.hpp` 是 Reactor 系统调用层的契约。
+
+public 类型和构造：
+
+- `ChannelList = std::vector<Channel*>`，`poll()` 每轮返回的活跃 Channel 列表。
+- `explicit Epoller(EventLoop* owner_loop)` 创建 epoll 实例，失败时抛 `std::runtime_error`，因为没有 epoll fd 的对象不可用。
+- 析构函数关闭 `epoll_fd_`，但不关闭业务 fd。
+
+public 函数：
+
+- `poll(timeout_ms, active_channels)` 调用 `epoll_wait()`。成功时清空并填充 `active_channels`；`EINTR` 返回成功但无事件；其他系统调用错误返回 `IoError`。
+- `updateChannel(channel)` 校验 Channel 和 owner loop，再根据 `channels_` 是否已有 fd 选择 add/mod/del。新增无关注事件的 Channel 会返回 `InvalidArgument`。
+- `removeChannel(channel)` 执行 `EPOLL_CTL_DEL`，删除 `channels_` 中的 fd 映射，并清空 Channel 的 `revents`。
+
+关键 private 成员：
+
+- `owner_loop_` 用于校验 Channel 是否属于同一个 EventLoop。
+- `epoll_fd_` 是当前对象拥有的 epoll 实例 fd。
+- `events_` 是 `epoll_wait()` 的输出缓冲，事件满时会扩容。
+- `channels_` 是 `fd -> Channel*` 映射，用来判断 add/mod/del 和防止同一 fd 被不同 Channel 重复注册。
+
+关键 private helper：
+
+- `validateChannelOwner()` 防止跨 loop 注册 Channel，这对 one-loop-per-thread 模型很重要。
+- `.cpp` 里的 `makeEpollEvent()` 把 `Channel::events()` 和 `Channel*` 填进 `epoll_event`。
+
+线程和所有权边界：
+
+- `Epoller` 归属于一个 `EventLoop`，只应在 owner loop 线程使用。
+- `Epoller` 拥有 epoll fd，不拥有 `Channel`，也不拥有业务 fd。
+- `channels_` 中保存的是裸指针，调用方必须先 `removeChannel()` 再销毁 Channel。
+
+## Epoller 的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+`Epoller` 是 `EventLoop` 内部的 epoll 封装。`Channel` 开关读写事件时最终落到 `Epoller::updateChannel()`；`EventLoop::loop()` 每轮通过 `Epoller::poll()` 取回活跃 Channel。
+
+### 2. 上下层调用连接
+
+```text
+Channel::enableReading() / enableWriting()
+    -> EventLoop::updateChannel()
+    -> Epoller::updateChannel()
+    -> epoll_ctl(ADD / MOD / DEL)
+
+EventLoop::loop()
+    -> Epoller::poll()
+    -> epoll_wait()
+    -> Channel::setRevents()
+    -> EventLoop dispatches Channel::handleEvent()
+```
+
+上游是 `EventLoop` 和 `Channel`，下游是 Linux epoll fd。
+
+### 3. 整体运行链路
+
+1. `EventLoop` 构造时创建一个 `Epoller`。
+2. 上层 Channel 修改 `events_` 后调用 `EventLoop::updateChannel()`。
+3. [Epoller::updateChannel()](../src/net/Epoller.cpp#L96) 判断 fd 是否已经注册。
+4. 新 fd 且有关注事件时执行 `EPOLL_CTL_ADD`。
+5. 已注册 fd 且关注事件为空时执行 `EPOLL_CTL_DEL`。
+6. 已注册 fd 且仍有关注事件时执行 `EPOLL_CTL_MOD`。
+7. [Epoller::poll()](../src/net/Epoller.cpp#L64) 调用 `epoll_wait()`。
+8. 每个返回事件通过 `data.ptr` 找回 `Channel*`，写入 `revents_` 后交给 EventLoop。
+
+### 4. 自身内部运行流程
+
+整体可以看成 3 步：维护注册表、等待事件、清理注册。
+
+核心成员职责：
+
+- `epoll_fd_` 是内核 epoll 实例。
+- `events_` 是 `epoll_wait()` 输出数组，满了会扩容。
+- `channels_` 保存 fd 到 `Channel*` 的映射，用来判断 add/mod/del 和防 fd 复用混乱。
+- `owner_loop_` 用来校验 Channel 是否属于同一个 EventLoop。
+
+核心函数流程：
+
+- [validateChannelOwner()](../src/net/Epoller.cpp#L56)：拒绝把其他 EventLoop 的 Channel 注册进来。
+- [poll()](../src/net/Epoller.cpp#L64)：处理 `EINTR`、填充 active_channels、必要时扩容事件数组。
+- [updateChannel()](../src/net/Epoller.cpp#L96)：统一处理 add/mod/del。
+- [removeChannel()](../src/net/Epoller.cpp#L145)：显式从 epoll 删除 Channel，并清空 `revents_`。
+
+`updateChannel(channel)` 伪流程：
+
+```text
+validate channel and owner
+fd = channel.fd()
+if fd not in channels_:
+    if channel has no events: return error
+    epoll_ctl(ADD, fd, channel.events)
+    channels_[fd] = channel
+elif channels_[fd] != channel:
+    return error
+elif channel has no events:
+    epoll_ctl(DEL, fd)
+    erase fd from channels_
+else:
+    epoll_ctl(MOD, fd, channel.events)
+```
+
+### 5. 小例子和边界
+
+小例子：`Session` 输出缓冲从空变非空时调用 `channel_->enableWriting()`，最终 `Epoller` 对连接 fd 做 `EPOLL_CTL_MOD`，让 epoll 开始关注 `EPOLLOUT`。
+
+边界：`epoll_wait()` 被信号打断返回 `EINTR` 不算 fatal；事件数组填满会扩容；同一个 fd 已经被另一个 Channel 注册时返回错误，避免 fd 复用导致旧 Channel 被误触发。
+
 ## 3. Epoller 的公开接口
 
 ```cpp

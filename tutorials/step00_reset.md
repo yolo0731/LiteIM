@@ -43,6 +43,71 @@ Step 0 不是实现功能，而是把旧路线清理掉。
 - `task_plan.md`、`findings.md`、`progress.md`。
 - `tutorials/step00_reset.md`。
 
+## Step 级作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+Step 0 没有新增 `.hpp`，它的真实场景是把旧单 Reactor、旧同步存储、SQLite / `InMemoryStorage` 主线和历史构建产物清掉，给 `/home/yolo/jianli/PROJECT_MEMORY.md` 里的高性能路线留下一个不会误导后续 Step 的干净起点。
+
+### 2. 上下层调用连接
+
+```text
+PROJECT_MEMORY.md / task_plan.md
+    -> Step 0 reset
+    -> 最小 LiteIM 根目录
+    -> Step 1 CMake / server / tests
+    -> Step 2+ base / protocol / net 模块逐步重建
+```
+
+这不是运行时调用链，而是工程层调用链：上层是长期路线和进度记忆，下层是后续 Step 可以继续接上的最小工程边界。
+
+### 3. 整体运行链路
+
+1. 先读取总路线，确认旧文件是否属于旧单 Reactor / 同步存储路线。
+2. 扫描旧 `server/net`、`server/protocol`、SQLite、`InMemoryStorage`、旧教程和 `build/` 产物。
+3. 删除会让后续 Step 误以为旧路线仍是主线的文件和目录。
+4. 保留 `.gitignore`、`LICENSE`、README、planning files 和最小 `CMakeLists.txt`。
+5. 运行 CMake configure / build / CTest，证明最小工程仍然可被工具链识别。
+6. 用 stale scan 再扫一次旧路线文件名，确认没有残留入口。
+
+### 4. 自身内部运行流程
+
+整体可以看成 4 步：识别旧路线、删除旧产物、保留最小根文件、验证扫描结果。
+
+核心对象不是 C++ 类，而是目录和文件职责：
+
+- Git 元数据和根文件保存项目身份。
+- `task_plan.md`、`findings.md`、`progress.md` 保存过程进度。
+- `README.md` 保存对外说明。
+- `tutorials/step00_reset.md` 解释为什么要重置。
+
+核心函数可以理解成这些工程动作：
+
+- 识别旧文件：查找旧路径、旧存储名、旧教程名和构建产物。
+- 删除旧路线：移除会与未来 `include/liteim/...` / `src/...` 布局冲突的内容。
+- 保留最小根：只留下下一步 CMake 初始化必需的文件。
+- 验证扫描：用 CMake 和 `find` / `rg` 证明旧入口消失。
+
+伪流程：
+
+```text
+reset_step0()
+    read PROJECT_MEMORY route
+    for each path in LiteIM:
+        if path belongs to old route or build output:
+            delete path
+        else if path is root identity or planning memory:
+            keep path
+    run configure/build/test smoke
+    run stale-route scan
+```
+
+### 5. 小例子和边界
+
+小例子：如果旧仓库里有 `server/net/EventLoop.hpp`，Step 0 不在旧路径上修补它，而是删除旧目录；后续 Step 9 会在 `include/liteim/net/EventLoop.hpp` 重新定义当前路线的 Reactor 接口。
+
+边界：本 Step 不处理 fd、线程、连接生命周期或业务对象所有权；它只处理文件归属。空目录和 `.gitkeep` 不作为成果保存，后续目录必须由真正需要它的 Step 创建。
+
 ## 4. 测试验证
 
 Step 0 没有业务代码，验证重点是：

@@ -46,6 +46,123 @@ tests/net/unique_fd_test.cpp
 - `acceptor_test.cpp`：验证监听、连接接入、多连接 accept、关闭监听、跨线程关闭和 callback 异常路径。
 - `unique_fd_test.cpp`：验证 fd 析构关闭、`release()` 不关闭、move 转移所有权、`reset()` 关闭旧 fd。
 
+## Acceptor.hpp / UniqueFd.hpp 接口说明
+
+`UniqueFd.hpp` 是 fd RAII owner：
+
+- 默认构造表示空 owner，内部 fd 为 `kInvalidFd`。
+- `explicit UniqueFd(int fd)` 接管一个 fd。
+- 析构调用 `reset()`，关闭当前持有 fd。
+- copy 被禁用，避免两个 owner 重复关闭同一个 fd。
+- move 构造和 move 赋值通过 `release()` 转移所有权。
+- `fd()` 查询当前 fd。
+- `explicit operator bool()` 表示是否持有有效 fd。
+- `release()` 交出裸 fd，并把自己置空。调用方从此负责关闭。
+- `reset(fd)` 先关闭旧 fd，再接管新 fd；传默认值表示只关闭并置空。
+- 关键成员 `fd_` 是唯一资源状态。
+
+`Acceptor.hpp` 是 listen socket owner：
+
+- `NewConnectionCallback = std::function<void(UniqueFd, const sockaddr_in&)>`，把 accepted fd 以移动语义交给上层。
+- 构造函数接收 owner `EventLoop*`、监听 IP 和端口，在 owner loop 线程创建 listen fd、设置 socket option、bind/listen 并注册读事件。
+- 析构调用 `close()`。
+- `setNewConnectionCallback()` 安装新连接回调。
+- `listenFd()`、`port()`、`listening()` 是状态查询。
+- `close()` 保留经过测试的跨线程关闭契约：尽量把清理投递回 owner loop；如果 loop 已停止，则走 fallback 清理。
+
+关键 private 成员：
+
+- `loop_` 是 owner EventLoop。
+- `listen_fd_` 拥有监听 fd。
+- `idle_fd_` 是 fd 耗尽保护用的 `/dev/null` fd。
+- `listen_channel_` 代理 listen fd 的读事件，但不拥有 fd。
+- `port_` 保存实际绑定端口，端口 0 测试会用到。
+- `new_connection_callback_` 是上层接收新 fd 的入口。
+
+关键 private helper：
+
+- `closeInLoop()` 从 EventLoop 移除 Channel 并关闭 listen/idle fd。
+- `handleRead()` 在 listen fd 可读时循环 `accept4()`。
+- `handleAcceptError()` 区分 `ECONNABORTED`、`EMFILE`/`ENFILE` 和其他错误。
+- `rejectOneConnectionAfterFdExhaustion()` 使用 idle fd 技巧拒绝一个 pending connection。
+
+## Acceptor 的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+`Acceptor` 是 base loop 上的监听器，只负责 listen socket 和 `accept4()`。它不创建 `Session`、不解析协议、不处理登录；新连接 fd 通过 `UniqueFd` 移动给 `TcpServer`，再由 `TcpServer` 分配到某个 I/O loop。
+
+### 2. 上下层调用连接
+
+```text
+TcpServer::start()
+    -> Acceptor(base_loop, ip, port)
+    -> SocketUtil / bind / listen
+    -> Channel(listen fd)
+    -> EventLoop / Epoller
+    -> Acceptor::handleRead()
+    -> NewConnectionCallback(UniqueFd, peer)
+    -> TcpServer::handleNewConnection()
+    -> Session(owner I/O loop)
+```
+
+上游是 `TcpServer`，下游是 Linux listen fd、Channel 和 new connection callback。
+
+### 3. 整体运行链路
+
+1. `TcpServer::start()` 在 base loop 创建 `Acceptor`。
+2. [Acceptor 构造函数](../src/net/Acceptor.cpp#L74) 创建非阻塞 listen socket。
+3. 构造函数设置 `SO_REUSEADDR` / `SO_REUSEPORT`，执行 bind/listen。
+4. 构造函数创建 `listen_channel_`，设置 read callback 并启用读事件。
+5. listen fd 可读后，EventLoop 调用 [handleRead()](../src/net/Acceptor.cpp#L172)。
+6. `handleRead()` 循环 `accept4(SOCK_NONBLOCK | SOCK_CLOEXEC)` 到 `EAGAIN`。
+7. 每个 accepted fd 立即包进 `UniqueFd`，通过 callback move 给 `TcpServer`。
+8. [close()](../src/net/Acceptor.cpp#L129) 负责从 EventLoop 移除 Channel 并释放 listen / idle fd。
+
+### 4. 自身内部运行流程
+
+整体可以看成 4 步：创建监听 fd、注册读事件、循环 accept、关闭清理。
+
+核心成员职责：
+
+- `loop_` 是 owner EventLoop。
+- `listen_fd_` 拥有 listen fd。
+- `listen_channel_` 代理 listen fd 读事件，不拥有 fd。
+- `idle_fd_` 是 fd exhaustion 保护用的 `/dev/null` fd。
+- `new_connection_callback_` 是上层拿走 accepted fd 的入口。
+- `UniqueFd` 表达 fd 所有权，析构或 reset 时关闭 fd。
+
+核心函数流程：
+
+- [Acceptor::Acceptor()](../src/net/Acceptor.cpp#L74)：创建 socket、设置 option、bind/listen、注册 Channel。
+- [handleRead()](../src/net/Acceptor.cpp#L172)：accept 循环，成功就 move `UniqueFd` 给 callback。
+- [handleAcceptError()](../src/net/Acceptor.cpp#L201)：区分 `ECONNABORTED`、`EMFILE` / `ENFILE` 和其他错误。
+- [rejectOneConnectionAfterFdExhaustion()](../src/net/Acceptor.cpp#L216)：释放 idle fd，accept 一个连接再立即关闭，最后补回 idle fd。
+- [closeInLoop()](../src/net/Acceptor.cpp#L157)：移除 Channel、reset listen fd 和 idle fd。
+- [UniqueFd::reset()](../src/net/UniqueFd.cpp#L34)：关闭旧 fd，再接管新 fd。
+
+`handleRead()` 伪流程：
+
+```text
+while listen_fd_ valid:
+    fd = accept4(listen_fd, SOCK_NONBLOCK | SOCK_CLOEXEC)
+    if fd >= 0:
+        accepted = UniqueFd(fd)
+        callback(move accepted, peer_address)
+        continue
+    if errno == EINTR: continue
+    if errno == EAGAIN or EWOULDBLOCK: return
+    handleAcceptError(errno)
+    if errno == ECONNABORTED: continue
+    return
+```
+
+### 5. 小例子和边界
+
+小例子：测试用端口 0 构造 `Acceptor`，内核分配可用端口，`port()` 返回实际端口。客户端连接后，callback 收到一个 `UniqueFd`；如果 callback 没有把它移走，离开作用域时自动关闭，避免 fd 泄漏。
+
+边界：`Acceptor` 默认属于 base loop，构造和 Channel 注册必须在 owner loop 线程；`Channel` 不拥有 listen fd；accepted fd 从 `Acceptor` 到 `TcpServer` 到 `Session` 应全程用 `UniqueFd` 移动；`Acceptor::close()` 保留已经测试过的跨线程关闭契约，不作为其他 Reactor 对象的默认规则。
+
 ## Acceptor 的职责
 
 构造 `Acceptor` 时会完成：

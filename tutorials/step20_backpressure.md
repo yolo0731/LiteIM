@@ -57,6 +57,119 @@ progress.md
 PROJECT_MEMORY.md
 ```
 
+## Config.hpp / Session.hpp / TcpServer.hpp 回压接口说明
+
+`Config.hpp` 的回压字段：
+
+- `Config::session_output_high_water_mark` 是 server 级默认输出高水位，默认 `4 * 1024 * 1024`。
+- `loadFromFile()` 支持 `server.output_high_water_mark_bytes`。
+- key 值必须是正整数，0 返回 `InvalidArgument`。
+- 该配置是启动期值，当前不做运行时动态调整。
+
+`Session.hpp` 的回压接口：
+
+- `kSessionDefaultOutputHighWaterMark` 是单连接默认阈值。
+- `outputHighWaterMark()` 查询当前阈值。
+- `setOutputHighWaterMark(high_water_mark)` 在 owner loop 线程设置阈值，拒绝 0。
+- `pendingOutputBytes()` 查询当前待写字节，只能 owner-loop 调用。
+- `sendPacket()` 编码成功后，最终在 `sendEncodedInLoop()` 中检查 `pending + incoming` 是否超过阈值。
+- 关键成员 `output_buffer_` 保存待写字节，`output_high_water_mark_` 决定何时关闭慢客户端。
+
+`TcpServer.hpp` 的回压接口：
+
+- `setSessionOutputHighWaterMark(high_water_mark)` 设置新连接默认阈值。
+- 该函数必须在 base loop 线程、`start()` 前调用，并拒绝 0。
+- `createSessionInLoop()` 创建每个 Session 后，在目标 I/O loop 中调用 `session->setOutputHighWaterMark()`。
+- `session_output_high_water_mark_` 是 TcpServer 保存的配置快照。
+
+失败语义：
+
+- 配置文件 0 值：`Config::loadFromFile()` 返回错误。
+- Session 0 值：抛 `std::invalid_argument`。
+- TcpServer 启动后再设置：抛 `std::logic_error`。
+- 跨线程直接设置：`assertInLoopThread()` 抛异常。
+
+线程和所有权边界：
+
+- 高水位检查发生在 Session owner loop 中。
+- TcpServer 只保存阈值并在创建连接时传递，不跨线程直接改已有 Session 内部 Buffer。
+- 慢客户端关闭走 `Session::closeInLoop()`，再由 close callback 清理 `TcpServer::sessions_`。
+
+## 慢客户端回压的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+慢客户端回压保护的是输出方向：客户端或网络异常导致长时间不读数据，而服务端仍持续 echo、push、Bot 回复或系统通知。非阻塞 `write()` 写不完时，剩余字节进入 `Session::output_buffer_`；超过高水位就记录 warning 并关闭连接，防止单个慢连接吃掉内存。
+
+### 2. 上下层调用连接
+
+```text
+Config
+    -> TcpServer::setSessionOutputHighWaterMark()
+    -> TcpServer::createSessionInLoop()
+    -> Session::setOutputHighWaterMark()
+    -> Session::sendEncodedInLoop()
+    -> output_buffer_ high-water check
+    -> closeInLoop() / close callback / TcpServer::removeSession()
+```
+
+上游是启动配置和服务端发送行为，下游是 `Session` 输出 Buffer、Channel 写事件和关闭清理。
+
+### 3. 整体运行链路
+
+1. server 启动时读取 `Config::session_output_high_water_mark`。
+2. `server/main.cpp` 调用 [TcpServer::setSessionOutputHighWaterMark()](../src/net/TcpServer.cpp#L51)。
+3. 新连接进入 `TcpServer::createSessionInLoop()` 后，server 在 I/O loop 中调用 [Session::setOutputHighWaterMark()](../src/net/Session.cpp#L78)。
+4. 业务或 echo 调用 `Session::sendPacket()`。
+5. [sendPacket()](../src/net/Session.cpp#L92) 先编码 Packet，再投递到 owner loop。
+6. [sendEncodedInLoop()](../src/net/Session.cpp#L152) 在 append 前读取 `output_buffer_.readableBytes()`。
+7. 如果 `encoded.size() > high_water`，或 `pending > high_water - encoded.size()`，记录 warning 并 `closeInLoop()`。
+8. 如果未超限，append 到 output buffer 并开启写事件。
+9. [handleWrite()](../src/net/Session.cpp#L227) 正常写出后 retrieve 字节，pending 降低。
+10. `closeInLoop()` 触发 close callback，`TcpServer::removeSession()` 删除表项。
+
+### 4. 自身内部运行流程
+
+整体可以看成 4 步：配置传递、发送前检查、正常写出、超限关闭。
+
+核心成员职责：
+
+- `Config::session_output_high_water_mark` 保存启动配置。
+- `TcpServer::session_output_high_water_mark_` 保存 server 级快照，要求 start 前设置。
+- `Session::output_high_water_mark_` 是单连接阈值。
+- `Session::output_buffer_` 保存真实 pending bytes。
+- `Logger` 记录超限时的 session id、pending、incoming 和 limit。
+
+核心函数流程：
+
+- [Config::loadFromFile()](../src/base/Config.cpp#L101)：解析 `server.output_high_water_mark_bytes`，拒绝 0。
+- `TcpServer::setSessionOutputHighWaterMark()`：要求 base loop 线程、start 前调用、阈值大于 0。
+- `TcpServer::createSessionInLoop()`：创建 Session 后立即把阈值设置进去。
+- `Session::setOutputHighWaterMark()`：要求 owner loop 线程，拒绝 0。
+- `Session::sendEncodedInLoop()`：append 前检查高水位，超限先关闭，不追加本次 encoded bytes。
+- `Session::handleWrite()`：正常客户端持续读时，写出后 retrieve，降低 pending。
+
+`sendEncodedInLoop()` 的高水位伪流程：
+
+```text
+pending = output_buffer_.readableBytes()
+incoming = encoded.size()
+limit = output_high_water_mark_
+if incoming > limit or pending > limit - incoming:
+    Logger.warn(session id, pending, incoming, limit)
+    closeInLoop()
+    return
+output_buffer_.append(encoded)
+if channel not writing:
+    channel.enableWriting()
+```
+
+### 5. 小例子和边界
+
+小例子：高水位设置为 1024 字节，某客户端不读数据，当前 pending 已经 900 字节。服务端再发送一个编码后 200 字节的 Packet 时，`900 + 200 > 1024`，Session 不追加这 200 字节，直接记录 warning 并关闭连接。
+
+边界：单个 encoded Packet 大于高水位，即使 pending 为 0 也会关闭；正常客户端持续读数据时，`handleWrite()` 会 retrieve 已写字节，不触发关闭；出站写不刷新 `last_active_time`，回压和 heartbeat 是两条独立保护线；当前第一版不暂停读、不做低水位恢复，也不按消息优先级丢弃。
+
 ## 2. Session 高水位语义
 
 `Session` 保留默认 4MB：

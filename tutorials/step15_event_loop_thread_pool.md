@@ -57,6 +57,104 @@ progress.md
 PROJECT_MEMORY.md
 ```
 
+## EventLoopThread.hpp / EventLoopThreadPool.hpp 接口说明
+
+`EventLoopThread.hpp` 定义一个工作线程里的一个 EventLoop：
+
+- 默认构造不启动线程。
+- 析构自动 `stop()`，避免后台 I/O 线程泄漏。
+- copy 被禁用，线程和 loop 不能复制。
+- `startLoop()` 启动 `std::thread`，等待子线程内部构造 `EventLoop` 并发布 `EventLoop*`。重复启动抛 `std::logic_error`；子线程启动异常会通过 `exception_ptr` 回传并重新抛出。
+- `stop()` 请求 loop 退出；外部线程调用会 join；在工作线程内调用只发出 quit 请求并返回。
+- `running()` 查询当前线程是否仍在运行。
+- 关键成员 `mutex_`、`condition_`、`thread_`、`thread_id_`、`loop_`、`started_`、`running_`、`join_started_` 和 `startup_exception_` 共同保证启动发布、停止 join 和异常传播。
+- `threadFunc()` 是 private helper，在子线程栈上创建 `EventLoop`，运行 `loop.loop()`，退出时清理状态并通知等待者。
+
+`EventLoopThreadPool.hpp` 定义多个 I/O loop 的管理器：
+
+- 构造函数接收 `base_loop` 和 `thread_count`。`base_loop == nullptr` 抛 `std::invalid_argument`。
+- 析构自动 `stop()`。
+- `start()` 创建 N 个 `EventLoopThread`，保存每个 child loop 指针。异常时会停止已启动线程。
+- `stop()` 停止所有线程，清空 `threads_`、`loops_`，重置 round-robin 下标。
+- `getNextLoop()` 要求 pool 已启动；有 child loop 时轮询返回，没有 child loop 时返回 `base_loop_`。
+- `loops()` 返回 child loop 观察指针列表。
+- `threadCount()` 返回配置的线程数。
+- `started()` 查询 pool 状态。
+- 关键成员 `threads_` 拥有线程对象，`loops_` 保存观察指针，`next_` 实现 round-robin。
+
+## EventLoopThreadPool 的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+`EventLoopThreadPool` 给 `TcpServer` 提供 one-loop-per-thread I/O 线程池。base loop 负责 accept，accepted fd 按 round-robin 分配给 child `EventLoop`，连接创建后固定在所属 I/O loop 里读写。
+
+### 2. 上下层调用连接
+
+```text
+TcpServer::start()
+    -> EventLoopThreadPool::start()
+    -> EventLoopThread::startLoop()
+    -> child thread constructs EventLoop
+    -> publish EventLoop*
+
+Acceptor callback
+    -> EventLoopThreadPool::getNextLoop()
+    -> io_loop->queueInLoop(create Session)
+    -> Session owner loop
+```
+
+上游是 `TcpServer`，下游是 `std::thread`、child `EventLoop` 和连接分配策略。
+
+### 3. 整体运行链路
+
+1. `TcpServer::start()` 先启动 I/O 线程池，再创建 Acceptor。
+2. [EventLoopThreadPool::start()](../src/net/EventLoopThreadPool.cpp#L20) 按配置数量创建 `EventLoopThread`。
+3. 每个 [EventLoopThread::startLoop()](../src/net/EventLoopThread.cpp#L14) 启动子线程并等待 loop 发布。
+4. 子线程在 [threadFunc()](../src/net/EventLoopThread.cpp#L83) 栈上构造 `EventLoop`。
+5. 子线程把 `EventLoop*` 发布给主线程，然后进入 `loop.loop()`。
+6. 新连接到来后，[getNextLoop()](../src/net/EventLoopThreadPool.cpp#L55) round-robin 选择 loop。
+7. `TcpServer` 把创建 `Session` 的任务投递给选中的 loop。
+8. stop 时，[EventLoopThreadPool::stop()](../src/net/EventLoopThreadPool.cpp#L42) 逐个停止线程并清空观察指针。
+
+### 4. 自身内部运行流程
+
+整体可以看成 4 步：启动线程、发布 loop、轮询分配、停止回收。
+
+核心成员职责：
+
+- `base_loop_` 是 0 线程 fallback 时返回的 loop。
+- `thread_count_` 是请求的 I/O 线程数量。
+- `threads_` 拥有 `EventLoopThread` 对象。
+- `loops_` 保存 child `EventLoop*` 观察指针。
+- `next_` 是 round-robin 下标。
+- `EventLoopThread::loop_` 是子线程栈上 EventLoop 的观察指针。
+
+核心函数流程：
+
+- `EventLoopThread::startLoop()`：启动线程，等待 condition 直到 loop 发布或异常发生。
+- `EventLoopThread::threadFunc()`：子线程构造 EventLoop、发布指针、进入 loop，退出时清理状态。
+- `EventLoopThread::stop()`：请求 loop quit，外部线程 join；从 loop 线程调用时不能 join 自己。
+- `EventLoopThreadPool::start()`：批量创建线程并保存 loop 指针。
+- `EventLoopThreadPool::getNextLoop()`：已启动后按 `next_` 选择 loop；0 线程返回 base loop。
+- `EventLoopThreadPool::stop()`：停止所有线程，清空 `threads_` / `loops_`，重置 `next_`。
+
+`getNextLoop()` 伪流程：
+
+```text
+if not started: throw
+if loops_ empty:
+    return base_loop_
+loop = loops_[next_]
+next_ = (next_ + 1) % loops_.size()
+return loop
+```
+
+### 5. 小例子和边界
+
+小例子：`io_thread_count = 2` 时，前三个连接会被分配到 `loop0`、`loop1`、`loop0`。每个连接创建后都固定在自己的 loop 中处理读写。
+
+边界：child `EventLoop` 必须在它实际运行的线程中构造；返回的 `EventLoop*` 不拥有对象，只在对应 `EventLoopThread` 运行期间有效；0 线程 fallback 不创建子线程，但仍要求 pool `start()` 后才能 `getNextLoop()`；worker 线程内部调用 `stop()` 不能 join 自己。
+
 ## 3. EventLoopThread 的职责
 
 `EventLoopThread` 表示：

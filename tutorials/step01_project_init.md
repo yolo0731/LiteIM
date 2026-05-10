@@ -86,6 +86,75 @@ TEST(SmokeTest, GoogleTestWorks)
 - `static_assert(__cplusplus >= 201703L)` 验证当前确实按 C++17 或更高标准编译。
 - `EXPECT_EQ(1 + 1, 2)` 验证 GoogleTest 断言和 CTest 发现链路可用。
 
+## Step 级作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+Step 1 还没有公共 `.hpp`，真实场景是让工程第一次具备“能配置、能编译、能运行 server、能被 CTest 发现测试”的基本闭环。后续每个 Step 都挂在这条构建和测试链路上。
+
+### 2. 上下层调用连接
+
+```text
+开发者命令
+    -> 根 CMakeLists.txt
+    -> FetchContent GoogleTest
+    -> add_subdirectory(server)
+    -> add_subdirectory(tests)
+    -> liteim_server / liteim_tests
+    -> CTest / server smoke
+```
+
+当前根 CMake 后续已经加入 `src/` 和 `spdlog`，但 Step 1 的核心连接仍然是根工程把 server target、test target、GoogleTest 和 CTest 串起来。
+
+### 3. 整体运行链路
+
+1. `cmake -S . -B build` 读取 [根 CMakeLists.txt](../CMakeLists.txt#L1)，设置 C++17 并打开 `enable_testing()`。
+2. CMake 通过 FetchContent 准备 GoogleTest target。
+3. 根工程进入 `server/`，生成 [liteim_server](../server/CMakeLists.txt#L1)。
+4. 根工程进入 `tests/`，生成 [liteim_tests](../tests/CMakeLists.txt#L1)。
+5. `gtest_discover_tests()` 把 GoogleTest 用例注册给 CTest。
+6. `cmake --build build` 编译 server 和 tests。
+7. `ctest --test-dir build` 执行发现到的测试；server smoke 单独运行可执行文件验证入口存在。
+
+### 4. 自身内部运行流程
+
+整体可以看成 4 步：configure、build、test discovery、server smoke。
+
+核心结构职责：
+
+- [CMakeLists.txt](../CMakeLists.txt#L15) 负责启用测试、声明依赖、进入子目录。
+- [server/CMakeLists.txt](../server/CMakeLists.txt#L1) 负责生成服务端入口。
+- [tests/CMakeLists.txt](../tests/CMakeLists.txt#L49) 负责把 GoogleTest 用例注册给 CTest。
+- `server/main.cpp` 在 Step 1 只是最小入口，后续才接入真实网络 server。
+
+核心函数或命令流程：
+
+```text
+configure
+    -> evaluate root CMake
+    -> fetch googletest
+    -> generate build files
+
+build
+    -> compile server/main.cpp
+    -> compile tests/test_main.cpp
+    -> link liteim_server / liteim_tests
+
+test discovery
+    -> run liteim_tests --gtest_list_tests
+    -> register discovered cases into CTest
+
+server smoke
+    -> run liteim_server
+    -> process exits normally
+```
+
+### 5. 小例子和边界
+
+小例子：后续 Step 7 增加 `BufferTest.AppendIncreasesReadableBytes` 时，不需要重新设计测试入口，只要把新测试源加入 `tests/CMakeLists.txt`，CTest 就能发现。
+
+边界：本 Step 没有 fd、线程或 Reactor 对象。GoogleTest 由 CMake target 管理，不把第三方源码复制进项目目录；`liteim_server` 和 `liteim_tests` 先独立存在，后续再逐步链接 `liteim_base`、`liteim_protocol`、`liteim_net` 等库。
+
 ## 4. 测试验证
 
 运行：

@@ -35,6 +35,128 @@ tutorials/step11_channel.md
 
 `channel_test.cpp` 使用 GoogleTest 验证回调分发和关注事件开关。
 
+## Channel.hpp 接口说明
+
+`Channel.hpp` 定义 fd 事件状态和回调分发。
+
+常量和类型：
+
+- `EventCallback = std::function<void()>`。
+- `kNoneEvent = 0`，表示不关注任何事件。
+- `kReadEvent = EPOLLIN | EPOLLPRI`，表示普通读和高优先级读。
+- `kWriteEvent = EPOLLOUT`，表示可写。
+
+构造和所有权：
+
+- `Channel(EventLoop* owner_loop, int fd)` 只保存 owner loop 和 fd 值。
+- `Channel` 不拥有 fd，不在析构中 close。
+- copy 被禁用，避免一个 fd 出现多个事件代理副本。
+
+事件状态接口：
+
+- `events()` 是希望 epoll 监听的事件。
+- `revents()` 是本轮 epoll 实际返回的事件。
+- `setRevents()` 只应由 `Epoller::poll()` 写入。
+- `isNoneEvent()`、`isReading()`、`isWriting()` 用于判断当前关注集合。
+
+事件开关：
+
+- `enableReading()` / `disableReading()` 修改读关注。
+- `enableWriting()` / `disableWriting()` 修改写关注。
+- `disableAll()` 清空关注集合。
+- 这些函数都会调用 private `update()`，再交给 `owner_loop_->updateChannel(this)`。
+
+回调和生命周期：
+
+- `setReadCallback()`、`setWriteCallback()`、`setCloseCallback()`、`setErrorCallback()` 安装回调。
+- `tie(owner)` 保存 owner 的 weak_ptr。事件分发时 lock 成局部 `shared_ptr`，保证 owner 活到 `handleEvent()` 返回。
+- `handleEvent()` 根据 `revents_` 直接调用回调。
+
+关键 private 成员：
+
+- `owner_loop_` 决定 Channel 归属哪个 EventLoop。
+- `fd_` 是被代理的 fd。
+- `events_` / `revents_` 是 Reactor 事件流的核心状态。
+- `tied_` / `tie_` 支撑连接对象生命周期保护。
+- 四个 callback 是上层对象绑定的事件入口。
+
+## Channel 的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+`Channel` 是“一个 fd 在一个 EventLoop 里的事件代理”。`Acceptor` 用它监听 listen fd，`Session` 用它监听连接 fd，`EventLoop` 用它监听 eventfd，`TimerManager` 和 `SignalWatcher` 分别用它接入 timerfd / signalfd。
+
+### 2. 上下层调用连接
+
+```text
+fd owner
+    -> Channel(owner_loop, fd)
+    -> setReadCallback / setWriteCallback / tie
+    -> enableReading / enableWriting
+    -> EventLoop::updateChannel()
+    -> Epoller::poll() writes revents_
+    -> Channel::handleEvent()
+    -> fd owner callback
+```
+
+上游是 fd owner，下游是 `EventLoop` / `Epoller`。`Channel` 不拥有 fd，只保存事件和回调。
+
+### 3. 整体运行链路
+
+1. fd owner 构造 Channel 并传入 owner loop 和 fd。
+2. fd owner 设置读、写、关闭、错误回调。
+3. 如果回调期间 owner 可能被释放，调用 [tie()](../src/net/Channel.cpp#L86) 绑定弱生命周期保护。
+4. fd owner 调用 [enableReading()](../src/net/Channel.cpp#L41) 或 [enableWriting()](../src/net/Channel.cpp#L51)。
+5. Channel 更新 `events_` 后调用 [update()](../src/net/Channel.cpp#L128)。
+6. EventLoop / Epoller 把事件注册到内核。
+7. epoll 返回后，Epoller 调用 `setRevents()` 写入本轮实际事件。
+8. EventLoop 调用 [handleEvent()](../src/net/Channel.cpp#L91) 分发回调。
+
+### 4. 自身内部运行流程
+
+整体可以看成 3 步：修改关注事件、接收实际事件、分发回调。
+
+核心成员职责：
+
+- `fd_` 是被代理的 fd，不由 Channel 关闭。
+- `events_` 是当前想关注的事件集合。
+- `revents_` 是本轮 epoll 返回的实际事件集合。
+- `owner_loop_` 是更新和移除所在的 EventLoop。
+- `tie_` / `tied_` 保护 owner 生命周期。
+- read/write/close/error callback 是 fd owner 安装的行为。
+
+核心函数流程：
+
+- `enableReading()` / `disableReading()`：增删读事件位，然后 `update()`。
+- `enableWriting()` / `disableWriting()`：增删写事件位，然后 `update()`。
+- `disableAll()`：清空关注事件，让 Epoller 走删除路径。
+- `tie()`：保存弱引用，事件分发前尝试提升为强引用。
+- `handleEvent()`：按 HUP、ERR、READ、WRITE 顺序检查 `revents_` 并调用回调。
+
+`handleEvent()` 伪流程：
+
+```text
+if tied:
+    guard = tie_.lock()
+    if guard is null: return
+active = revents_
+if HUP and not IN:
+    close_callback()
+    return
+if ERR:
+    error_callback()
+if IN or PRI or RDHUP:
+    read_callback()
+if OUT:
+    write_callback()
+```
+
+### 5. 小例子和边界
+
+小例子：连接对端关闭时，epoll 可能返回 `EPOLLRDHUP | EPOLLIN`。Channel 会调用 read callback，`Session::handleRead()` 读到 0 后走关闭路径。
+
+边界：Channel 的事件开关必须在 owner loop 线程调用；如果 callback 可能释放 owner，必须用 `tie()`；fd 关闭前应先从 EventLoop/Epoller 移除 Channel；`EPOLLERR` 后仍允许读事件继续分发，避免吞掉 socket 缓冲中的剩余数据。
+
 ## 3. Channel 的职责
 
 `Channel` 不拥有 fd。它只保存 fd 值和事件状态：
