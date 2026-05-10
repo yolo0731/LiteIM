@@ -31,6 +31,7 @@ The workspace documentation roles are now separated:
 
 | Phase | Status | Notes |
 | --- | --- | --- |
+| Step 21 storage/cache interfaces | done | Added `IStorage` / `ICache` abstractions, DTO type headers, header-only CMake interface targets, fake/null interface tests, README/tutorial/planning docs. No MySQL/Redis client, DAO, business service, or runtime dependency introduced. |
 | Markdown documentation alignment | done | Markdown-only pass against `9dd671b`: aligned current-facing docs with owner-loop-only `Acceptor::close()`, removed `EventLoop::isStopped()` / stale public APIs, `SessionState`, direct `FrameDecoder` read path, heartbeat activity semantics, and `sendToSession()` NotFound semantics. `git diff --check` passed; source stale-API scan had no matches; Markdown scan leaves only allowed history/current notes. |
 | Network lifecycle/API cleanup | done | Independent cleanup after Step 20: made `Acceptor::close()` owner-loop-only, removed `EventLoop::isStopped()`, removed premature public APIs, consolidated `SessionState`, tightened `sendToSession()` closed-session NotFound semantics, and added accumulated small-packet high-water coverage. |
 | P0 session activity semantics fix | done | Fixed `last_active_time` so only complete inbound Packets refresh heartbeat activity; outbound server writes no longer keep an idle client alive. Targeted Session/TcpServer tests, server smoke, and full CTest 172/172 passed. |
@@ -198,7 +199,8 @@ Current route status:
 - Step 20 `slow-client backpressure hardening` is complete.
 - Optional Step 18.6 `Session` input-path simplification is complete.
 - Optional Step 18.7 `Session` state consolidation is complete as part of the independent network cleanup.
-- Default next implementation step is Step 21 `IStorage / ICache abstractions`.
+- Step 21 `IStorage / ICache abstractions` is complete.
+- Default next implementation step is Step 22 `Docker Compose and MySQL init SQL`.
 
 LiteIM phases:
 

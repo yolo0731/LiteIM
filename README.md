@@ -76,6 +76,8 @@ Important boundaries:
 - `liteim_net`: `Buffer`, `SocketUtil`, `UniqueFd`, `Channel`, `Epoller`, `EventLoop`, `Acceptor`, `Session`, `EventLoopThread`, `EventLoopThreadPool`, `SignalWatcher`, and `TcpServer`.
 - `liteim_concurrency`: fixed-size business `ThreadPool`.
 - `liteim/timer`: `TimerHeap` and `TimerManager`, linked into the network layer because `TimerManager` depends on `EventLoop` and `Channel`.
+- `liteim_storage`: storage DTOs and the `IStorage` interface for future MySQL-backed users, friends, groups, messages, offline messages, and history.
+- `liteim_cache`: cache DTOs and the `ICache` interface for future Redis-backed online sessions, unread counters, and login failure limiting.
 
 ## Build And Test
 
@@ -139,22 +141,28 @@ LiteIM/
 ├── README.md
 ├── include/liteim/
 │   ├── base/
+│   ├── cache/
 │   ├── concurrency/
 │   ├── net/
 │   ├── protocol/
+│   ├── storage/
 │   └── timer/
 ├── src/
 │   ├── base/
+│   ├── cache/
 │   ├── concurrency/
 │   ├── net/
 │   ├── protocol/
+│   ├── storage/
 │   └── timer/
 ├── server/
 ├── tests/
 │   ├── base/
+│   ├── cache/
 │   ├── concurrency/
 │   ├── net/
 │   ├── protocol/
+│   ├── storage/
 │   └── timer/
 ├── tutorials/
 └── docs/

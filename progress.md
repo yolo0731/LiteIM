@@ -1,5 +1,52 @@
 # LiteIM Progress
 
+## 2026-05-10 Step 21 Storage / Cache Interfaces
+
+本次进入 `Step 21：定义 IStorage / ICache 抽象`，目标是在接入真实 MySQL / Redis 前先建立业务层依赖的接口边界。
+
+概念边界：
+
+- `IStorage` 是未来 MySQL 持久化层的抽象。
+- `ICache` 是未来 Redis 状态层的抽象。
+- 业务层后续依赖接口，不直接 include MySQL / Redis 具体实现。
+- 本 Step 不实现 MySQL client、Redis client、DAO、SQL schema、业务服务或运行时接入。
+
+已完成代码：
+
+- 新增 `include/liteim/storage/StorageTypes.hpp` 和 `IStorage.hpp`。
+- 新增 `include/liteim/cache/CacheTypes.hpp` 和 `ICache.hpp`。
+- 新增 `src/storage/CMakeLists.txt` 和 `src/cache/CMakeLists.txt`，以 header-only interface target 暴露接口层。
+- `src/CMakeLists.txt` 接入 `storage` / `cache`。
+- `tests/CMakeLists.txt` 接入 Step 21 测试并链接 `liteim_storage` / `liteim_cache`。
+
+新增测试：
+
+- `StorageInterfaceTest.HeaderIsSelfContained`
+- `StorageInterfaceTest.CanBeImplementedByFakeStorage`
+- `CacheInterfaceTest.HeaderIsSelfContained`
+- `CacheInterfaceTest.NullCacheCanBeUsedAsTestDouble`
+
+已完成文档同步：
+
+- README 增加 `liteim_storage` / `liteim_cache` 模块说明和目录布局。
+- 新增 `tutorials/step21_storage_cache_interfaces.md`。
+- 更新 `task_plan.md`、`findings.md` 和本文件。
+
+验证：
+
+- `cmake --build build`：通过。
+- `git diff --check`：通过。
+- `ctest --test-dir build -R "(StorageInterfaceTest|CacheInterfaceTest)" --output-on-failure`：4/4 通过。
+- `ctest --test-dir build --output-on-failure`：181/181 通过。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，服务端收到 SIGTERM 后优雅退出。
+- `.gitkeep` 和旧 `server/net`、`server/protocol`、SQLite、`InMemoryStorage`、`step15_sqlite` 路径检查无输出。
+
+提交信息：
+
+```text
+feat(storage): define storage and cache interfaces
+```
+
 ## 2026-05-10 Markdown Documentation Alignment
 
 本次只做 Markdown 文档对齐，目标是把当前面向读者的文档同步到 `9dd671b refactor(net): simplify owner loop cleanup and session state` 后的代码状态。

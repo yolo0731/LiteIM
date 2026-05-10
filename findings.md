@@ -8,6 +8,27 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-10 Step 21 Storage / Cache Interface Findings
+
+本次进入 `Step 21：定义 IStorage / ICache 抽象`，只定义业务层面对存储和缓存的接口边界，不实现真实 MySQL / Redis。
+
+已经确认并采用的设计：
+
+- 新增 `liteim_storage` header-only interface target，包含 `StorageTypes.hpp` 和 `IStorage.hpp`。
+- 新增 `liteim_cache` header-only interface target，包含 `CacheTypes.hpp` 和 `ICache.hpp`。
+- `IStorage` 覆盖用户、好友、群组、消息、离线消息和历史查询接口。
+- `ICache` 覆盖在线状态、未读计数和登录失败限制接口。
+- 接口沿用当前项目简单风格：返回 `Status`，查询结果通过输出参数返回，不引入 `Result<T>`、future 或异步接口。
+- `CacheTypes.hpp` 复用 `StorageTypes.hpp` 里的 `ConversationKey`，避免未读计数和历史消息使用两套会话类型。
+- 本 Step 测试使用本地 `FakeStorage` / `NullCache` 证明接口可替换，不依赖真实 MySQL / Redis，也不引入 gMock 复杂度。
+
+本次不采用/不改：
+
+- 不实现 MySQL C API、连接池、prepared statement、DAO 或 SQL schema。
+- 不实现 Redis client、RedisPool、key 字符串格式或 token bucket。
+- 不接入 `TcpServer`、`ThreadPool`、AuthService、ChatService 或任何运行时业务逻辑。
+- 不引入 SQLite 或 `InMemoryStorage` 主线。
+
 ## 2026-05-10 Markdown Documentation Alignment Findings
 
 本次只做 Markdown 文档对齐，不改 C++ 源码、CMake 或测试。
