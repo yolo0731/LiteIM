@@ -141,21 +141,25 @@ TcpServer::start()
 - [closeInLoop()](../src/net/Acceptor.cpp#L157)：移除 Channel、reset listen fd 和 idle fd。
 - [UniqueFd::reset()](../src/net/UniqueFd.cpp#L34)：关闭旧 fd，再接管新 fd。
 
-`handleRead()` 伪流程：
+`handleRead()` 可以理解成“listen fd 可读后，一次性接干净当前积压连接”：
 
 ```text
-while listen_fd_ valid:
-    fd = accept4(listen_fd, SOCK_NONBLOCK | SOCK_CLOEXEC)
-    if fd >= 0:
-        accepted = UniqueFd(fd)
-        callback(move accepted, peer_address)
-        continue
-    if errno == EINTR: continue
-    if errno == EAGAIN or EWOULDBLOCK: return
-    handleAcceptError(errno)
-    if errno == ECONNABORTED: continue
-    return
+listen fd 可读
+    ↓
+accept4(SOCK_NONBLOCK | SOCK_CLOEXEC) 接收新连接
+    ↓
+成功 fd 立刻放进 UniqueFd
+    ↓
+通过 NewConnectionCallback 交给 TcpServer
+    ↓
+EINTR 表示被信号打断，继续接收
+    ↓
+EAGAIN / EWOULDBLOCK 表示本轮积压连接接完
+    ↓
+其他错误记录并按错误语义结束本轮处理
 ```
+
+关键点是 fd 所有权一创建就进入 `UniqueFd`，`Acceptor` 不创建 `Session`，也不解析协议；它只把“新连接来了”这件事交给上层。
 
 ### 5. 小例子和边界
 

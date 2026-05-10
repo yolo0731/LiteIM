@@ -52,9 +52,9 @@ private:
     void createSessionInLoop(EventLoop* io_loop, std::shared_ptr<UniqueFd> accepted_fd);
     void handleMessage(const Session::Ptr& session, const Packet& packet);
     void removeSession(std::uint64_t session_id);
-    void startHeartbeatTimer();
-    void scheduleHeartbeatCheck();
-    void closeIdleSessions();
+    void startHeartbeatTimer();    // 启动心跳定时器
+    void scheduleHeartbeatCheck(); // 安排下一次心跳检查
+    void closeIdleSessions();      // 关闭所有超过 heartbeat_timeout_ 没有活动的 Session
 
     EventLoop* base_loop_;
     std::string listen_ip_;

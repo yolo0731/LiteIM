@@ -142,30 +142,37 @@ other thread
 - [handleWakeup()](../src/net/EventLoop.cpp#L185)：读掉 eventfd 计数，避免 fd 一直可读。
 - [doPendingTasks()](../src/net/EventLoop.cpp#L199)：swap 出任务队列，在锁外执行并隔离异常。
 
-`queueInLoop(task)` 伪流程：
+`queueInLoop(task)` 可以理解成“把跨线程任务放进队列，并用 eventfd 叫醒 loop”：
 
 ```text
-if task empty: return
-lock mutex
-pending_tasks_.push_back(task)
-unlock
-if caller is not owner loop thread or currently running pending tasks:
-    wakeup()
+任意线程提交 Functor
+    ↓
+pending_tasks_ 保存任务
+    ↓
+跨线程提交或正在执行 pending tasks 时写 eventfd
+    ↓
+epoll_wait() 被唤醒
+    ↓
+owner loop 执行 doPendingTasks()
 ```
 
-`loop()` 伪流程：
+`loop()` 主循环可以理解成：
 
 ```text
-assert owner thread
-while true:
-    doPendingTasks()
-    if quit: break
-    active = epoller.poll(-1)
-    for channel in active:
-        channel.handleEvent()
-    doPendingTasks()
-    if quit: break
+owner 线程进入 EventLoop::loop()
+    ↓
+先执行已经排队的任务
+    ↓
+Epoller::poll() 等待 fd 事件或 eventfd 唤醒
+    ↓
+活跃 Channel 逐个 handleEvent()
+    ↓
+再次执行 pending tasks
+    ↓
+收到 quit 请求后退出循环
 ```
+
+这个设计把“谁可以提交任务”和“谁真正操作 fd / Channel”分开：外部线程只入队，真正执行仍回到 owner loop 线程。
 
 ### 5. 小例子和边界
 

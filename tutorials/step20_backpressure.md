@@ -149,20 +149,25 @@ Config
 - `Session::sendEncodedInLoop()`：append 前检查高水位，超限先关闭，不追加本次 encoded bytes。
 - `Session::handleWrite()`：正常客户端持续读时，写出后 retrieve，降低 pending。
 
-`sendEncodedInLoop()` 的高水位伪流程：
+`sendEncodedInLoop()` 的高水位处理可以理解成：
 
 ```text
-pending = output_buffer_.readableBytes()
-incoming = encoded.size()
-limit = output_high_water_mark_
-if incoming > limit or pending > limit - incoming:
-    Logger.warn(session id, pending, incoming, limit)
-    closeInLoop()
-    return
-output_buffer_.append(encoded)
-if channel not writing:
-    channel.enableWriting()
+准备发送 encoded bytes
+    ↓
+读取 pending：output_buffer_ 已积压字节
+    ↓
+读取 incoming：本次要追加的字节
+    ↓
+读取 limit：output_high_water_mark_
+    ↓
+pending + incoming 超过 limit 时记录 warning 并关闭连接
+    ↓
+未超限时 append 到 output_buffer_
+    ↓
+开启 Channel 写事件，等待 handleWrite() 慢慢写出
 ```
+
+这一步必须发生在 append 前，因为一旦先追加再判断，慢客户端已经占用了更多内存。日志里的 session id、pending、incoming 和 limit 用来定位具体是哪条连接触发了保护。
 
 ### 5. 小例子和边界
 

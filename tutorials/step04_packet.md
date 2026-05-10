@@ -211,28 +211,35 @@ include/liteim/protocol/ByteOrder.hpp
 - [encodePacket()](../src/protocol/Packet.cpp#L19)：清空输出、重算 body_len、校验 header、按大端序写字段、追加 body。
 - [parseHeader()](../src/protocol/Packet.cpp#L45)：检查指针和长度，从固定偏移读字段，再调用 `validateHeader()`。
 
-`encodePacket(packet, output)` 伪流程：
+`encodePacket(packet, output)` 可以理解成“业务 Packet 到 wire bytes”：
 
 ```text
-output.clear()
-if packet.body too large: return error
-header = packet.header
-header.body_len = packet.body.size()
-validateHeader(header)
-append magic/version/flags/msg_type/seq_id/body_len in network byte order
-append packet.body
-return ok
+Packet.header + Packet.body
+    ↓
+按 body.size() 刷新 header.body_len
+    ↓
+validateHeader() 检查 magic / version / body 上限
+    ↓
+按网络字节序写入 20 字节 header
+    ↓
+追加 TLV body，形成可发送的 Bytes
 ```
 
-`parseHeader(data, len, output)` 伪流程：
+`parseHeader(data, len, output)` 可以理解成“TCP bytes 到 header”：
 
 ```text
-if data null or len < 20: return error
-read fixed fields from offsets 0,4,5,6,8,16
-validateHeader(header)
-output = header
-return ok
+TCP 字节缓存
+    ↓
+确认至少有固定 20 字节 header
+    ↓
+按固定偏移读取 magic / version / flags / msg_type / seq_id / body_len
+    ↓
+validateHeader() 检查协议边界
+    ↓
+交给 FrameDecoder 判断 body 是否完整
 ```
+
+这两个函数只处理 Packet 外壳：`encodePacket()` 不理解 TLV 字段含义，`parseHeader()` 也不消费 body；完整包边界由 `FrameDecoder` 继续判断。
 
 ### 5. 小例子和边界
 

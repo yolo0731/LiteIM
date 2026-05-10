@@ -265,16 +265,23 @@ Acceptor callback(UniqueFd)
 - [scheduleHeartbeatCheck()](../src/net/TcpServer.cpp#L236)：one-shot 续排 heartbeat 检查。
 - [closeIdleSessions()](../src/net/TcpServer.cpp#L248)：扫描 session 快照，关闭超时连接。
 
-`handleNewConnection()` 伪流程：
+`handleNewConnection()` 可以理解成“base loop 收连接，I/O loop 建 Session”：
 
 ```text
-assert base loop
-if not started or fd invalid: return
-io_loop = io_threads_.getNextLoop()
-accepted_holder = shared_ptr<UniqueFd>(move accepted_fd)
-io_loop.queueInLoop(lambda:
-    createSessionInLoop(io_loop, accepted_holder))
+Acceptor 交出 UniqueFd
+    ↓
+TcpServer::handleNewConnection() 在 base loop 执行
+    ↓
+EventLoopThreadPool::getNextLoop() 选择目标 I/O loop
+    ↓
+把 UniqueFd 所有权随任务投递到目标 loop
+    ↓
+createSessionInLoop() 创建 Session 并绑定 Channel
+    ↓
+Session::start() 开启读事件
 ```
+
+这样 fd 所有权从 `Acceptor` 到 `TcpServer` 再到 `Session` 全程清楚，业务 callback 也不会在 base loop 里直接操作连接内部状态。
 
 ### 5. 小例子和边界
 

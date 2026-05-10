@@ -127,23 +127,21 @@ EventLoop::loop()
 - [updateChannel()](../src/net/Epoller.cpp#L96)：统一处理 add/mod/del。
 - [removeChannel()](../src/net/Epoller.cpp#L145)：显式从 epoll 删除 Channel，并清空 `revents_`。
 
-`updateChannel(channel)` 伪流程：
+`updateChannel(channel)` 可以按四种情况理解：
 
 ```text
-validate channel and owner
-fd = channel.fd()
-if fd not in channels_:
-    if channel has no events: return error
-    epoll_ctl(ADD, fd, channel.events)
-    channels_[fd] = channel
-elif channels_[fd] != channel:
-    return error
-elif channel has no events:
-    epoll_ctl(DEL, fd)
-    erase fd from channels_
-else:
-    epoll_ctl(MOD, fd, channel.events)
+Channel 更新请求
+    ↓
+未注册 fd：带关注事件时执行 ADD，并记录 fd -> Channel
+    ↓
+已注册同一个 Channel：根据 events_ 执行 MOD 或 DEL
+    ↓
+已注册不同 Channel：拒绝覆盖，保护 fd 映射一致性
+    ↓
+没有任何关注事件：从 epoll 和 channels_ 中移除
 ```
+
+这层只维护 “fd 数字对应哪个 `Channel*`” 和 “内核 epoll 关注什么事件”。它不拥有 fd，不关闭 fd，也不直接执行 read/write callback。
 
 ### 5. 小例子和边界
 

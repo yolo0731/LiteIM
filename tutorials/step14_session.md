@@ -164,39 +164,55 @@ business thread or I/O thread
 - `handleWrite()`：write 可读区，成功后 retrieve，清空后 disable writing。
 - `closeInLoop()`：owner loop 内移除 Channel、释放 fd、延迟 reset Channel、触发 close callback。
 
-`handleRead()` 伪流程：
+读路径可以理解成：
 
 ```text
-while fd valid:
-    n = read(fd, stack_buffer)
-    if n > 0:
-        packets = decoder.feed(bytes)
-        if decode failed: closeInLoop(); return
-        for packet in packets:
-            if closed: return
-            updateLastActiveTime()
-            message_callback(shared_from_this(), packet)
-        continue
-    if n == 0: closeInLoop(); return
-    if errno == EINTR: continue
-    if errno == EAGAIN: return
-    closeInLoop(); return
+Channel 读事件
+    ↓
+Session::handleRead()
+    ↓
+非阻塞 read() 把字节读入临时缓冲
+    ↓
+FrameDecoder::feed() 处理半包 / 粘包
+    ↓
+完整且合法 Packet 刷新 last_active_time
+    ↓
+MessageCallback(shared_from_this(), packet)
 ```
 
-`sendEncodedInLoop()` 伪流程：
+边界处理是：peer close 进入 `closeInLoop()`；`EINTR` 继续读；`EAGAIN` 表示本轮读完；协议解析失败关闭连接；callback 关闭当前 Session 后不继续派发剩余 packet。
+
+写路径可以理解成：
 
 ```text
-assert owner loop
-if closed or encoded empty: return
-pending = output_buffer_.readableBytes()
-if encoded.size > high_water or pending > high_water - encoded.size:
-    log warning
-    closeInLoop()
-    return
-output_buffer_.append(encoded)
-if started and not channel.isWriting():
-    channel.enableWriting()
+业务调用 Session::sendPacket()
+    ↓
+encodePacket() 生成 Bytes
+    ↓
+runInLoop() / queueInLoop() 回到 owner loop
+    ↓
+Session::sendEncodedInLoop()
+    ↓
+append 到 output_buffer_
+    ↓
+Channel 开启写事件，由 handleWrite() 慢慢写出
 ```
+
+回压路径可以理解成：
+
+```text
+sendEncodedInLoop() 准备追加 encoded bytes
+    ↓
+读取 output_buffer_ 当前 pending bytes
+    ↓
+与 output_high_water_mark_ 比较
+    ↓
+超过高水位时记录 warning
+    ↓
+closeInLoop() 关闭慢连接
+```
+
+这里最重要的线程边界是：`output_buffer_`、`Channel` 和 fd 都只在 Session owner loop 中直接操作，业务线程只能通过 `sendPacket()` 投递。
 
 ### 5. 小例子和边界
 

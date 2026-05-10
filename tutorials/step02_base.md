@@ -200,22 +200,23 @@ server/main.cpp
 - [Status::ok() / Status::error()](../src/base/Status.cpp#L8)：构造成功或失败返回值，不抛异常。
 - [Timestamp::now()](../src/base/Timestamp.cpp#L15)：取当前 system clock，用于对外可理解的时间点。
 
-`Config::loadFromFile()` 伪流程：
+`Config::loadFromFile()` 可以按这条流程理解：
 
 ```text
-loadFromFile(path)
-    open file
-    for each line:
-        remove text after '#'
-        trim whitespace
-        if empty: continue
-        split by '='
-        store key/value in map
-    for each key/value:
-        parse and assign field
-        if parse failed: return Status::error(...)
-    return Status::ok()
+配置文件路径
+    ↓
+打开并读取文本内容
+    ↓
+清理注释、空行和首尾空白
+    ↓
+按 key=value 解析成配置项
+    ↓
+写入 Config 对应字段
+    ↓
+返回 Status 表示成功或具体错误
 ```
+
+它的关键边界是“先把文本整理成配置项，再统一写入 `Config`”。缺文件、未知 key、端口非法或高水位为 0 这类问题不会抛异常给上层，而是通过 `Status::error()` 带着 `ErrorCode` 返回。
 
 ### 5. 小例子和边界
 

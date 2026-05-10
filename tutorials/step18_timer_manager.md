@@ -214,40 +214,39 @@ TcpServer
 - [popExpired(now_ms)](../src/timer/TimerHeap.cpp#L25)：循环清理 stale top，弹出所有 `expiration_ms <= now_ms` 的有效 timer，move callback 后执行。
 - [removeStaleTopEntries()](../src/timer/TimerHeap.cpp#L72)：如果堆顶 id 不在 `timers_`，或 map 中过期时间和堆节点不一致，就弹掉堆顶。
 
-`add(expiration_ms, callback)` 伪流程：
+`add(expiration_ms, callback)` 可以理解成两份索引同时登记：
 
 ```text
-timer_id = next_timer_id_++
-timers_[timer_id] = {expiration_ms, callback}
-heap_.push({expiration_ms, timer_id})
-return timer_id
+新的 one-shot timer
+    ↓
+分配递增 TimerId
+    ↓
+timers_ 保存 expiration_ms 和 callback
+    ↓
+heap_ 保存 expiration_ms 和 TimerId 用于排序
+    ↓
+TimerId 返回给上层用于 cancel()
 ```
 
-`cancel(timer_id)` 伪流程：
+`cancel(timer_id)` 只删除 `timers_` 里的有效记录，`heap_` 里旧节点先留下；后续 `removeStaleTopEntries()` 会在堆顶遇到它时惰性清理。
+
+`popExpired(now_ms)` 可以理解成：
 
 ```text
-timers_.erase(timer_id)
-# heap_ 里对应节点暂时不动，后续由 removeStaleTopEntries() 惰性删除
+timerfd tick 后传入当前 steady now
+    ↓
+清理 stale 堆顶
+    ↓
+检查最近有效 timer 是否已经到期
+    ↓
+到期 timer 从 heap_ 和 timers_ 中移除
+    ↓
+取出 callback 并同步执行
+    ↓
+继续处理本轮已经到期的下一个 timer
 ```
 
-`popExpired(now_ms)` 伪流程：
-
-```text
-fired = 0
-while true:
-    removeStaleTopEntries()
-    if heap_ empty or heap_.top.expiration_ms > now_ms:
-        return fired
-    heap_entry = heap_.top()
-    heap_.pop()
-    timer_it = timers_.find(heap_entry.timer_id)
-    if timer missing or expiration mismatch:
-        continue
-    callback = move timer_it.callback
-    timers_.erase(timer_it)
-    if callback: callback()
-    ++fired
-```
+这个结构让 `cancel()` 不需要扫描 `priority_queue` 中间节点，代价是堆顶可能暂时有 stale entry，但它会在下一次查询或弹出时被清掉。
 
 ### 5. 小例子和边界
 
@@ -407,21 +406,25 @@ TcpServer::startHeartbeatTimer()
 - `stopInLoop()`：清空 timers、移除 Channel、关闭 fd，必要时延迟 reset Channel。
 - `steadyNowMilliseconds()`：用 steady clock 返回单调毫秒，避免系统时间跳变影响 timer 判断。
 
-`handleRead()` 伪流程：
+`handleRead()` 在 heartbeat 场景里可以按这条链路理解：
 
 ```text
-if timer_fd_ invalid: return
-while true:
-    n = read(timer_fd, expirations)
-    if n == sizeof(expirations): break
-    if errno == EINTR: continue
-    if errno == EAGAIN: return
-    return
-handling_timer_event_ = true
-try timers_.popExpired(steadyNowMilliseconds())
-catch all: swallow
-handling_timer_event_ = false
+timerfd 每隔 heartbeat_interval 唤醒 EventLoop
+        ↓
+TimerManager::handleRead()
+        ↓
+读取 timerfd expirations，清掉可读状态
+        ↓
+TimerHeap::popExpired(now)
+        ↓
+执行 TcpServer 注册的 callback
+        ↓
+closeIdleSessions()
+        ↓
+scheduleHeartbeatCheck() 再注册下一次检查
 ```
+
+内部边界是：`EINTR` 只表示本次 read 被打断，继续读取；`EAGAIN` 表示可读状态已经被其他路径消耗，本轮结束；callback 抛出的异常被隔离，避免 timer 事件打断整个 `EventLoop`。
 
 ### 5. 小例子和边界
 

@@ -133,23 +133,25 @@ fd owner
 - `tie()`：保存弱引用，事件分发前尝试提升为强引用。
 - `handleEvent()`：按 HUP、ERR、READ、WRITE 顺序检查 `revents_` 并调用回调。
 
-`handleEvent()` 伪流程：
+`handleEvent()` 可以理解成“先保护生命周期，再按事件类型分发”：
 
 ```text
-if tied:
-    guard = tie_.lock()
-    if guard is null: return
-active = revents_
-if HUP and not IN:
-    close_callback()
-    return
-if ERR:
-    error_callback()
-if IN or PRI or RDHUP:
-    read_callback()
-if OUT:
-    write_callback()
+EventLoop 调用 Channel::handleEvent()
+    ↓
+tie_ 尝试提升为 shared_ptr，保护 owner 存活
+    ↓
+保存本轮 revents_ 快照
+    ↓
+纯关闭事件优先交给 close callback
+    ↓
+错误事件交给 error callback
+    ↓
+可读 / urgent / peer half-close 交给 read callback
+    ↓
+可写事件交给 write callback
 ```
+
+当前实现允许 `EPOLLERR | EPOLLIN` 先触发 error callback，再继续触发 read callback，这样不会因为错误标志吞掉 socket 缓冲里仍可读取的数据。
 
 ### 5. 小例子和边界
 

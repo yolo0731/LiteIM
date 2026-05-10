@@ -138,16 +138,19 @@ Acceptor callback
 - `EventLoopThreadPool::getNextLoop()`：已启动后按 `next_` 选择 loop；0 线程返回 base loop。
 - `EventLoopThreadPool::stop()`：停止所有线程，清空 `threads_` / `loops_`，重置 `next_`。
 
-`getNextLoop()` 伪流程：
+`getNextLoop()` 可以理解成三种选择：
 
 ```text
-if not started: throw
-if loops_ empty:
-    return base_loop_
-loop = loops_[next_]
-next_ = (next_ + 1) % loops_.size()
-return loop
+TcpServer 需要为新连接选择 I/O loop
+    ↓
+线程池未启动：拒绝分配，暴露使用顺序错误
+    ↓
+没有子 I/O 线程：直接使用 base_loop_
+    ↓
+存在子 I/O 线程：按 round-robin 返回下一个 EventLoop
 ```
+
+`next_` 只在 base loop 线程里推进，所以这里不需要额外加锁；它只负责连接分布，不负责启动或停止具体 `Session`。
 
 ### 5. 小例子和边界
 

@@ -222,21 +222,25 @@ server/main.cpp
 - `handleRead()`：循环读取 signalfd，处理 `EINTR` / `EAGAIN`，每个 signo 调 callback。
 - `stopInLoop()`：移除 Channel、关闭 fd、恢复旧 mask。
 
-`handleRead()` 伪流程：
+`handleRead()` 可以理解成“signalfd 可读后，把信号转换成普通 callback”：
 
 ```text
-if signal_fd_ invalid: return
-handling_signal_event_ = true
-while signal_fd_ valid:
-    n = read(signal_fd, signalfd_siginfo)
-    if n == sizeof(info):
-        callback(info.ssi_signo)
-        continue
-    if errno == EINTR: continue
-    if errno == EAGAIN: break
-    break
-handling_signal_event_ = false
+SIGINT / SIGTERM 到达进程
+    ↓
+signalfd 变为可读
+    ↓
+SignalWatcher::handleRead()
+    ↓
+读取 signalfd_siginfo
+    ↓
+把 ssi_signo 交给 callback
+    ↓
+server.stop()
+    ↓
+loop.quit()
 ```
+
+内部边界是：`EINTR` 表示读取被打断，继续处理；`EAGAIN` 表示本轮信号已经读完；callback 执行期间用 `handling_signal_event_` 保护 Channel 延迟释放，避免在事件栈里销毁正在分发的对象。
 
 ### 5. 小例子和边界
 

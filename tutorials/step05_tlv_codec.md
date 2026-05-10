@@ -212,21 +212,23 @@ get 系列：
 - [getUint64()](../src/protocol/TlvCodec.cpp#L99)：要求 value 正好 8 字节，再按大端序读整数。
 - [getRepeatedUint64()](../src/protocol/TlvCodec.cpp#L128)：遍历同一字段下的所有 value。
 
-`parseTlvMap(data, len, output)` 伪流程：
+`parseTlvMap(data, len, output)` 可以理解成“按 TLV 头切字段”：
 
 ```text
-output.clear()
-offset = 0
-while offset < len:
-    if remaining < 6: return parse error
-    type = readUint16BE(data + offset)
-    value_len = readUint32BE(data + offset + 2)
-    offset += 6
-    if value_len too large or exceeds remaining: return parse error
-    output[type].push_back(value bytes)
-    offset += value_len
-return ok
+Packet.body 原始字节
+    ↓
+读取 TLV header：type + len
+    ↓
+检查 value 长度边界
+    ↓
+按 type 把 value 放入 TlvMap
+    ↓
+重复字段继续追加到同一个 TlvValues
+    ↓
+解析结束后交给 getString() / getUint64() 读取
 ```
+
+遇到 TLV header 不完整、value 长度超过剩余 body、单字段超过上限或 type 未知时，解析立即结束并把具体错误交给上层。成功路径只是分组保存原始 value，不在这里做登录、权限或业务路由。
 
 ### 5. 小例子和边界
 

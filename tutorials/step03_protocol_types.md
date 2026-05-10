@@ -133,16 +133,21 @@ tests/protocol/
 - [isPushType()](../src/protocol/MessageType.cpp#L162)：只识别服务端主动推送类型。
 - [toString(TlvType)](../src/protocol/Tlv.cpp#L5)：把字段枚举转成日志字符串。
 
-分类函数伪流程：
+分类函数可以理解成“按消息用途分组判断”：
 
 ```text
-isRequestType(type)
-    switch type:
-        case HeartbeatRequest / LoginRequest / PrivateMessageRequest / ...:
-            return true
-        default:
-            return false
+MessageType
+    ↓
+request 分组：Heartbeat / Login / PrivateMessage / ...
+    ↓
+response 分组：HeartbeatResponse / LoginResponse / ...
+    ↓
+push 分组：PrivateMessagePush / GroupMessagePush / BotMessagePush
+    ↓
+上层获得轻量分类结果
 ```
+
+也就是说，[isRequestType()](../src/protocol/MessageType.cpp#L78)、[isResponseType()](../src/protocol/MessageType.cpp#L120) 和 [isPushType()](../src/protocol/MessageType.cpp#L162) 不解析 body、不分发业务，只维护“哪些枚举属于哪一组”的协议规则。
 
 ### 5. 小例子和边界
 

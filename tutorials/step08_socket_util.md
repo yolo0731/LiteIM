@@ -131,18 +131,19 @@ UniqueFd
 - `closeFd(int&)`：先保存当前 fd，再把引用置为 `kInvalidFd`，最后调用 `close()`。
 - `getSocketError()`：通过 `getsockopt(SO_ERROR)` 读取内核保存的 socket 错误。
 
-`closeFd(fd)` 伪流程：
+`closeFd(fd)` 可以理解成“先断开所有权，再关闭旧 fd”：
 
 ```text
-if fd < 0:
-    fd = kInvalidFd
-    return ok
-current_fd = fd
-fd = kInvalidFd
-if close(current_fd) failed:
-    return io error
-return ok
+调用方传入 fd 引用
+    ↓
+把外部 fd 值先改成 kInvalidFd
+    ↓
+对旧 fd 调用 close()
+    ↓
+把 close 结果包装成 Status
 ```
+
+这种顺序的价值是避免重复关闭：哪怕 `close()` 期间出现错误，调用方手里的 fd 也已经失效，不会在后续清理路径里再次关闭同一个数字。
 
 ### 5. 小例子和边界
 

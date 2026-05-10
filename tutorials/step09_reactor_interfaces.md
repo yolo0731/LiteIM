@@ -145,22 +145,35 @@ fd owner(Acceptor / Session / TimerManager / SignalWatcher)
 - `EventLoop::runInLoop()` / `queueInLoop()`：保证跨线程任务回到 owner loop。
 - `Channel::tie()`：事件分发期间尝试锁住 owner，防止回调对象已销毁。
 
-伪流程：
+接口运行时分成两条链路。
+
+关注事件变更链路：
 
 ```text
-fd owner enables read
-    Channel.events_ |= READ
-    Channel.update()
-    EventLoop.updateChannel(channel)
-    Epoller.updateChannel(channel)
-    epoll_ctl(ADD or MOD)
-
-fd becomes readable
-    Epoller.poll() returns Channel*
-    channel.revents_ = kernel events
-    EventLoop calls channel.handleEvent()
-    Channel calls read callback
+fd owner 调用 Channel::enableReading()
+    ↓
+Channel 修改 events_
+    ↓
+EventLoop::updateChannel()
+    ↓
+Epoller::updateChannel()
+    ↓
+epoll_ctl 更新内核关注事件
 ```
+
+fd 就绪回调链路：
+
+```text
+内核发现 fd 可读或可写
+    ↓
+Epoller::poll() 返回活跃 Channel
+    ↓
+EventLoop 写入 revents_ 并调用 handleEvent()
+    ↓
+Channel 按 revents_ 分发 read / write / close / error callback
+```
+
+Step 9 只定义这些接口边界，真正的 `epoll_ctl` 行为在 Step 10，真正的 callback 分发在 Step 11，真正的 event loop 主循环在 Step 12。
 
 ### 5. 小例子和边界
 

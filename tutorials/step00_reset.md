@@ -88,19 +88,21 @@ PROJECT_MEMORY.md / task_plan.md
 - 保留最小根：只留下下一步 CMake 初始化必需的文件。
 - 验证扫描：用 CMake 和 `find` / `rg` 证明旧入口消失。
 
-伪流程：
+运行时可以按这条工程链路理解：
 
 ```text
-reset_step0()
-    read PROJECT_MEMORY route
-    for each path in LiteIM:
-        if path belongs to old route or build output:
-            delete path
-        else if path is root identity or planning memory:
-            keep path
-    run configure/build/test smoke
-    run stale-route scan
+读取 PROJECT_MEMORY 路线
+    ↓
+识别旧单 Reactor / SQLite / InMemoryStorage / build 产物
+    ↓
+删除会误导后续 Step 的旧文件
+    ↓
+保留根身份文件和 planning memory
+    ↓
+CMake / CTest / stale-route scan 验证结果
 ```
+
+这里没有真正的 C++ 控制流，重点是文件职责归位：旧路线入口消失，最小根目录还能被构建工具识别，后续 Step 再按当前路线重新创建模块目录。
 
 ### 5. 小例子和边界
 

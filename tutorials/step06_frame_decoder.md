@@ -184,25 +184,23 @@ Session::handleRead()
 - [bufferedBytes()](../src/protocol/FrameDecoder.cpp#L56)：暴露当前残留字节数，主要用于测试。
 - [reset()](../src/protocol/FrameDecoder.cpp#L60)：清空缓存并清 error，生产连接通常关闭而不是重同步。
 
-`feed()` 伪流程：
+`feed()` 可以理解成“追加字节，然后尽量切完整 Packet”：
 
 ```text
-output.clear()
-if error_: return parse error
-if data null and len != 0: return invalid argument
-append new bytes to buffer_
-while buffer_.size >= packet header size:
-    parseHeader(buffer_ first 20 bytes)
-    if parse failed:
-        error_ = true
-        return error
-    frame_size = 20 + header.body_len
-    if buffer_.size < frame_size:
-        break
-    output.push_back(Packet(header, body bytes))
-    erase consumed frame bytes
-return ok
+socket 新读到的 Bytes
+    ↓
+追加进 FrameDecoder 内部缓存
+    ↓
+尝试解析固定 20 字节 header
+    ↓
+根据 body_len 判断完整帧是否已经到齐
+    ↓
+到齐的帧转换成 Packet 输出
+    ↓
+未到齐的半包继续留在内部缓存
 ```
+
+如果 header 校验失败，`FrameDecoder` 进入错误状态，后续输入都会被拒绝直到 `reset()`；如果只是 body 没收齐，它不会报错，而是等待下一次 `feed()` 补齐。
 
 ### 5. 小例子和边界
 

@@ -142,21 +142,21 @@ Session::sendEncodedInLoop()
 - [retrieveAllAsString()](../src/net/Buffer.cpp#L65)：把当前可读区复制成字符串后清空。
 - [ensureWritableBytes()](../src/net/Buffer.cpp#L71)：先看尾部空间，再移动可读区到开头，最后才扩容。
 
-`ensureWritableBytes(len)` 伪流程：
+`ensureWritableBytes(len)` 可以理解成“先用现有空间，再整理，最后扩容”：
 
 ```text
-if writableBytes() >= len:
-    return
-readable = readableBytes()
-if read_index_ + writableBytes() >= len:
-    move readable bytes to buffer_.begin()
-    read_index_ = 0
-    write_index_ = readable
-    return
-if read_index_ != 0:
-    compact readable bytes to front
-resize buffer_ to write_index_ + len
+追加写入请求
+    ↓
+优先使用 write_index_ 后面的剩余空间
+    ↓
+剩余空间不足时，整理 read_index_ 前方的已读空间
+    ↓
+整理后仍不足，再扩大底层 vector
+    ↓
+append() 获得连续可写区域
 ```
+
+这里的核心是尽量复用已经读走的前缀空间，避免每次 append 都扩容；只有可写尾部和可回收前缀合起来仍不够时，才真的调整 `buffer_` 容量。
 
 ### 5. 小例子和边界
 

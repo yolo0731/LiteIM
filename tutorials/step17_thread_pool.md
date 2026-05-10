@@ -237,19 +237,25 @@ Session MessageCallback / TcpServer business callback
 - `stop()`：置 running false，唤醒所有 worker；外部线程 join，worker 内部调用只发停止请求。
 - `pendingTaskCount()`：只统计仍在队列等待的任务，不统计正在执行的任务。
 
-`workerLoop()` 伪流程：
+`workerLoop()` 可以理解成“等待任务、取出任务、锁外执行”：
 
 ```text
-mark current_thread_pool
-while true:
-    lock mutex
-    wait until !running_ or !tasks_.empty()
-    if tasks_.empty(): return
-    task = pop front
-    unlock
-    try task()
-    catch all: continue
+worker 线程启动
+    ↓
+标记当前线程属于这个 ThreadPool
+    ↓
+没有任务时在 condition_variable 上休眠
+    ↓
+拿到队首任务后立刻离开临界区
+    ↓
+在线程池锁外执行 task
+    ↓
+单个 task 异常只影响当前任务
+    ↓
+stop 后队列清空，worker 退出
 ```
+
+这个流程保证业务任务不会持有 `mutex_` 执行，避免一个慢 MySQL / Redis 操作堵住其他 worker 取任务；任务异常也不会让整个线程池退出。
 
 ### 5. 小例子和边界
 
