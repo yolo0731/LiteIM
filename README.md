@@ -119,6 +119,59 @@ server.output_high_water_mark_bytes = 4194304
 
 `server.output_high_water_mark_bytes` controls the per-`Session` pending output-buffer limit. When a server push would exceed the limit, LiteIM logs the pending bytes, incoming bytes, and limit, then closes that slow connection.
 
+## Local MySQL And Redis
+
+Step 22 adds the local development database environment for later storage/cache work. It does not connect the C++ server to MySQL or Redis yet.
+
+Start MySQL and Redis:
+
+```bash
+docker compose -f docker/docker-compose.yml up -d
+```
+
+Default local endpoints:
+
+```text
+MySQL: 127.0.0.1:33060
+Redis: 127.0.0.1:63790
+Database: liteim
+MySQL user: liteim
+MySQL password: liteim_dev
+MySQL root password: liteim_root
+```
+
+The MySQL container runs `scripts/init_mysql.sql` and `scripts/seed_test_data.sql` the first time its data volume is created. The init script creates the main LiteIM tables:
+
+- `users`
+- `friendships`
+- `chat_groups`
+- `group_members`
+- `messages`
+- `offline_messages`
+
+The seed script inserts local test users `alice`, `bob`, the Bot user `mira_bot`, a `dev_group`, sample messages, and pending offline-message rows. Redis starts empty; online status, unread counters, and login failure limiting keys will be introduced with the Redis cache implementation.
+
+Useful checks:
+
+```bash
+docker compose -f docker/docker-compose.yml ps
+docker compose -f docker/docker-compose.yml exec mysql mysql -uliteim -pliteim_dev liteim -e "SHOW TABLES;"
+docker compose -f docker/docker-compose.yml exec mysql mysql -uliteim -pliteim_dev liteim -e "SELECT user_id, username FROM users ORDER BY user_id;"
+docker compose -f docker/docker-compose.yml exec redis redis-cli ping
+```
+
+Stop the local services:
+
+```bash
+docker compose -f docker/docker-compose.yml down
+```
+
+To recreate the database from the init scripts, remove the local dev data volumes:
+
+```bash
+docker compose -f docker/docker-compose.yml down -v
+```
+
 Run tests:
 
 ```bash
@@ -139,6 +192,8 @@ find . -path ./build -prune -o -path ./.git -prune -o \( -path ./server/net -o -
 LiteIM/
 ├── CMakeLists.txt
 ├── README.md
+├── docker/
+│   └── docker-compose.yml
 ├── include/liteim/
 │   ├── base/
 │   ├── cache/
@@ -156,6 +211,9 @@ LiteIM/
 │   ├── storage/
 │   └── timer/
 ├── server/
+├── scripts/
+│   ├── init_mysql.sql
+│   └── seed_test_data.sql
 ├── tests/
 │   ├── base/
 │   ├── cache/

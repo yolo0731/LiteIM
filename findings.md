@@ -8,6 +8,29 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-10 Step 22 Docker Compose / MySQL Init SQL Findings
+
+本次进入 `Step 22：Docker Compose and MySQL init SQL`，只实现本地开发依赖环境和 MySQL schema，不实现 C++ MySQL/Redis 客户端、DAO、连接池或业务服务接入。
+
+已经确认并采用的设计：
+
+- 新增 `docker/docker-compose.yml`，一条 `docker compose -f docker/docker-compose.yml up -d` 启动 MySQL 8.4 和 Redis 7.2。
+- 默认本地端口使用 `127.0.0.1:33060` 和 `127.0.0.1:63790`，避免占用系统常见 `3306` / `6379`。
+- Compose 不固定 `container_name`，方便用 `-p` 启动临时验证环境，不和默认 dev project 冲突。
+- MySQL 第一次创建数据卷时按顺序执行 `scripts/init_mysql.sql` 和 `scripts/seed_test_data.sql`。
+- `init_mysql.sql` 创建 `users`、`friendships`、`chat_groups`、`group_members`、`messages`、`offline_messages`。
+- SQL 字段对齐 Step 21 DTO：id 使用 `BIGINT UNSIGNED`，时间使用毫秒 `BIGINT`，`conversation_type + conversation_id + message_id` 支撑历史消息查询。
+- `offline_messages` 通过 `(user_id, delivered, offline_message_id)` 索引支撑后续“查询某用户待投递离线消息”。
+- seed 数据固定 id，写入 `alice`、`bob`、`mira_bot`、`dev_group`、示例消息和待投递离线消息；脚本可重复执行。
+- Redis 第一版不初始化数据，后续 RedisPool / ICache 实现再定义 key。
+
+本次不采用/不改：
+
+- 不接入 MySQL C API、prepared statement、连接池、DAO 或 service。
+- 不实现 Redis client、RedisPool、key 命名或 TTL 逻辑。
+- 不改 `TcpServer`、`Session`、`ThreadPool` 或任何网络层运行时逻辑。
+- 不把 MySQL / Redis 集成测试加入默认 CTest，避免普通单元测试依赖 Docker daemon。
+
 ## 2026-05-10 Step 21 Storage / Cache Interface Findings
 
 本次进入 `Step 21：定义 IStorage / ICache 抽象`，只定义业务层面对存储和缓存的接口边界，不实现真实 MySQL / Redis。

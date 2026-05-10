@@ -1,5 +1,58 @@
 # LiteIM Progress
 
+## 2026-05-10 Step 22 Docker Compose / MySQL Init SQL
+
+本次进入 `Step 22：编写 Docker Compose 和 MySQL 初始化 SQL`，目标是为后续 MySQL / Redis 存储缓存实现准备可重复启动的本地开发环境。
+
+概念边界：
+
+- Docker Compose 只负责启动本地 MySQL / Redis。
+- MySQL init SQL 只建主线表和索引。
+- seed SQL 只写本地测试数据。
+- 本 Step 不实现 C++ MySQL/Redis client、DAO、连接池、业务服务，也不让网络 I/O 线程执行阻塞存储调用。
+
+已完成文件：
+
+- 新增 `docker/docker-compose.yml`。
+- 新增 `scripts/init_mysql.sql`。
+- 新增 `scripts/seed_test_data.sql`。
+- 新增 `tutorials/step22_docker_mysql.md`。
+- 更新 `README.md`，加入 MySQL / Redis 本地开发说明和目录布局。
+- 更新 `task_plan.md`、`findings.md` 和本文件。
+
+MySQL schema：
+
+- `users`
+- `friendships`
+- `chat_groups`
+- `group_members`
+- `messages`
+- `offline_messages`
+
+seed 数据：
+
+- 用户：`alice`、`bob`、`mira_bot`。
+- 群组：`dev_group`。
+- 示例私聊、群聊消息和 pending offline message 记录。
+
+验证：
+
+- `docker compose -f docker/docker-compose.yml config`：通过。
+- `LITEIM_MYSQL_PORT=33306 LITEIM_REDIS_PORT=36379 docker compose -p liteim-step22-verify -f docker/docker-compose.yml up -d --wait`：MySQL / Redis 均 healthy。
+- MySQL 查询验证：`SHOW TABLES` 返回 6 张表；`SHOW INDEX FROM messages` 包含 `idx_messages_history`、`idx_messages_sender`、`idx_messages_receiver`；seed 可查到 `alice`、`bob`、`mira_bot`、`dev_group` 和两条未投递离线消息。
+- Redis 验证：`redis-cli ping` 返回 `PONG`。
+- `LITEIM_MYSQL_PORT=33306 LITEIM_REDIS_PORT=36379 docker compose -p liteim-step22-verify -f docker/docker-compose.yml down -v`：临时验证容器和数据卷已清理。
+- `cmake --build build`：通过。
+- `ctest --test-dir build --output-on-failure`：181/181 通过。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，服务端收到 SIGTERM 后优雅退出。
+- `git diff --check`：通过。
+
+提交信息：
+
+```text
+feat(infra): add mysql redis docker environment
+```
+
 ## 2026-05-10 Step 21 Storage / Cache Interfaces
 
 本次进入 `Step 21：定义 IStorage / ICache 抽象`，目标是在接入真实 MySQL / Redis 前先建立业务层依赖的接口边界。

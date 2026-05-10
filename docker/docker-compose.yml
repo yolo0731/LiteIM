@@ -1,0 +1,44 @@
+name: liteim-dev
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${LITEIM_MYSQL_ROOT_PASSWORD:-liteim_root}
+      MYSQL_DATABASE: ${LITEIM_MYSQL_DATABASE:-liteim}
+      MYSQL_USER: ${LITEIM_MYSQL_USER:-liteim}
+      MYSQL_PASSWORD: ${LITEIM_MYSQL_PASSWORD:-liteim_dev}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+08:00
+    ports:
+      - "127.0.0.1:${LITEIM_MYSQL_PORT:-33060}:3306"
+    volumes:
+      - liteim_mysql_data:/var/lib/mysql
+      - ../scripts/init_mysql.sql:/docker-entrypoint-initdb.d/01-init_mysql.sql:ro
+      - ../scripts/seed_test_data.sql:/docker-entrypoint-initdb.d/02-seed_test_data.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u${LITEIM_MYSQL_USER:-liteim} -p${LITEIM_MYSQL_PASSWORD:-liteim_dev} --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+
+  redis:
+    image: redis:7.2-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:${LITEIM_REDIS_PORT:-63790}:6379"
+    volumes:
+      - liteim_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  liteim_mysql_data:
+  liteim_redis_data:
