@@ -352,7 +352,7 @@ defer Channel destruction
 - 心跳超时。
 - 输出缓冲区高水位关闭策略。
 
-其中输出缓冲区高水位关闭策略已在 Step 17 后 review hardening 中补齐基础版本，并在 Step 20 扩展为可配置阈值；心跳、业务路由和更细的限流策略仍属于后续 Step。
+其中输出缓冲区高水位关闭策略已在 Step 17 后 review hardening 中补齐基础版本，并在 Step 20 扩展为可配置阈值；heartbeat timeout 已在 Step 18 通过 `timerfd` / `TimerManager` 接入；业务路由和更细的限流策略仍属于后续 Step。
 
 ## 9. 测试
 

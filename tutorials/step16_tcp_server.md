@@ -342,9 +342,9 @@ handleNewConnection(UniqueFd fd)
 - I/O loop 可能在关闭连接时删除 session。
 - 外部线程可能同时调用 `sessionCount()` 或 `sendToSession()`。
 
-## 5. 本 Step 不做什么
+## 5. 本 Step 当时不做什么
 
-本 Step 不实现：
+Step 16 的目标只是把多 Reactor 网络底座打通，所以当时不实现：
 
 - business `ThreadPool`
 - 登录态
@@ -352,10 +352,10 @@ handleNewConnection(UniqueFd fd)
 - `MessageRouter`
 - MySQL
 - Redis
-- 心跳超时
-- 输出缓冲区高水位回压
+- 心跳超时；后续 Step 18 已经通过 `timerfd` / `TimerManager` 接入 idle session cleanup。
+- 输出缓冲区高水位回压；后续 review hardening 和 Step 20 已经实现默认 4MB、配置键 `server.output_high_water_mark_bytes` 和超限关闭。
 - CLI / Qt / benchmark / CI
-- `sendToUser()`；真实 user-session 绑定表会在登录态实现后再引入。
+- `sendToUser()`；当前 public API 仍不暴露这个占位接口，等登录态和真实 user-session 绑定表实现后再引入。
 
 这些留给后续 Step。
 

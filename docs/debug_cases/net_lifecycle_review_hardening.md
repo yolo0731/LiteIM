@@ -117,7 +117,7 @@ TEST(ChannelTest, ErrorWithReadableEventInvokesErrorThenRead)
 
 ### 5. Acceptor close 在 loop 退出竞态下可能永久等待
 
-外部评审建议把 `Acceptor::close()` 改成 owner-loop-only。LiteIM 当前已经有测试覆盖的跨线程 close 契约，因此没有直接改掉这个契约。但这个建议暴露了当前实现中一个真实竞态：
+外部评审建议把 `Acceptor::close()` 改成 owner-loop-only。第一轮 hardening 当时已有测试覆盖跨线程 close 契约，因此没有在那一轮直接改掉这个契约。但这个建议暴露了当时实现中的一个真实竞态：
 
 ```text
 非 loop 线程调用 Acceptor::close()
@@ -128,9 +128,9 @@ TEST(ChannelTest, ErrorWithReadableEventInvokesErrorThenRead)
   -> future 永远不会被 fulfilled
 ```
 
-修复：
+当时修复：
 
-- 保留跨线程 close 契约。
+- 保留当时的跨线程 close 契约。
 - close task 排队后，用短间隔等待。
 - 如果 future ready 前 `EventLoop::isStopped()` 变为 true，就执行 stopped-loop fallback cleanup 并返回。
 
@@ -190,4 +190,4 @@ git diff --check
 
 一个简洁说法：
 
-> 外部评审后，我没有盲目接受所有风格建议，而是先用回归测试复现了 5 个真实问题：`EventLoopThread` 自线程 stop 的生命周期问题、`Acceptor` queued close 在 loop 退出竞态下永久等待、`Session` 缺少输出缓冲高水位、`TcpServer` 用 fd 当 session id 导致 fd 复用误删风险，以及 `Channel` 遇到 `EPOLLERR | EPOLLIN` 时先 error 后直接返回导致 read 被吞掉。修复上，我把 `EventLoopThread` 状态清理移动到 `threadFunc()` 退出路径，保留 `Acceptor` 跨线程 close 契约但增加 stopped-loop fallback，给 `Session` 增加 4MB 高水位关闭路径，给 `TcpServer` 改成单调递增逻辑 session id，并让 `Channel` 在 error callback 后继续处理同一轮 read 事件。对于 `ThreadPool::stop()` 和大范围变量合并，我保留当前已有测试覆盖的契约，把它们记录为后续独立设计问题。
+> 外部评审后，我没有盲目接受所有风格建议，而是先用回归测试复现了 5 个真实问题：`EventLoopThread` 自线程 stop 的生命周期问题、`Acceptor` queued close 在 loop 退出竞态下永久等待、`Session` 缺少输出缓冲高水位、`TcpServer` 用 fd 当 session id 导致 fd 复用误删风险，以及 `Channel` 遇到 `EPOLLERR | EPOLLIN` 时先 error 后直接返回导致 read 被吞掉。第一轮 hardening 中，我把 `EventLoopThread` 状态清理移动到 `threadFunc()` 退出路径，当时先给 `Acceptor` 跨线程 close 增加 stopped-loop fallback，给 `Session` 增加 4MB 高水位关闭路径，给 `TcpServer` 改成单调递增逻辑 session id，并让 `Channel` 在 error callback 后继续处理同一轮 read 事件。后续 cleanup 又把 `Acceptor::close()` 收紧为 owner-loop-only，删除 `EventLoop::isStopped()` / `loop_exited_`，并把 `Session` 生命周期状态收敛成 `SessionState`。

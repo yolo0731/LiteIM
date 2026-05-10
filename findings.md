@@ -8,6 +8,27 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-10 Markdown Documentation Alignment Findings
+
+本次只做 Markdown 文档对齐，不改 C++ 源码、CMake 或测试。
+
+已经确认并采用的文档口径：
+
+- 当前面向读者的教程和总结必须以当前 header、实现代码和 `/home/yolo/jianli/PROJECT_MEMORY.md` 为准。
+- 历史记录保留历史事实，不为了减少 `rg` 命中而大规模改写；但旧实现不能写成当前事实。
+- `Acceptor::close()` 当前是 owner-loop-only；非 owner 线程直接调用会 `std::terminate()`，跨线程关闭应由上层先投递回 base loop。
+- `EventLoop::isStopped()` 和 `loop_exited_` 已删除；Reactor-owned 对象通过 owner-loop-only stop / close / destroy 契约保证生命周期。
+- public `Session::fd()`、`TcpServer::sendToUser()` 占位接口、`kSessionOutputHighWaterMark` 兼容别名已删除。
+- `Session` 当前用 `SessionState { kNew, kStarted, kClosing, kClosed }` 表达生命周期。
+- `TcpServer::sendToSession()` 对找不到 session、空 session、调用当下已关闭 session 都返回 `NotFound`。
+- `Session` 读路径是 socket read 后直接喂 `FrameDecoder`；不再经过 `Session::input_buffer_`。
+- `last_active_time` 只表示收到完整且合法的入站 Packet 的时间；服务端出站写不刷新活跃时间。
+
+本次复查结论：
+
+- `README.md`、`tutorials/step12_event_loop.md`、`tutorials/step13_acceptor.md`、`tutorials/step20_backpressure.md`、`/home/yolo/jianli/AGENTS.md`、`/home/yolo/jianli/CLAUDE.md` 和 `/home/yolo/jianli/PROJECT_MEMORY.md` 当前口径不需要修改。
+- `tutorials/step09_reactor_interfaces.md`、`tutorials/step14_session.md`、`tutorials/step16_tcp_server.md` 和 `docs/debug_cases/net_lifecycle_review_hardening.md` 有当前读者容易误解的旧表述，需要对齐。
+
 ## 2026-05-10 Network Lifecycle/API Cleanup Findings
 
 本次执行独立网络层 cleanup/refactor，不命名为 Step 20.1，不进入 Step 21。

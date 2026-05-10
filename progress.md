@@ -1,5 +1,40 @@
 # LiteIM Progress
 
+## 2026-05-10 Markdown Documentation Alignment
+
+本次只做 Markdown 文档对齐，目标是把当前面向读者的文档同步到 `9dd671b refactor(net): simplify owner loop cleanup and session state` 后的代码状态。
+
+已修改：
+
+- `tutorials/step09_reactor_interfaces.md`：删除当前 `EventLoop` 接口说明里的 `isStopped()`，补齐真实成员字段，并说明 `EventLoop` 不再暴露 stopped 查询给外部清理路径。
+- `docs/debug_cases/net_lifecycle_review_hardening.md`：保留 2026-05-09 第一轮 hardening 的历史记录，但明确当时的跨线程 `Acceptor::close()` 契约已被后续 owner-loop-only cleanup 取代，并更新面试回答。
+- `tutorials/step16_tcp_server.md`：把“不做心跳超时 / 输出高水位 / sendToUser”限定为 Step 16 当时边界，并说明后续 Step 的当前状态。
+- `tutorials/step14_session.md`：补充 heartbeat timeout 已在 Step 18 通过 `timerfd` / `TimerManager` 接入，避免继续写成当前后续项。
+- `task_plan.md`、`findings.md`、`progress.md`：顶部追加本次 Markdown alignment 过程记录。
+
+已复查但未修改：
+
+- `README.md`
+- `tutorials/step12_event_loop.md`
+- `tutorials/step13_acceptor.md`
+- `tutorials/step20_backpressure.md`
+- `/home/yolo/jianli/AGENTS.md`
+- `/home/yolo/jianli/CLAUDE.md`
+- `/home/yolo/jianli/PROJECT_MEMORY.md`
+
+验证：
+
+- `git diff --check`：通过。
+- `rg -n 'isStopped\(|loop_exited_|kSessionOutputHighWaterMark|Session::fd\(|TcpServer::sendToUser\(' include src tests server`：无输出，源码旧 API 残留检查通过。
+- Markdown 漂移扫描：仍命中的内容是本次新增的当前说明、AGENTS/CLAUDE/PROJECT_MEMORY 的允许规则，以及 `findings.md` / `progress.md` / debug case 中明确作为历史记录保留的旧阶段流水；未发现 README 或当前教程继续把旧 API 写成当前事实。
+- 本次未运行 `cmake --build build` 或 `ctest`，因为没有修改 C++、CMake 或测试文件。
+
+提交信息：
+
+```text
+docs(net): align markdown with current lifecycle APIs
+```
+
 ## 2026-05-10 Network Lifecycle/API Cleanup
 
 本次按用户给定计划执行独立网络层 cleanup/refactor，不命名为 Step 20.1，不进入 Step 21。

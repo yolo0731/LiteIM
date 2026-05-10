@@ -92,8 +92,10 @@ src/net/EventLoop.cpp
 - `runInLoop()` 同线程立即执行，跨线程入队。
 - `queueInLoop()` 总是入队，必要时用 eventfd 唤醒。
 - `updateChannel()` 和 `removeChannel()` 是 Channel 到 Epoller 的桥。
-- `isInLoopThread()`、`isStopped()`、`assertInLoopThread()` 明确线程归属。
-- 关键成员包括 `epoller_`、`wakeup_fd_`、`wakeup_channel_`、`pending_tasks_`、`mutex_` 和线程状态原子变量。
+- `isInLoopThread()`、`assertInLoopThread()` 明确线程归属。
+- 关键成员包括 `looping_`、`quit_`、`thread_id_`、`epoller_`、`wakeup_fd_`、`wakeup_channel_`、`pending_tasks_`、`mutex_` 和 `calling_pending_tasks_`。
+
+后续 cleanup 已删除 `EventLoop::isStopped()` 和 `loop_exited_`。`EventLoop` 不再把 stopped 查询暴露给外部清理路径；`Acceptor`、`TcpServer`、`TimerManager`、`SignalWatcher` 这类 Reactor-owned 对象通过 owner-loop-only 契约保证 stop / close / destroy 都发生在所属 loop。
 
 ## Reactor 接口层的作用场景和运行流程
 
