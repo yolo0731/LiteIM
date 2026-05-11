@@ -28,6 +28,7 @@ add_executable(liteim_tests
     concurrency/thread_pool_header_test.cpp
     concurrency/thread_pool_test.cpp
     storage/storage_interface_test.cpp
+    storage/mysql_connection_test.cpp
     cache/cache_interface_test.cpp
     timer/timer_heap_header_test.cpp
     timer/timer_heap_test.cpp

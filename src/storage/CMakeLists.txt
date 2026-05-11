@@ -1,13 +1,19 @@
-add_library(liteim_storage INTERFACE)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(MYSQLCLIENT REQUIRED IMPORTED_TARGET mysqlclient)
 
-target_compile_features(liteim_storage INTERFACE cxx_std_17)
+add_library(liteim_storage STATIC
+    MySqlConnection.cpp
+)
+
+target_compile_features(liteim_storage PUBLIC cxx_std_17)
 
 target_include_directories(liteim_storage
-    INTERFACE
+    PUBLIC
         ${PROJECT_SOURCE_DIR}/include
 )
 
 target_link_libraries(liteim_storage
-    INTERFACE
+    PUBLIC
         liteim_base
+        PkgConfig::MYSQLCLIENT
 )

@@ -8,6 +8,28 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-11 Step 23 MySqlConnection / PreparedStatement Findings
+
+本次进入 `Step 23：实现 MySqlConnection 和 PreparedStatement`，只封装 MySQL C API 的连接和 prepared statement，不实现连接池、DAO、业务服务或 Redis。
+
+已经确认并采用的设计：
+
+- `liteim_storage` 从 header-only interface target 升级为静态库，继续暴露 `IStorage` / DTO，同时新增真实 MySQL C API 封装。
+- 通过 `pkg-config mysqlclient` 查找系统 MySQL client 头文件和库，避免依赖 `mysql_config` 当前指向的 Anaconda 路径。
+- `MySqlConnection` 拥有一个 `MYSQL*`，负责 `connect()`、`ping()`、`close()` 和析构关闭；对象不可拷贝，可移动。
+- `PreparedStatement` 拥有一个 `MYSQL_STMT*`，负责 `prepare()`、`bindInt64()`、`bindString()`、`executeUpdate()`、`executeQuery()` 和析构关闭。
+- 查询结果用 `MySqlQueryResult` 输出参数承载，字段值用 `std::optional<std::string>` 表达 SQL NULL；继续沿用项目当前 `Status + output parameter` 风格，不引入 `Result<T>`。
+- 所有用户输入都通过 `MYSQL_BIND` 参数绑定，不拼接 SQL 字符串。
+- MySQL 连接对象不加锁，不跨线程共享；后续 Step 24 由连接池控制连接借出和归还。
+- 集成测试使用 `Config::defaults()` 连接 Docker MySQL；本地 MySQL 不可用时测试 skip，避免普通无 Docker 环境直接失败。
+
+本次不采用/不改：
+
+- 不实现 `MySqlPool` / `ConnectionGuard`。
+- 不实现 `UserDao`、`MessageDao`、好友/群组 DAO。
+- 不接入 `ThreadPool`、`TcpServer`、AuthService 或 ChatService。
+- 不实现 Redis client 或 RedisPool。
+
 ## 2026-05-11 Step 22 Local Dev Dependency Alignment Findings
 
 本次在 Step 22 已完成基础上调整本地开发依赖口径，不进入 Step 23，也不实现 C++ MySQL / Redis client。

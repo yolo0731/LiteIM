@@ -1,5 +1,55 @@
 # LiteIM Progress
 
+## 2026-05-11 Step 23 MySqlConnection / PreparedStatement
+
+本次进入 `Step 23：实现 MySqlConnection 和 PreparedStatement`，目标是封装 MySQL C API，为后续连接池和 DAO 层提供最底层的连接与 prepared statement 能力。
+
+概念边界：
+
+- `MySqlConnection` 只负责单连接 RAII、连接、ping 和关闭。
+- `PreparedStatement` 只负责 SQL prepare、参数绑定、执行更新和执行查询。
+- `MySqlQueryResult` 用输出参数保存列名和行数据，不引入 `Result<T>`。
+- 本 Step 不实现连接池、DAO、AuthService、ChatService、Redis client，也不让网络 I/O 线程访问 MySQL。
+
+已完成代码：
+
+- 新增 `include/liteim/storage/MySqlConnection.hpp`。
+- 新增 `src/storage/MySqlConnection.cpp`。
+- `src/storage/CMakeLists.txt` 从 header-only interface target 改为静态库，并通过 `pkg-config mysqlclient` 链接 MySQL C API。
+- 新增 `tests/storage/mysql_connection_test.cpp`。
+- `tests/CMakeLists.txt` 接入 Step 23 测试。
+
+新增测试：
+
+- `MySqlConnectionTest.HeaderIsSelfContained`
+- `MySqlIntegrationTest.ConnectsAndPingsLocalMySql`
+- `MySqlIntegrationTest.PreparedStatementExecutesSimpleSelect`
+- `MySqlIntegrationTest.ExecuteUpdateAndQueryRoundTripSpecialCharacters`
+- `MySqlIntegrationTest.InvalidSqlReturnsErrorStatus`
+
+已完成文档同步：
+
+- README 增加 MySQL C API wrapper、mysqlclient 构建依赖和 MySQL 集成测试说明。
+- 新增 `tutorials/step23_mysql_connection.md`。
+- 更新 `task_plan.md`、`findings.md` 和本文件。
+
+验证：
+
+- RED：新增测试后首次 `cmake --build build` 按预期失败，错误为缺少 `liteim/storage/MySqlConnection.hpp`。
+- `cmake --build build`：通过。
+- `ctest --test-dir build -R "MySqlConnectionTest|MySqlIntegrationTest|StorageInterfaceTest" --output-on-failure`：7/7 通过。
+- `docker compose -f docker/docker-compose.yml ps`：MySQL 8.0 / Redis 7.2 容器均 healthy。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，服务端收到 SIGTERM 后优雅退出。
+- `ctest --test-dir build --output-on-failure`：186/186 通过。
+- `git diff --check -- README.md task_plan.md findings.md progress.md tutorials/step23_mysql_connection.md tests/CMakeLists.txt tests/storage/mysql_connection_test.cpp include/liteim/storage/MySqlConnection.hpp src/storage/CMakeLists.txt src/storage/MySqlConnection.cpp`：通过。
+- `ldd build/tests/liteim_tests | rg -n "mysql|maria|ssl|crypto|anaconda"`：确认链接到系统 `/lib/x86_64-linux-gnu/libmysqlclient.so.21`，没有链接 Anaconda mysqlclient。
+
+提交信息：
+
+```text
+feat(storage): add mysql connection and prepared statement
+```
+
 ## 2026-05-11 Step 22 Local Dev MySQL 8.0 / Password Alignment
 
 本次在已完成的 Step 22 基础上更新本地开发依赖，不进入 Step 23。

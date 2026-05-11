@@ -31,6 +31,7 @@ The workspace documentation roles are now separated:
 
 | Phase | Status | Notes |
 | --- | --- | --- |
+| Step 23 MySqlConnection and PreparedStatement | done | Added `MySqlConnection`, `PreparedStatement`, `MySqlQueryResult`, real MySQL C API linking through `pkg-config mysqlclient`, and Docker-backed integration tests for ping, prepared select, insert/query, bad SQL, and special-character binding. No MySQL pool, DAO, Redis client, or runtime server integration introduced. |
 | Step 22 Docker Compose and MySQL init SQL | done | Added `docker/docker-compose.yml`, MySQL schema init SQL, idempotent seed data with `alice` / `bob` / `mira_bot` / `dev_group`, README local dependency docs, Step 22 tutorial, and verified real MySQL/Redis startup with a temporary Compose project. Local development now uses MySQL 8.0 series on host port `33060`, Redis on `63790`, and password `6` for MySQL/Redis dev credentials. No C++ MySQL/Redis client, DAO, or runtime server integration introduced. |
 | Step 21 storage/cache interfaces | done | Added `IStorage` / `ICache` abstractions, DTO type headers, header-only CMake interface targets, fake/null interface tests, README/tutorial/planning docs. No MySQL/Redis client, DAO, business service, or runtime dependency introduced. |
 | Markdown documentation alignment | done | Markdown-only pass against `9dd671b`: aligned current-facing docs with owner-loop-only `Acceptor::close()`, removed `EventLoop::isStopped()` / stale public APIs, `SessionState`, direct `FrameDecoder` read path, heartbeat activity semantics, and `sendToSession()` NotFound semantics. `git diff --check` passed; source stale-API scan had no matches; Markdown scan leaves only allowed history/current notes. |
@@ -202,7 +203,8 @@ Current route status:
 - Optional Step 18.7 `Session` state consolidation is complete as part of the independent network cleanup.
 - Step 21 `IStorage / ICache abstractions` is complete.
 - Step 22 `Docker Compose and MySQL init SQL` is complete.
-- Default next implementation step is Step 23 `MySqlConnection and PreparedStatement`.
+- Step 23 `MySqlConnection and PreparedStatement` is complete.
+- Default next implementation step is Step 24 `MySqlPool and ConnectionGuard`.
 
 LiteIM phases:
 
