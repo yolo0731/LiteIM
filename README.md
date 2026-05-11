@@ -77,8 +77,8 @@ Important boundaries:
 - `liteim_net`: `Buffer`, `SocketUtil`, `UniqueFd`, `Channel`, `Epoller`, `EventLoop`, `Acceptor`, `Session`, `EventLoopThread`, `EventLoopThreadPool`, `SignalWatcher`, and `TcpServer`.
 - `liteim_concurrency`: fixed-size business `ThreadPool`.
 - `liteim/timer`: `TimerHeap` and `TimerManager`, linked into the network layer because `TimerManager` depends on `EventLoop` and `Channel`.
-- `liteim_storage`: storage DTOs, the `IStorage` interface, `MySqlConnection`, `PreparedStatement`, `MySqlQueryResult`, `MySqlPool`, `ConnectionGuard`, `UserDao`, `AuthDao`, `MessageDao`, `OfflineMessageDao`, `FriendDao`, and `GroupDao` for future MySQL-backed users, friends, groups, messages, offline messages, and history.
-- `liteim_cache`: cache DTOs, the `ICache` interface, `RedisClient`, `RedisPool`, `RedisConnectionGuard`, `OnlineStatusCache`, `UnreadCounter`, and `LoginRateLimiter` for Redis-backed online sessions, unread counters, and login failure limiting.
+- `liteim_storage`: storage DTOs, the `IStorage` interface, `MySqlConnection`, `PreparedStatement`, `MySqlQueryResult`, `MySqlPool`, `ConnectionGuard`, `UserDao`, `AuthDao`, `MessageDao`, `OfflineMessageDao`, `FriendDao`, `GroupDao`, and `MySqlStorage` for MySQL-backed users, public friend profiles, groups, messages, offline messages, and history.
+- `liteim_cache`: cache DTOs, the `ICache` interface, `RedisClient`, `RedisPool`, `RedisConnectionGuard`, `OnlineStatusCache`, `UnreadCounter`, `LoginRateLimiter`, and `RedisCache` for Redis-backed online sessions, unread counters, and login failure limiting.
 
 ## Build And Test
 
@@ -123,7 +123,7 @@ server.output_high_water_mark_bytes = 4194304
 
 ## Local MySQL And Redis
 
-Step 22 adds the local development database environment for storage/cache work. Step 23-27 use the MySQL side for storage tests, Step 28 adds a blocking hiredis-based Redis client/pool, Step 29 adds Redis online-status cache tests, and Step 30 adds Redis unread-counter and login-limiter tests. The C++ TCP server still does not call MySQL or Redis from Reactor I/O threads.
+Step 22 adds the local development database environment for storage/cache work. Step 23-27 use the MySQL side for storage tests, Step 28 adds a blocking hiredis-based Redis client/pool, Step 29 adds Redis online-status cache tests, and Step 30 adds Redis unread-counter and login-limiter tests. A small Pre-Step31 cleanup adds `MySqlStorage : IStorage`, `RedisCache : ICache`, unsigned MySQL binding for `BIGINT UNSIGNED`, public friend-profile DTOs, and a single MySQL transaction for message + offline-message writes. The C++ TCP server still does not call MySQL or Redis from Reactor I/O threads.
 
 Start MySQL and Redis:
 
@@ -183,11 +183,11 @@ Run tests:
 ctest --test-dir build --output-on-failure
 ```
 
-The Step 23-27 MySQL integration tests and Step 28-30 Redis integration tests use `Config::defaults()`, so they target the local Docker endpoints shown above. If those containers are not running, integration tests skip instead of failing unrelated unit-test runs. Start the local dependency stack first when validating the storage/cache layer:
+The Step 23-27 MySQL integration tests, Pre-Step31 `MySqlStorage` tests, and Step 28-30 Redis integration tests use `Config::defaults()`, so they target the local Docker endpoints shown above. If those containers are not running, integration tests skip instead of failing unrelated unit-test runs. Start the local dependency stack first when validating the storage/cache layer:
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d --wait
-ctest --test-dir build -R "MySql|UserDao|MessageDao|FriendGroupDao|Redis|OnlineStatusCache|UnreadCounter|LoginRateLimiter|Step30CacheIntegrationTest" --output-on-failure
+ctest --test-dir build -R "MySql|UserDao|MessageDao|FriendGroupDao|MySqlStorage|Redis|OnlineStatusCache|UnreadCounter|LoginRateLimiter|RedisCache|Step30CacheIntegrationTest" --output-on-failure
 ```
 
 Useful repository checks:
@@ -263,7 +263,7 @@ LiteIM is being built in phases:
 | Phase | Goal |
 | --- | --- |
 | Network base | CMake, GoogleTest, base utilities, TLV protocol, frame decoder, Buffer, socket helpers, Reactor interfaces, `Epoller`, `Channel`, `EventLoop`, `Acceptor`, `Session`, multi-Reactor `TcpServer`, business `ThreadPool`, timerfd heartbeat cleanup, and signalfd shutdown. |
-| Storage and cache | MySQL C API wrapper, prepared statement wrapper, MySQL connection pool, RAII connection guard, user/auth DAO layer, message/offline-message DAO layer, Redis client/pool, online status cache, unread counters, and login rate limiting. |
+| Storage and cache | MySQL C API wrapper, prepared statement wrapper with signed/unsigned 64-bit binding, MySQL connection pool, RAII connection guard, user/auth DAO layer, message/offline-message DAO layer, `MySqlStorage` adapter, Redis client/pool, online status cache, unread counters, login rate limiting, and `RedisCache` adapter. |
 | IM services | Register/login, friend list, private chat, group chat, offline messages, history loading, heartbeat protocol, graceful shutdown, and BotGateway routing. |
 | Tooling and validation | CLI client, Python E2E tests, benchmark tooling, broader GoogleTest/gMock coverage, ASan/UBSan, and CI. |
 | Demo clients | Qt Widgets chat client with login, conversation list, message bubbles, group chat, AI Bot entry, heartbeat state, and disconnect feedback. |

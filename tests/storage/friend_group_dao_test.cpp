@@ -153,19 +153,21 @@ TEST_F(FriendGroupDaoIntegrationTest, AddFriendshipCreatesBidirectionalRelations
     const auto add_status = friend_dao->addFriendship(alice.user_id, bob.user_id);
     ASSERT_TRUE(add_status.isOk()) << add_status.message();
 
-    std::vector<liteim::UserRecord> alice_friends;
+    std::vector<liteim::UserProfileRecord> alice_friends;
     const auto alice_status = friend_dao->getFriends(alice.user_id, alice_friends);
     ASSERT_TRUE(alice_status.isOk()) << alice_status.message();
     ASSERT_EQ(alice_friends.size(), 1U);
     EXPECT_EQ(alice_friends.front().user_id, bob.user_id);
     EXPECT_EQ(alice_friends.front().username, bob.username);
+    EXPECT_EQ(alice_friends.front().nickname, bob.nickname);
 
-    std::vector<liteim::UserRecord> bob_friends;
+    std::vector<liteim::UserProfileRecord> bob_friends;
     const auto bob_status = friend_dao->getFriends(bob.user_id, bob_friends);
     ASSERT_TRUE(bob_status.isOk()) << bob_status.message();
     ASSERT_EQ(bob_friends.size(), 1U);
     EXPECT_EQ(bob_friends.front().user_id, alice.user_id);
     EXPECT_EQ(bob_friends.front().username, alice.username);
+    EXPECT_EQ(bob_friends.front().nickname, alice.nickname);
 }
 
 TEST_F(FriendGroupDaoIntegrationTest, RepeatedAddFriendshipDoesNotCreateDuplicates) {
@@ -176,12 +178,12 @@ TEST_F(FriendGroupDaoIntegrationTest, RepeatedAddFriendshipDoesNotCreateDuplicat
     ASSERT_TRUE(friend_dao->addFriendship(alice.user_id, bob.user_id).isOk());
     ASSERT_TRUE(friend_dao->addFriendship(bob.user_id, alice.user_id).isOk());
 
-    std::vector<liteim::UserRecord> alice_friends;
+    std::vector<liteim::UserProfileRecord> alice_friends;
     ASSERT_TRUE(friend_dao->getFriends(alice.user_id, alice_friends).isOk());
     ASSERT_EQ(alice_friends.size(), 1U);
     EXPECT_EQ(alice_friends.front().user_id, bob.user_id);
 
-    std::vector<liteim::UserRecord> bob_friends;
+    std::vector<liteim::UserProfileRecord> bob_friends;
     ASSERT_TRUE(friend_dao->getFriends(bob.user_id, bob_friends).isOk());
     ASSERT_EQ(bob_friends.size(), 1U);
     EXPECT_EQ(bob_friends.front().user_id, alice.user_id);

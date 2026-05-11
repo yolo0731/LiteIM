@@ -22,6 +22,10 @@ Status invalidDeltaStatus() {
     return Status::error(ErrorCode::InvalidArgument, "unread counter delta must be greater than zero");
 }
 
+Status deltaTooLargeStatus() {
+    return Status::error(ErrorCode::InvalidArgument, "unread counter delta exceeds Redis signed integer range");
+}
+
 Status parseUnreadStatus() {
     return Status::error(ErrorCode::ParseError, "invalid unread counter value");
 }
@@ -96,6 +100,9 @@ Status UnreadCounter::incrUnread(const UnreadKey& key, std::uint64_t delta, std:
     }
     if (delta == 0) {
         return invalidDeltaStatus();
+    }
+    if (delta > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        return deltaTooLargeStatus();
     }
 
     RedisConnectionGuard guard;

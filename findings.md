@@ -8,6 +8,26 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-12 Pre-Step31 Storage / Cache Contract Cleanup Findings
+
+本次是 Step31 之前的独立项目小重构，不开启 `SessionManager`、`OnlineService`、AuthService 或 ChatService。
+
+已经确认的重构目标：
+
+- Step21 的 `IStorage` / `ICache` 需要真实 MySQL / Redis 聚合适配层，否则 Step31 之后业务层会被迫依赖具体 DAO/cache 组件。
+- `FriendDao::getFriends()` 不应该返回带 `password_hash` / `password_salt` 的 `UserRecord`；好友列表应返回公开资料 DTO。
+- MySQL schema 使用 `BIGINT UNSIGNED`，`PreparedStatement` 需要提供 `bindUInt64()`，避免 DAO 长期用 signed bind 检查绕过类型不一致。
+- 私聊/群聊业务需要一个 MySQL 事务边界覆盖 `messages` + `offline_messages`，Redis 未读数仍放在业务层提交后处理，不做跨 MySQL/Redis 事务。
+- `UnreadCounter::incrUnread()` 的 `delta` 需要限制在 Redis 有符号 64 位整数范围内。
+- `LoginRateLimiter` 当前是“允许检查”和“失败记录”分离的粗粒度滑动失败窗口；这轮先明确语义，不在小重构里实现完整登录原子判定脚本。
+- 这条结论覆盖早期 Step27 记录中的“`getFriends()` 返回完整 `UserRecord`”；当前接口已经改成 `UserProfileRecord`。
+
+本次明确不做：
+
+- 不推进 Step31，不接入 `TcpServer` runtime，不实现 `SessionManager` / `OnlineService`。
+- 不实现完整 AuthService、ChatService、业务协议处理或 Python/Qt 客户端。
+- 不引入 ORM、Redis 分布式锁、Pub/Sub、Streams 或跨资源事务。
+
 ## 2026-05-11 Step 30 UnreadCounter / LoginRateLimiter Findings
 
 本次进入 `Step 30：实现 UnreadCounter 和 LoginRateLimiter`，只实现 Redis 未读计数和登录失败限流，不实现 AuthService、ChatService、SessionManager、OnlineService 或网络层运行时接入。

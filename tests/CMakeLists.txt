@@ -33,10 +33,12 @@ add_executable(liteim_tests
     storage/user_dao_test.cpp
     storage/message_dao_test.cpp
     storage/friend_group_dao_test.cpp
+    storage/mysql_storage_test.cpp
     cache/cache_interface_test.cpp
     cache/redis_client_pool_test.cpp
     cache/online_status_cache_test.cpp
     cache/unread_login_cache_test.cpp
+    cache/redis_cache_test.cpp
     timer/timer_heap_header_test.cpp
     timer/timer_heap_test.cpp
     timer/timer_manager_header_test.cpp

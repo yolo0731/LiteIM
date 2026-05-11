@@ -1,5 +1,55 @@
 # LiteIM Progress
 
+## 2026-05-12 Pre-Step31 Storage / Cache Contract Cleanup
+
+本次按用户确认开启 Step31 前的独立项目小重构，不把它记成 Step31，也不实现 `SessionManager` / `OnlineService`。
+
+目标边界：
+
+- 补 `MySqlStorage : IStorage` 和 `RedisCache : ICache`，让 Step21 的抽象有真实可注入实现。
+- 将好友列表返回类型改成公开资料 DTO，避免把认证字段带到业务响应边界。
+- 给 `PreparedStatement` 补 `bindUInt64()`，对齐 MySQL `BIGINT UNSIGNED` schema。
+- 补 MySQL 消息保存 + 离线记录保存的统一事务入口，避免消息落库成功但离线投递记录失败。
+- 补未读计数 delta 的 Redis signed-int 范围校验，并把 LoginRateLimiter 的滑动失败窗口语义写清楚。
+
+当前状态：
+
+- 已完成项目总设计、planning 文件和现有 dirty diff 检查。
+- 已确认已有 dirty diff 只在 `MySqlConnection` 注释附近；后续如果触碰该文件，会保留既有变更，不无意回滚。
+- TDD RED：新增/更新测试后首次 `cmake --build build --target liteim_tests -j2` 按预期失败，错误集中在缺少 `UserProfileRecord`、`IStorage::saveMessageWithOfflineRecipients()` 和 `PreparedStatement::bindUInt64()`。
+
+已完成代码：
+
+- 新增 `include/liteim/storage/MySqlStorage.hpp` 和 `src/storage/MySqlStorage.cpp`，实现 `MySqlStorage : IStorage`。
+- 新增 `include/liteim/cache/RedisCache.hpp` 和 `src/cache/RedisCache.cpp`，实现 `RedisCache : ICache`。
+- 新增 `UserProfileRecord`，并将 `IStorage::getFriends()` / `FriendDao::getFriends()` 改为返回公开资料，不返回 `password_hash` / `password_salt`。
+- 新增 `PreparedStatement::bindUInt64()`，DAO 的 `BIGINT UNSIGNED` id 绑定改用 unsigned bind。
+- 新增 `MySqlStorage::saveMessageWithOfflineRecipients()`，在同一 MySQL 事务内写 `messages` 和 `offline_messages`；Redis 未读数仍由后续业务层在 MySQL commit 成功后处理。
+- `UnreadCounter::incrUnread()` 拒绝超过 Redis signed 64-bit integer 范围的 delta。
+
+新增/更新测试：
+
+- 更新 `StorageInterfaceTest`、`FriendGroupDaoIntegrationTest`、`MySqlIntegrationTest` 和 Step30 invalid-input 测试。
+- 新增 `MySqlStorageIntegrationTest`，覆盖真实 `IStorage` 适配、公开好友资料、消息 + 离线记录同事务提交和离线插入失败回滚。
+- 新增 `RedisCacheIntegrationTest`，覆盖真实 `ICache` 聚合在线状态、未读计数和登录失败限制。
+
+已完成文档同步：
+
+- 更新 README、Step21/23/25/26/27/30 教程、`task_plan.md`、`findings.md`、本文件和 `/home/yolo/jianli/PROJECT_MEMORY.md`。
+- 明确 `LoginRateLimiter` 当前是滑动失败窗口，`allow()` / `recordFailure()` 分离，后续 AuthService 如需强原子登录门禁再扩展 Lua 脚本。
+- 明确当前 v1 MySQL schema 没有 `users.user_type`，BotGateway 前若需要数据库级 normal/bot 区分，应单独做迁移。
+
+当前验证：
+
+- RED：`cmake --build build --target liteim_tests -j2` 首次按预期失败。
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -R "StorageInterfaceTest|MySqlConnection|FriendGroupDao|MySqlStorage|UnreadCounter|LoginRateLimiter|RedisCache|CacheInterfaceTest" --output-on-failure`：25/25 通过。
+- `ctest --test-dir build -R "MySqlIntegrationTest|MessageDaoIntegrationTest" --output-on-failure`：10/10 通过。
+- `cmake --build build -j2`：通过。
+- `ctest --test-dir build --output-on-failure`：253/253 通过。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过。
+- `git diff --check`：通过。
+
 ## 2026-05-11 Step 30 UnreadCounter / LoginRateLimiter
 
 本次正式开启 `Step 30：实现 UnreadCounter 和 LoginRateLimiter`。

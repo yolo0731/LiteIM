@@ -128,6 +128,14 @@ struct ConversationKey {
 - `username`、`password_hash`、`password_salt`、`nickname`：users 表字段。
 - `created_at_ms`：毫秒时间戳。
 
+`UserProfileRecord` 是可以给好友列表、搜索结果、群成员展示使用的公开资料：
+
+- `user_id`：用户 id。
+- `username`、`nickname`：公开展示字段。
+- `created_at_ms`：账号创建时间。
+
+它不包含 `password_hash` 和 `password_salt`。认证相关查询仍然使用完整 `UserRecord`，展示型接口不应把认证字段带到业务响应边界。
+
 接口层不做密码校验，也不做注册规则判断；这些留给后续 AuthService。
 
 ### 群组类型
@@ -206,10 +214,10 @@ Status findUserById(std::uint64_t user_id, UserRecord& user);
 
 ```cpp
 Status addFriendship(std::uint64_t user_id, std::uint64_t friend_id);
-Status getFriends(std::uint64_t user_id, std::vector<UserRecord>& friends);
+Status getFriends(std::uint64_t user_id, std::vector<UserProfileRecord>& friends);
 ```
 
-第一版好友关系是直接双向添加，不做好友申请审批。`getFriends()` 返回完整 `UserRecord`，方便上层组装联系人列表。
+第一版好友关系是直接双向添加，不做好友申请审批。`getFriends()` 返回公开 `UserProfileRecord`，不返回密码 hash 或 salt。
 
 ### 群组接口
 
@@ -226,6 +234,9 @@ Status getGroupMembers(std::uint64_t group_id, std::vector<GroupMemberRecord>& m
 
 ```cpp
 Status saveMessage(const MessageRecord& message, std::uint64_t& message_id);
+Status saveMessageWithOfflineRecipients(const MessageRecord& message,
+                                        const std::vector<std::uint64_t>& offline_user_ids,
+                                        MessageRecord& saved_message);
 Status saveOfflineMessage(std::uint64_t user_id, std::uint64_t message_id);
 Status getOfflineMessages(std::uint64_t user_id, std::vector<OfflineMessageRecord>& messages);
 Status markOfflineDelivered(std::uint64_t user_id, const std::vector<std::uint64_t>& message_ids);
@@ -233,6 +244,7 @@ Status getHistory(const HistoryQuery& query, std::vector<MessageRecord>& message
 ```
 
 - `saveMessage()` 负责持久化消息并返回消息 id。
+- `saveMessageWithOfflineRecipients()` 在同一个 MySQL 事务中保存 `messages` 行和多个 `offline_messages` 行；Redis 未读计数仍由业务层在事务成功后处理。
 - `saveOfflineMessage()` 只保存“某用户待投递某消息”的关系。
 - `getOfflineMessages()` 只拉取 pending 离线消息。
 - `markOfflineDelivered()` 标记已投递，避免重复推送。
@@ -412,6 +424,7 @@ if (!status.isOk()) {
 - Step 23-24 先实现 MySQL connection 和 pool。
 - Step 25-27 实现用户、消息、好友、群组 DAO。
 - Step 28-30 实现 Redis client、在线状态、未读计数和登录限制。
+- Pre-Step31 小重构补 `MySqlStorage : IStorage` 和 `RedisCache : ICache` 两个聚合适配层，让业务层可以注入统一接口，同时保留 DAO/cache 组件的可测试边界。
 
 这让每个 Step 都有明确边界，也便于测试单个 DAO/cache。
 
@@ -425,6 +438,7 @@ if (!status.isOk()) {
 - `CacheTypes.hpp` / `ICache.hpp` 头文件可以独立 include。
 - `FakeStorage` 可以实现 `IStorage`，证明接口可替换。
 - `NullCache` 可以实现 `ICache`，证明后续业务测试可以用轻量测试替身。
+- Pre-Step31 后新增 `MySqlStorage` / `RedisCache` 集成测试，证明真实 MySQL / Redis 适配层可以通过统一接口使用。
 - CMake target 能被测试目标链接。
 
 ## 验证命令
@@ -440,7 +454,7 @@ git diff --check
 
 可以这样说：
 
-> Step 21 先把 IM 业务需要的持久化和缓存能力抽象出来。持久化接口覆盖用户、好友、群组、消息、离线消息和历史查询，缓存接口覆盖在线状态、未读计数和登录失败限制。接口统一返回 `Status`，结果用输出参数，不暴露 MySQL / Redis 具体类型。这样后续业务 service 可以依赖稳定边界，真实阻塞 I/O 放到 business 线程池执行，网络 I/O 线程只负责 Reactor 和连接读写。
+> Step 21 先把 IM 业务需要的持久化和缓存能力抽象出来。持久化接口覆盖用户、好友公开资料、群组、消息、离线消息和历史查询，缓存接口覆盖在线状态、未读计数和登录失败限制。接口统一返回 `Status`，结果用输出参数，不暴露 MySQL / Redis 具体类型。Pre-Step31 小重构补上真实 `MySqlStorage` / `RedisCache` 聚合适配层，让后续业务 service 可以依赖稳定边界，真实阻塞 I/O 放到 business 线程池执行，网络 I/O 线程只负责 Reactor 和连接读写。
 
 ## 提交信息
 

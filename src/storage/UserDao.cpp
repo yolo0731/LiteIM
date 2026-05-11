@@ -4,7 +4,6 @@
 #include "liteim/storage/MySqlConnection.hpp"
 #include "liteim/storage/MySqlPool.hpp"
 
-#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -110,10 +109,7 @@ Status rowToUserRecord(const MySqlRow& row, UserRecord& user) {
 }
 
 Status bindUserId(PreparedStatement& statement, std::uint64_t user_id) {
-    if (user_id > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
-        return Status::error(ErrorCode::InvalidArgument, "user_id exceeds supported MySQL signed bind range");
-    }
-    return statement.bindInt64(0, static_cast<std::int64_t>(user_id));
+    return statement.bindUInt64(0, user_id);
 }
 
 Status querySingleUser(PreparedStatement& statement, UserRecord& user) {

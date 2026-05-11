@@ -35,8 +35,8 @@ public:
         return liteim::Status::ok();
     }
 
-    liteim::Status getFriends(std::uint64_t, std::vector<liteim::UserRecord>& friends) override {
-        friends.push_back(liteim::UserRecord{7, "friend", "hash", "salt", "Friend", 100});
+    liteim::Status getFriends(std::uint64_t, std::vector<liteim::UserProfileRecord>& friends) override {
+        friends.push_back(liteim::UserProfileRecord{7, "friend", "Friend", 100});
         return liteim::Status::ok();
     }
 
@@ -63,6 +63,14 @@ public:
 
     liteim::Status saveMessage(const liteim::MessageRecord&, std::uint64_t& message_id) override {
         message_id = 1001;
+        return liteim::Status::ok();
+    }
+
+    liteim::Status saveMessageWithOfflineRecipients(const liteim::MessageRecord&,
+                                                    const std::vector<std::uint64_t>& offline_user_ids,
+                                                    liteim::MessageRecord& saved_message) override {
+        saved_message.message_id = 1001;
+        saved_message.receiver_id = offline_user_ids.empty() ? 7 : offline_user_ids.front();
         return liteim::Status::ok();
     }
 
@@ -114,7 +122,7 @@ TEST(StorageInterfaceTest, CanBeImplementedByFakeStorage) {
     EXPECT_EQ(user.user_id, 42U);
     EXPECT_EQ(user.username, "alice");
 
-    std::vector<liteim::UserRecord> friends;
+    std::vector<liteim::UserProfileRecord> friends;
     const auto friends_status = interface.getFriends(user.user_id, friends);
     ASSERT_TRUE(friends_status.isOk()) << friends_status.message();
     ASSERT_EQ(friends.size(), 1U);
@@ -126,4 +134,12 @@ TEST(StorageInterfaceTest, CanBeImplementedByFakeStorage) {
         message_id);
     ASSERT_TRUE(save_status.isOk()) << save_status.message();
     EXPECT_EQ(message_id, 1001U);
+
+    liteim::MessageRecord saved_message;
+    const auto combined_status = interface.saveMessageWithOfflineRecipients(
+        liteim::MessageRecord{0, {liteim::ConversationType::kPrivate, 7}, 42, 7, "offline", 500},
+        {7},
+        saved_message);
+    ASSERT_TRUE(combined_status.isOk()) << combined_status.message();
+    EXPECT_EQ(saved_message.message_id, 1001U);
 }

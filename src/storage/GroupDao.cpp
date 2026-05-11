@@ -4,7 +4,6 @@
 #include "liteim/storage/MySqlConnection.hpp"
 #include "liteim/storage/MySqlPool.hpp"
 
-#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -55,10 +54,6 @@ Status validateId(std::uint64_t id, const std::string& field_name) {
     if (id == 0U) {
         return Status::error(ErrorCode::InvalidArgument, field_name + " must not be zero");
     }
-    if (id > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
-        return Status::error(ErrorCode::InvalidArgument,
-                             field_name + " exceeds supported MySQL signed bind range");
-    }
     return Status::ok();
 }
 
@@ -70,7 +65,7 @@ Status bindId(PreparedStatement& statement,
     if (!validate_status.isOk()) {
         return validate_status;
     }
-    return statement.bindInt64(index, static_cast<std::int64_t>(id));
+    return statement.bindUInt64(index, id);
 }
 
 void rollbackSilently(MySqlConnection& connection) noexcept {

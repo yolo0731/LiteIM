@@ -31,6 +31,7 @@ The workspace documentation roles are now separated:
 
 | Phase | Status | Notes |
 | --- | --- | --- |
+| Pre-Step31 storage/cache contract cleanup | done | Independent project refactor before Step31. Added `MySqlStorage : IStorage`, `RedisCache : ICache`, `UserProfileRecord`, unsigned MySQL `bindUInt64()`, one MySQL transaction for message + offline rows, unread delta signed-range validation, tests/docs sync, and kept default next step as Step31. |
 | Step 30 UnreadCounter and LoginRateLimiter | done | Added Redis-backed `UnreadCounter` and `LoginRateLimiter` over `RedisPool`, with invalid-input unit tests, Docker-backed Redis integration tests, README/tutorial/planning docs, and full CTest verification. No AuthService, ChatService, TcpServer runtime wiring, SessionManager, OnlineService, Redis Cluster, Pub/Sub, Streams, or distributed locks introduced. |
 | Step 21-29 tutorial format alignment | done | Markdown-only pass rewriting `tutorials/step21_storage_cache_interfaces.md` through `tutorials/step29_online_status_cache.md` to follow the fixed teaching structure: concept, detailed interface/contract explanation, architecture position plus internal runtime flow, tests, verification, interview summary, and commit message. Did not modify `step20_backpressure.md` or C++/SQL behavior. |
 | Step 29 OnlineStatusCache | done | Added `OnlineStatusCache` over `RedisPool` for `online:user:<user_id>` TTL-backed online sessions, including set online, refresh TTL, set offline, online check, session lookup, value parsing, invalid-argument handling, missing-user `NotFound`, README/tutorial/planning docs, and Docker-backed Redis tests. No unread counter, login limiter, service layer, network runtime integration, SessionManager, OnlineService, Redis Cluster, Pub/Sub, Streams, or distributed locks introduced. |
@@ -219,6 +220,7 @@ Current route status:
 - Step 28 `RedisClient and RedisPool` is complete.
 - Step 29 `OnlineStatusCache` is complete.
 - Step 30 `UnreadCounter and LoginRateLimiter` is complete.
+- Pre-Step31 storage/cache contract cleanup is complete as a standalone refactor, not Step31.
 - Default next implementation step is Step 31 `SessionManager and OnlineService`.
 
 LiteIM phases:

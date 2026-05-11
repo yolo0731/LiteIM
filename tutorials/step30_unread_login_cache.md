@@ -105,6 +105,7 @@ Status incrUnread(const UnreadKey& key, std::uint64_t delta, std::uint64_t& unre
 - `key.conversation.id > 0`。
 - `key.conversation.type` 必须是 `kPrivate` 或 `kGroup`。
 - `delta > 0`。
+- `delta <= INT64_MAX`，因为 Redis integer / `INCRBY` 按有符号 64 位整数语义处理。
 
 Redis key：
 
@@ -359,7 +360,10 @@ AuthService / ChatService
 校验 LoginAttemptKey 和 ttl
     -> acquire RedisConnectionGuard
     -> EVAL: INCR + EXPIRE
+    -> 每次失败都会刷新 TTL
 ```
+
+当前语义是滑动失败窗口：只要持续失败，每次 `recordFailure()` 都会刷新 key 的 TTL。`allow()` 和 `recordFailure()` 仍然是两个方法，后续 AuthService 如果需要强原子登录限流，可以再把“判断是否允许 + 本次失败递增”合成一个 Lua 脚本；第一版把它作为粗粒度防暴力破解保护。
 
 ### 5. 小例子和边界
 
@@ -446,7 +450,7 @@ git diff --check
 
 可以这样讲：
 
-> Step 30 在 RedisPool 上实现了两个业务 cache 组件：UnreadCounter 和 LoginRateLimiter。UnreadCounter 用 user id、conversation type、conversation id 组成 key，通过 Lua 调 Redis INCRBY 保证 delta 递增是单条原子操作；不存在 key 读作 0，打开会话时 DEL 清零。LoginRateLimiter 用 username 和 remote_ip 组成失败计数 key，通过 Lua 把 INCR 和 EXPIRE 放在同一次 Redis 执行里，避免失败计数没有 TTL。两个组件都只在 business 线程使用，不进入 Reactor I/O 线程，也不直接接入登录或聊天 service。
+> Step 30 在 RedisPool 上实现了两个业务 cache 组件：UnreadCounter 和 LoginRateLimiter。UnreadCounter 用 user id、conversation type、conversation id 组成 key，通过 Lua 调 Redis INCRBY 保证 delta 递增是单条原子操作，并把 delta 限制在 Redis 有符号 64 位整数范围内；不存在 key 读作 0，打开会话时 DEL 清零。LoginRateLimiter 用 username 和 remote_ip 组成失败计数 key，通过 Lua 把 INCR 和 EXPIRE 放在同一次 Redis 执行里，语义是滑动失败窗口。两个组件都只在 business 线程使用，不进入 Reactor I/O 线程，也不直接接入登录或聊天 service。
 
 重点强调：
 

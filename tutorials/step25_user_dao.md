@@ -164,7 +164,7 @@ Status findUserById(std::uint64_t user_id, UserRecord& user);
 
 边界：
 
-- `user_id` 要能安全绑定到 MySQL signed `int64`。
+- `user_id` 按 MySQL `BIGINT UNSIGNED` 绑定。
 - 不存在用户返回 `NotFound`。
 - 输出参数只在 ok 时有效。
 
@@ -175,7 +175,7 @@ Status findUserById(std::uint64_t user_id, UserRecord& user);
 - `requiredValue()`：检查查询列存在且不是 NULL。
 - `parseUint64()` / `parseInt64()`：把 MySQL 字符串字段解析成整数。
 - `rowToUserRecord()`：把一行转换成 `UserRecord`。
-- `bindUserId()`：检查 `uint64` 是否超过 signed bind 范围。
+- `bindUserId()`：使用 `PreparedStatement::bindUInt64()` 绑定用户 id。
 - `querySingleUser()`：统一处理 0 行、多行和正常单行。
 
 这些 helper 不暴露在头文件里，因为它们只是 users 表 DAO 的内部解析逻辑。

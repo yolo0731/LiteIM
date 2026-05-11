@@ -6,6 +6,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
 #include <thread>
@@ -103,6 +104,12 @@ TEST(UnreadCounterTest, RejectsInvalidInputBeforeBorrowingRedis) {
     EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
 
     status = counter.getUnread(unreadKey(1, liteim::ConversationType::kPrivate, 0), unread_count);
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
+
+    status = counter.incrUnread(unreadKey(1, liteim::ConversationType::kPrivate, 1),
+                                static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) + 1U,
+                                unread_count);
     EXPECT_FALSE(status.isOk());
     EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
 }

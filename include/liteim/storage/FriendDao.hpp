@@ -17,7 +17,7 @@ public:
                        std::chrono::milliseconds acquire_timeout = std::chrono::milliseconds(500));
 
     Status addFriendship(std::uint64_t user_id, std::uint64_t friend_id);
-    Status getFriends(std::uint64_t user_id, std::vector<UserRecord>& friends);
+    Status getFriends(std::uint64_t user_id, std::vector<UserProfileRecord>& friends);
 
 private:
     MySqlPool* pool_;

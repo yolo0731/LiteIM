@@ -179,6 +179,7 @@ public:
 
     Status prepare(const std::string& sql);
     Status bindInt64(std::size_t index, std::int64_t value);
+    Status bindUInt64(std::size_t index, std::uint64_t value);
     Status bindString(std::size_t index, const std::string& value);
     Status executeUpdate(std::uint64_t& affected_rows);
     Status executeQuery(MySqlQueryResult& result);
@@ -206,6 +207,12 @@ public:
 - `index` 是从 0 开始的参数位置。
 - 绑定为 `MYSQL_TYPE_LONGLONG`。
 - 下标越界或未 prepare 返回 `InvalidArgument`。
+
+`bindUInt64(index, value)`：
+
+- 同样绑定为 `MYSQL_TYPE_LONGLONG`，但把 `MYSQL_BIND::is_unsigned` 设为 true。
+- 用于 `BIGINT UNSIGNED` 主键和外键，例如 `user_id`、`message_id`、`group_id`。
+- 这样 DAO 不需要先把 `std::uint64_t` 强行限制到 `INT64_MAX`。
 
 `bindString(index, value)`：
 
@@ -400,7 +407,7 @@ docker compose -f docker/docker-compose.yml up -d
 
 可以这样说：
 
-> Step 23 把 MySQL C API 包成 RAII 对象。`MySqlConnection` 拥有 `MYSQL*`，负责连接、ping、关闭和简单事务控制语句；`PreparedStatement` 拥有 `MYSQL_STMT*`，负责 prepare、参数绑定、更新和查询。查询结果统一输出成 `MySqlQueryResult`，字段用 `optional<string>` 表达 SQL NULL。DAO 以后只依赖这些 C++ 封装，不直接操作 MySQL C 指针，也不拼接用户输入 SQL。
+> Step 23 把 MySQL C API 包成 RAII 对象。`MySqlConnection` 拥有 `MYSQL*`，负责连接、ping、关闭和简单事务控制语句；`PreparedStatement` 拥有 `MYSQL_STMT*`，负责 prepare、signed/unsigned 64-bit 参数绑定、字符串绑定、更新和查询。查询结果统一输出成 `MySqlQueryResult`，字段用 `optional<string>` 表达 SQL NULL。DAO 以后只依赖这些 C++ 封装，不直接操作 MySQL C 指针，也不拼接用户输入 SQL。
 
 ## 提交信息
 

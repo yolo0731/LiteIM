@@ -8,6 +8,7 @@ add_library(liteim_storage STATIC
     MessageDao.cpp
     MySqlConnection.cpp
     MySqlPool.cpp
+    MySqlStorage.cpp
     OfflineMessageDao.cpp
     UserDao.cpp
 )

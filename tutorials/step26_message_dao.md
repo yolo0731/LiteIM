@@ -101,7 +101,7 @@ Status savePrivateMessage(const MessageRecord& message, MessageRecord& saved_mes
 - `message.conversation.id != 0`。
 - `message.sender_id != 0`。
 - `message.receiver_id != 0`。
-- id 字段不能超过 MySQL signed bind 范围。
+- id 字段按 MySQL `BIGINT UNSIGNED` 绑定。
 
 内部使用事务：
 
@@ -201,7 +201,7 @@ public:
 
 - `user_id != 0`。
 - `message_id != 0`。
-- id 不能超过 MySQL signed bind 范围。
+- id 字段按 MySQL `BIGINT UNSIGNED` 绑定。
 
 失败语义：
 
@@ -278,11 +278,12 @@ MySQL 不支持把这类语句都当作普通业务 prepared statement 使用，
 
 ### 1. 在 LiteIM 里的具体使用场景
 
-后续 ChatService 会使用这两个 DAO：
+后续 ChatService 会使用这两个 DAO，或者通过 Pre-Step31 小重构新增的 `MySqlStorage::saveMessageWithOfflineRecipients()` 使用统一事务入口：
 
 - 收到私聊消息时，先 `savePrivateMessage()`。
 - 收到群聊消息时，先 `saveGroupMessage()`。
 - 如果目标用户离线，为目标用户写 `saveOfflineMessage()`。
+- 如果需要“消息行 + 多个离线投递行”必须一起成功，调用 `MySqlStorage::saveMessageWithOfflineRecipients()`。
 - 用户上线后，拉取 `getOfflineMessages()` 并投递。
 - 投递成功后，调用 `markOfflineDelivered()`。
 - 用户打开历史记录时，调用 `getHistoryByConversation()`。
@@ -308,7 +309,7 @@ DAO 不判断用户是否在线；在线状态由后续 Redis cache 负责。
 私聊发送链路：
 
 1. ChatService 校验发送者和接收者。
-2. 调用 `MessageDao::savePrivateMessage()` 落库。
+2. 调用 `MessageDao::savePrivateMessage()` 落库；如果已经知道接收方离线，可改用 `MySqlStorage::saveMessageWithOfflineRecipients()`。
 3. 如果接收者在线，后续直接投递。
 4. 如果接收者离线，调用 `OfflineMessageDao::saveOfflineMessage()`。
 5. 后续还会更新 Redis 未读计数。
@@ -398,7 +399,7 @@ const auto status = message_dao.savePrivateMessage(input, saved);
 
 ## 后续实现 / 关键设计说明
 
-Step 26 只打通 messages 和 offline_messages。
+Step 26 只打通 messages 和 offline_messages。Pre-Step31 小重构在此基础上补一个 `MySqlStorage` 聚合入口，让业务层可以在一个 MySQL 事务里同时写 `messages` 和 `offline_messages`。
 
 它不实现：
 
@@ -408,7 +409,7 @@ Step 26 只打通 messages 和 offline_messages。
 - 群成员扩散策略。
 - 网络 runtime 消息路由。
 
-消息落库和离线队列先稳定后，后续 service 才能安全组合它们。
+消息落库和离线队列先稳定后，后续 service 才能安全组合它们。Redis 未读数不参与这个 MySQL 事务，业务层应在 MySQL 提交成功后再递增 Redis。
 
 ## 测试设计
 
@@ -418,6 +419,7 @@ Step 26 只打通 messages 和 offline_messages。
 - 私聊消息保存并查回完整记录。
 - 群聊消息保存并查回完整记录。
 - 离线消息 save / fetch / delivered 完整流程。
+- Pre-Step31 聚合事务测试覆盖消息 + 离线记录一起提交，以及离线记录外键失败时消息回滚。
 - 历史消息按 cursor 查询更旧消息。
 - 历史查询 limit 最大 50。
 - Docker MySQL 不可用时集成测试按当前测试策略 skip 或明确失败。
@@ -436,7 +438,7 @@ git diff --check
 
 可以这样说：
 
-> Step 26 实现消息 DAO，把真实消息和离线投递关系分开。`MessageDao` 负责私聊/群聊消息落库和历史分页，保存消息时用事务完成 insert 和 `LAST_INSERT_ID()` 查回；`OfflineMessageDao` 负责保存 pending 离线消息、拉取未投递消息和批量标记 delivered。事务控制用 `MySqlConnection::executeSimple()`，普通业务 SQL 仍然走 prepared statement。DAO 只做数据访问，不判断在线状态，也不做 Redis 未读计数。
+> Step 26 实现消息 DAO，把真实消息和离线投递关系分开。`MessageDao` 负责私聊/群聊消息落库和历史分页，保存消息时用事务完成 insert 和 `LAST_INSERT_ID()` 查回；`OfflineMessageDao` 负责保存 pending 离线消息、拉取未投递消息和批量标记 delivered。Pre-Step31 小重构补 `MySqlStorage::saveMessageWithOfflineRecipients()`，在一个 MySQL 事务里保存消息和离线投递记录。事务控制用 `MySqlConnection::executeSimple()`，普通业务 SQL 仍然走 prepared statement。DAO 只做数据访问，不判断在线状态，也不做 Redis 未读计数。
 
 ## 提交信息
 

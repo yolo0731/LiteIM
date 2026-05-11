@@ -4,7 +4,6 @@
 #include "liteim/storage/MySqlConnection.hpp"
 #include "liteim/storage/MySqlPool.hpp"
 
-#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -77,11 +76,7 @@ Status bindUint64(PreparedStatement& statement,
     if (value == 0U) {
         return Status::error(ErrorCode::InvalidArgument, field_name + " must not be zero");
     }
-    if (value > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
-        return Status::error(ErrorCode::InvalidArgument,
-                             field_name + " exceeds supported MySQL signed bind range");
-    }
-    return statement.bindInt64(index, static_cast<std::int64_t>(value));
+    return statement.bindUInt64(index, value);
 }
 
 Status executeSimple(MySqlConnection& connection, const std::string& sql) {
@@ -295,12 +290,11 @@ Status OfflineMessageDao::markOfflineDelivered(std::uint64_t user_id,
         return Status::ok();
     }
 
-    if (user_id == 0U || user_id > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+    if (user_id == 0U) {
         return Status::error(ErrorCode::InvalidArgument, "user_id is invalid");
     }
     for (const auto message_id : message_ids) {
-        if (message_id == 0U ||
-            message_id > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        if (message_id == 0U) {
             return Status::error(ErrorCode::InvalidArgument, "message_id is invalid");
         }
     }
@@ -334,13 +328,13 @@ Status OfflineMessageDao::markOfflineDelivered(std::uint64_t user_id,
             rollbackSilently(*guard);
             return delivered_status;
         }
-        const auto user_status = statement.bindInt64(1, static_cast<std::int64_t>(user_id));
+        const auto user_status = statement.bindUInt64(1, user_id);
         if (!user_status.isOk()) {
             statement.close();
             rollbackSilently(*guard);
             return user_status;
         }
-        const auto message_status = statement.bindInt64(2, static_cast<std::int64_t>(message_id));
+        const auto message_status = statement.bindUInt64(2, message_id);
         if (!message_status.isOk()) {
             statement.close();
             rollbackSilently(*guard);

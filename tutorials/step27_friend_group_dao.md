@@ -73,7 +73,7 @@ public:
                        std::chrono::milliseconds acquire_timeout = std::chrono::milliseconds(500));
 
     Status addFriendship(std::uint64_t user_id, std::uint64_t friend_id);
-    Status getFriends(std::uint64_t user_id, std::vector<UserRecord>& friends);
+    Status getFriends(std::uint64_t user_id, std::vector<UserProfileRecord>& friends);
 };
 ```
 
@@ -102,7 +102,7 @@ Status addFriendship(std::uint64_t user_id, std::uint64_t friend_id);
 - `user_id != 0`。
 - `friend_id != 0`。
 - 两者不能相等。
-- 两者都不能超过 MySQL signed bind 范围。
+- 参数按 MySQL `BIGINT UNSIGNED` 绑定。
 
 数据库语义：
 
@@ -121,7 +121,7 @@ Status addFriendship(std::uint64_t user_id, std::uint64_t friend_id);
 ### `getFriends()`
 
 ```cpp
-Status getFriends(std::uint64_t user_id, std::vector<UserRecord>& friends);
+Status getFriends(std::uint64_t user_id, std::vector<UserProfileRecord>& friends);
 ```
 
 查询某用户的好友列表。
@@ -129,7 +129,8 @@ Status getFriends(std::uint64_t user_id, std::vector<UserRecord>& friends);
 SQL 语义：
 
 - 从 `friendships` join `users`。
-- 返回完整 `UserRecord`。
+- 返回公开 `UserProfileRecord`，只包含 `user_id`、`username`、`nickname` 和 `created_at_ms`。
+- 不返回 `password_hash` / `password_salt`，避免好友列表响应误带认证字段。
 - 按 `u.user_id ASC` 排序，保持测试和接口稳定。
 
 输出：
@@ -141,9 +142,9 @@ SQL 语义：
 
 `.cpp` 内部 helper 包括：
 
-- `validateUserId()`：检查非 0 和 signed bind 范围。
+- `validateUserId()`：检查非 0。
 - `bindUserId()`：校验后绑定参数。
-- `rowToUserRecord()`：把 join 后的 users 行转换成 `UserRecord`。
+- `rowToUserProfileRecord()`：把 join 后的 users 行转换成公开资料 DTO。
 - `rollbackSilently()`：事务失败时尽力回滚。
 
 ## 4. GroupDao.hpp 接口说明
@@ -176,7 +177,7 @@ Status createGroup(const CreateGroupRequest& request, GroupRecord& created_group
 
 - `request.owner_id != 0`。
 - `request.group_name` 不能为空。
-- owner id 不能超过 signed bind 范围。
+- owner id 按 MySQL `BIGINT UNSIGNED` 绑定。
 
 事务语义：
 
@@ -364,7 +365,7 @@ if (!status.isOk()) {
     return status;
 }
 
-std::vector<UserRecord> friends;
+std::vector<UserProfileRecord> friends;
 status = friend_dao.getFriends(1001, friends);
 ```
 
@@ -419,7 +420,7 @@ git diff --check
 
 可以这样说：
 
-> Step 27 实现好友和群组 DAO。好友关系第一版用 friendships 表的两行表达双向关系，`addFriendship()` 在一个事务里插入两个方向，并用 `ON DUPLICATE KEY UPDATE` 做幂等 no-op。群组用 `chat_groups.owner_id` 表达群主，用 `group_members` 表达成员；建群时在一个事务里插入群资料和 owner 成员，移除成员前会查询 owner，拒绝把群主从成员表删除。DAO 只做数据访问，不做好友审批、群权限系统或网络通知。
+> Step 27 实现好友和群组 DAO。好友关系第一版用 friendships 表的两行表达双向关系，`addFriendship()` 在一个事务里插入两个方向，并用 `ON DUPLICATE KEY UPDATE` 做幂等 no-op。`getFriends()` 返回公开 `UserProfileRecord`，不把密码 hash 或 salt 带出 DAO。群组用 `chat_groups.owner_id` 表达群主，用 `group_members` 表达成员；建群时在一个事务里插入群资料和 owner 成员，移除成员前会查询 owner，拒绝把群主从成员表删除。DAO 只做数据访问，不做好友审批、群权限系统或网络通知。
 
 ## 提交信息
 

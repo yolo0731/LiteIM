@@ -31,6 +31,13 @@ struct UserRecord {
     std::int64_t created_at_ms{0};
 };
 
+struct UserProfileRecord {
+    std::uint64_t user_id{0};
+    std::string username;
+    std::string nickname;
+    std::int64_t created_at_ms{0};
+};
+
 struct CreateGroupRequest {
     std::uint64_t owner_id{0};
     std::string group_name;

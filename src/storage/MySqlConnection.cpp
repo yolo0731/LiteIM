@@ -28,6 +28,7 @@ struct ParameterValue {
     bool bound{false};
     bool is_null{false};
     std::int64_t int64_value{0};
+    std::uint64_t uint64_value{0};
     std::string string_value;
     unsigned long length{0};
 };
@@ -239,6 +240,30 @@ Status PreparedStatement::bindInt64(std::size_t index, std::int64_t value) {
     bind.is_null = &parameter_value.is_null;
     bind.length = &parameter_value.length;
     bind.is_unsigned = false;
+    return Status::ok();
+}
+
+Status PreparedStatement::bindUInt64(std::size_t index, std::uint64_t value) {
+    if (!isPrepared()) {
+        return Status::error(ErrorCode::InvalidArgument, "prepared statement is not prepared");
+    }
+    if (index >= impl_->parameters.size()) {
+        return Status::error(ErrorCode::InvalidArgument, "parameter index out of range");
+    }
+
+    auto& parameter_value = impl_->parameter_values[index];
+    parameter_value.bound = true;
+    parameter_value.is_null = false;
+    parameter_value.uint64_value = value;
+    parameter_value.length = sizeof(parameter_value.uint64_value);
+
+    auto& bind = impl_->parameters[index];
+    resetBind(bind);
+    bind.buffer_type = MYSQL_TYPE_LONGLONG;
+    bind.buffer = &parameter_value.uint64_value;
+    bind.is_null = &parameter_value.is_null;
+    bind.length = &parameter_value.length;
+    bind.is_unsigned = true;
     return Status::ok();
 }
 

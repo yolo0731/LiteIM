@@ -75,6 +75,7 @@ public:
 
     Status prepare(const std::string& sql);                  // 准备SQL语句
     Status bindInt64(std::size_t index, std::int64_t value); // 绑定整数参数
+    Status bindUInt64(std::size_t index, std::uint64_t value);
     Status bindString(std::size_t index, const std::string& value);
     Status executeUpdate(std::uint64_t& affected_rows); // 执行更新语句，返回受影响的行数
     Status executeQuery(MySqlQueryResult& result);      // 执行查询语句，返回查询结果

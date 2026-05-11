@@ -4,7 +4,6 @@
 #include "liteim/storage/MySqlConnection.hpp"
 #include "liteim/storage/MySqlPool.hpp"
 
-#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -55,10 +54,6 @@ Status validateUserId(std::uint64_t user_id, const std::string& field_name) {
     if (user_id == 0U) {
         return Status::error(ErrorCode::InvalidArgument, field_name + " must not be zero");
     }
-    if (user_id > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
-        return Status::error(ErrorCode::InvalidArgument,
-                             field_name + " exceeds supported MySQL signed bind range");
-    }
     return Status::ok();
 }
 
@@ -70,22 +65,20 @@ Status bindUserId(PreparedStatement& statement,
     if (!validate_status.isOk()) {
         return validate_status;
     }
-    return statement.bindInt64(index, static_cast<std::int64_t>(user_id));
+    return statement.bindUInt64(index, user_id);
 }
 
 void rollbackSilently(MySqlConnection& connection) noexcept {
     (void)connection.executeSimple("ROLLBACK");
 }
 
-Status rowToUserRecord(const MySqlRow& row, UserRecord& user) {
-    if (row.values.size() != 6U) {
+Status rowToUserProfileRecord(const MySqlRow& row, UserProfileRecord& user) {
+    if (row.values.size() != 4U) {
         return malformedFriendRowStatus();
     }
 
     const std::string* user_id = nullptr;
     const std::string* username = nullptr;
-    const std::string* password_hash = nullptr;
-    const std::string* password_salt = nullptr;
     const std::string* nickname = nullptr;
     const std::string* created_at_ms = nullptr;
 
@@ -97,24 +90,16 @@ Status rowToUserRecord(const MySqlRow& row, UserRecord& user) {
     if (!username_status.isOk()) {
         return username_status;
     }
-    const auto hash_status = requiredValue(row, 2, password_hash);
-    if (!hash_status.isOk()) {
-        return hash_status;
-    }
-    const auto salt_status = requiredValue(row, 3, password_salt);
-    if (!salt_status.isOk()) {
-        return salt_status;
-    }
-    const auto nickname_status = requiredValue(row, 4, nickname);
+    const auto nickname_status = requiredValue(row, 2, nickname);
     if (!nickname_status.isOk()) {
         return nickname_status;
     }
-    const auto created_status = requiredValue(row, 5, created_at_ms);
+    const auto created_status = requiredValue(row, 3, created_at_ms);
     if (!created_status.isOk()) {
         return created_status;
     }
 
-    UserRecord parsed_user;
+    UserProfileRecord parsed_user;
     const auto id_status = parseUint64(*user_id, parsed_user.user_id);
     if (!id_status.isOk()) {
         return id_status;
@@ -125,8 +110,6 @@ Status rowToUserRecord(const MySqlRow& row, UserRecord& user) {
     }
 
     parsed_user.username = *username;
-    parsed_user.password_hash = *password_hash;
-    parsed_user.password_salt = *password_salt;
     parsed_user.nickname = *nickname;
 
     user = std::move(parsed_user);
@@ -216,7 +199,7 @@ Status FriendDao::addFriendship(std::uint64_t user_id, std::uint64_t friend_id) 
     return guard->executeSimple("COMMIT");
 }
 
-Status FriendDao::getFriends(std::uint64_t user_id, std::vector<UserRecord>& friends) {
+Status FriendDao::getFriends(std::uint64_t user_id, std::vector<UserProfileRecord>& friends) {
     friends.clear();
 
     const auto user_status = validateUserId(user_id, "user_id");
@@ -232,8 +215,7 @@ Status FriendDao::getFriends(std::uint64_t user_id, std::vector<UserRecord>& fri
 
     PreparedStatement statement(*guard);
     const auto prepare_status =
-        statement.prepare("SELECT u.user_id, u.username, u.password_hash, u.password_salt, "
-                          "u.nickname, u.created_at_ms "
+        statement.prepare("SELECT u.user_id, u.username, u.nickname, u.created_at_ms "
                           "FROM friendships f "
                           "JOIN users u ON u.user_id = f.friend_id "
                           "WHERE f.user_id = ? "
@@ -252,11 +234,11 @@ Status FriendDao::getFriends(std::uint64_t user_id, std::vector<UserRecord>& fri
         return query_status;
     }
 
-    std::vector<UserRecord> parsed_friends;
+    std::vector<UserProfileRecord> parsed_friends;
     parsed_friends.reserve(result.rows().size());
     for (const auto& row : result.rows()) {
-        UserRecord user;
-        const auto row_status = rowToUserRecord(row, user);
+        UserProfileRecord user;
+        const auto row_status = rowToUserProfileRecord(row, user);
         if (!row_status.isOk()) {
             return row_status;
         }
