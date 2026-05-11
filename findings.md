@@ -8,6 +8,27 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-11 Step 30 UnreadCounter / LoginRateLimiter Findings
+
+本次进入 `Step 30：实现 UnreadCounter 和 LoginRateLimiter`，只实现 Redis 未读计数和登录失败限流，不实现 AuthService、ChatService、SessionManager、OnlineService 或网络层运行时接入。
+
+已经确认并采用的设计：
+
+- `UnreadCounter` 建在 `RedisPool` 之上，负责 `incrUnread()`、`getUnread()` 和 `clearUnread()`。
+- 未读计数 key 使用 user id + conversation type + conversation id 组成，确保私聊、群聊和不同用户之间互不影响。
+- `incrUnread()` 使用 Redis `EVAL` 执行 `INCRBY`，保持 `delta` 递增是单条 Redis 原子操作，同时不扩展 Step 28 的 `RedisClient` public API。
+- `getUnread()` 对不存在 key 返回 0；如果 Redis value 不是合法无符号整数，返回 `ParseError`，避免损坏缓存被当成正常未读数。
+- `clearUnread()` 使用 `DEL`，不存在 key 也视为成功。
+- `LoginRateLimiter` 使用 Redis failure key + TTL 表达短期登录失败窗口，负责 `allow()`、`recordFailure()` 和 `clear()`。
+- 第一版 `allow()` 读取当前失败次数并和 `max_failures` 比较；`recordFailure()` 使用 Redis `EVAL` 在同一脚本内执行 `INCR` 和 `EXPIRE`。
+- Redis API 仍然是阻塞 API，只能给后续 business `ThreadPool` 使用；Reactor I/O 线程仍然不能直接调用。
+
+本次不采用/不改：
+
+- 不实现 AuthService 登录校验、ChatService 消息投递、未读数 runtime 递增、登录失败 runtime 记录或登录成功 runtime 清理。
+- 不新增 Redis pipeline、token bucket 复杂算法、分布式锁、Pub/Sub、Streams 或 Cluster。
+- 不修改 MySQL schema、Docker Compose、seed 数据或网络层运行时。
+
 ## 2026-05-11 Step 21-29 Tutorial Format Alignment Findings
 
 本次是 Markdown-only 教程格式修正，不修改 C++、SQL、CMake、README 或 `PROJECT_MEMORY.md`。

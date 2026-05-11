@@ -78,7 +78,7 @@ Important boundaries:
 - `liteim_concurrency`: fixed-size business `ThreadPool`.
 - `liteim/timer`: `TimerHeap` and `TimerManager`, linked into the network layer because `TimerManager` depends on `EventLoop` and `Channel`.
 - `liteim_storage`: storage DTOs, the `IStorage` interface, `MySqlConnection`, `PreparedStatement`, `MySqlQueryResult`, `MySqlPool`, `ConnectionGuard`, `UserDao`, `AuthDao`, `MessageDao`, `OfflineMessageDao`, `FriendDao`, and `GroupDao` for future MySQL-backed users, friends, groups, messages, offline messages, and history.
-- `liteim_cache`: cache DTOs, the `ICache` interface, `RedisClient`, `RedisPool`, `RedisConnectionGuard`, and `OnlineStatusCache` for Redis-backed online sessions plus future unread counters and login failure limiting.
+- `liteim_cache`: cache DTOs, the `ICache` interface, `RedisClient`, `RedisPool`, `RedisConnectionGuard`, `OnlineStatusCache`, `UnreadCounter`, and `LoginRateLimiter` for Redis-backed online sessions, unread counters, and login failure limiting.
 
 ## Build And Test
 
@@ -123,7 +123,7 @@ server.output_high_water_mark_bytes = 4194304
 
 ## Local MySQL And Redis
 
-Step 22 adds the local development database environment for storage/cache work. Step 23-27 use the MySQL side for storage tests, Step 28 adds a blocking hiredis-based Redis client/pool, and Step 29 adds Redis online-status cache tests. The C++ TCP server still does not call MySQL or Redis from Reactor I/O threads.
+Step 22 adds the local development database environment for storage/cache work. Step 23-27 use the MySQL side for storage tests, Step 28 adds a blocking hiredis-based Redis client/pool, Step 29 adds Redis online-status cache tests, and Step 30 adds Redis unread-counter and login-limiter tests. The C++ TCP server still does not call MySQL or Redis from Reactor I/O threads.
 
 Start MySQL and Redis:
 
@@ -154,7 +154,7 @@ The MySQL container runs `scripts/init_mysql.sql` and `scripts/seed_test_data.sq
 - `messages`
 - `offline_messages`
 
-The seed script inserts local test users `alice`, `bob`, the Bot user `mira_bot`, a `dev_group`, sample messages, and pending offline-message rows. Redis starts empty but requires the local development password. Step 29 uses `online:user:<user_id>` keys with TTL for online sessions; unread counters and login failure limiting keys are introduced by later cache steps.
+The seed script inserts local test users `alice`, `bob`, the Bot user `mira_bot`, a `dev_group`, sample messages, and pending offline-message rows. Redis starts empty but requires the local development password. Step 29 uses `online:user:<user_id>` keys with TTL for online sessions. Step 30 adds Redis keys for per-user/per-conversation unread counters and username/remote-ip login failure windows.
 
 Useful checks:
 
@@ -183,11 +183,11 @@ Run tests:
 ctest --test-dir build --output-on-failure
 ```
 
-The Step 23-27 MySQL integration tests and Step 28-29 Redis integration tests use `Config::defaults()`, so they target the local Docker endpoints shown above. If those containers are not running, integration tests skip instead of failing unrelated unit-test runs. Start the local dependency stack first when validating the storage/cache layer:
+The Step 23-27 MySQL integration tests and Step 28-30 Redis integration tests use `Config::defaults()`, so they target the local Docker endpoints shown above. If those containers are not running, integration tests skip instead of failing unrelated unit-test runs. Start the local dependency stack first when validating the storage/cache layer:
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d --wait
-ctest --test-dir build -R "MySql|UserDao|MessageDao|FriendGroupDao|Redis|OnlineStatusCache" --output-on-failure
+ctest --test-dir build -R "MySql|UserDao|MessageDao|FriendGroupDao|Redis|OnlineStatusCache|UnreadCounter|LoginRateLimiter|Step30CacheIntegrationTest" --output-on-failure
 ```
 
 Useful repository checks:

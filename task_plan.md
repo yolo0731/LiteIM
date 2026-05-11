@@ -31,6 +31,7 @@ The workspace documentation roles are now separated:
 
 | Phase | Status | Notes |
 | --- | --- | --- |
+| Step 30 UnreadCounter and LoginRateLimiter | done | Added Redis-backed `UnreadCounter` and `LoginRateLimiter` over `RedisPool`, with invalid-input unit tests, Docker-backed Redis integration tests, README/tutorial/planning docs, and full CTest verification. No AuthService, ChatService, TcpServer runtime wiring, SessionManager, OnlineService, Redis Cluster, Pub/Sub, Streams, or distributed locks introduced. |
 | Step 21-29 tutorial format alignment | done | Markdown-only pass rewriting `tutorials/step21_storage_cache_interfaces.md` through `tutorials/step29_online_status_cache.md` to follow the fixed teaching structure: concept, detailed interface/contract explanation, architecture position plus internal runtime flow, tests, verification, interview summary, and commit message. Did not modify `step20_backpressure.md` or C++/SQL behavior. |
 | Step 29 OnlineStatusCache | done | Added `OnlineStatusCache` over `RedisPool` for `online:user:<user_id>` TTL-backed online sessions, including set online, refresh TTL, set offline, online check, session lookup, value parsing, invalid-argument handling, missing-user `NotFound`, README/tutorial/planning docs, and Docker-backed Redis tests. No unread counter, login limiter, service layer, network runtime integration, SessionManager, OnlineService, Redis Cluster, Pub/Sub, Streams, or distributed locks introduced. |
 | Step 28 RedisClient and RedisPool | done | Added hiredis-backed blocking `RedisClient`, fixed-size `RedisPool`, move-only `RedisConnectionGuard`, Redis auth/db selection, `ping`, `setex`, `get`, `del`, `incr`, `expire`, `eval`, acquire timeout, explicit `release()`, close semantics, borrow-time ping/reconnect, and Docker-backed tests. No online-status cache, unread counter, login limiter, service layer, network runtime integration, key schema beyond test keys, Redis Cluster, Pub/Sub, Streams, or distributed locks introduced. |
@@ -217,7 +218,8 @@ Current route status:
 - Step 27 `FriendDao and GroupDao` is complete.
 - Step 28 `RedisClient and RedisPool` is complete.
 - Step 29 `OnlineStatusCache` is complete.
-- Default next implementation step is Step 30 `UnreadCounter and LoginRateLimiter`.
+- Step 30 `UnreadCounter and LoginRateLimiter` is complete.
+- Default next implementation step is Step 31 `SessionManager and OnlineService`.
 
 LiteIM phases:
 

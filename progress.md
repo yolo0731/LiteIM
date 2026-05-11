@@ -1,5 +1,55 @@
 # LiteIM Progress
 
+## 2026-05-11 Step 30 UnreadCounter / LoginRateLimiter
+
+本次正式开启 `Step 30：实现 UnreadCounter 和 LoginRateLimiter`。
+
+概念边界：
+
+- `UnreadCounter` 只管理 Redis 未读计数 key，提供递增、读取和清零。
+- `LoginRateLimiter` 只管理 Redis 登录失败计数 key，提供是否允许、记录失败和清除失败计数。
+- 本 Step 不接入 AuthService、ChatService、TcpServer、Session 或任何运行时业务流程。
+- MySQL/Redis 仍然只能在后续业务线程中调用，不能放进 Reactor I/O 线程。
+
+已完成测试 RED：
+
+- 新增 `tests/cache/unread_login_cache_test.cpp`。
+- `tests/CMakeLists.txt` 接入 Step 30 测试。
+- RED：新增测试后首次 `cmake --build build --target liteim_tests` 按预期失败，错误为缺少 `liteim/cache/LoginRateLimiter.hpp`。
+
+已完成代码：
+
+- 新增 `include/liteim/cache/UnreadCounter.hpp` 和 `src/cache/UnreadCounter.cpp`。
+- 新增 `include/liteim/cache/LoginRateLimiter.hpp` 和 `src/cache/LoginRateLimiter.cpp`。
+- `src/cache/CMakeLists.txt` 接入 Step 30 cache 源文件。
+- `UnreadCounter` 通过 Redis key 维护用户在私聊/群聊会话中的未读数，支持递增、读取和清零。
+- `LoginRateLimiter` 通过 Redis failure key + TTL 维护用户名和远端地址维度的登录失败窗口，支持允许判断、记录失败和清除计数。
+
+新增测试：
+
+- `UnreadCounterTest.RejectsInvalidInputBeforeBorrowingRedis`
+- `LoginRateLimiterTest.RejectsInvalidInputBeforeBorrowingRedis`
+- `Step30CacheIntegrationTest.UnreadCounterIncrementsReadsAndClearsCount`
+- `Step30CacheIntegrationTest.UnreadCounterSeparatesUsersAndConversations`
+- `Step30CacheIntegrationTest.LoginRateLimiterRejectsAfterFailureThresholdAndClearAllowsAgain`
+- `Step30CacheIntegrationTest.LoginRateLimiterTtlExpiryAllowsAgain`
+- `Step30CacheIntegrationTest.LoginRateLimiterSeparatesUsernameAndRemoteIp`
+
+已完成文档同步：
+
+- README 更新 cache 模块说明、本地 Redis 说明和 storage/cache 验证命令。
+- 新增 `tutorials/step30_unread_login_cache.md`。
+- 更新 `task_plan.md`、`findings.md` 和本文件。
+
+当前验证：
+
+- RED：新增测试后首次 `cmake --build build --target liteim_tests` 按预期失败，错误为缺少 `liteim/cache/LoginRateLimiter.hpp`。
+- `cmake --build build --target liteim_tests`：通过。
+- `ctest --test-dir build -R "UnreadCounterTest|LoginRateLimiterTest|Step30CacheIntegrationTest" --output-on-failure`：7/7 通过。
+- `cmake --build build`：通过。
+- `ctest --test-dir build -R "Redis|OnlineStatusCache|UnreadCounter|LoginRateLimiter|Step30CacheIntegrationTest" --output-on-failure`：29/29 通过。
+- `ctest --test-dir build --output-on-failure`：246/246 通过。
+
 ## 2026-05-11 Step 21-29 Tutorial Format Alignment
 
 本次按已有计划修正 `tutorials/step21_storage_cache_interfaces.md` 到 `tutorials/step29_online_status_cache.md` 的 Markdown 教程结构。
