@@ -21,7 +21,7 @@ PersonaAgent is intentionally a separate Python service. LiteIM exposes the prot
 - Nonblocking socket I/O with `epoll` LT mode, `eventfd` cross-thread wakeups, `timerfd` based timers, and `signalfd` graceful shutdown handling.
 - Main Reactor + sub Reactor thread pool. I/O threads handle fd events, Packet/TLV codec work, configurable output-buffer high-water-mark backpressure, and `Session` lifetime.
 - Business `ThreadPool` for future blocking work such as MySQL queries, Redis operations, password hashing, and history loading.
-- MySQL C API wrapper with RAII connection ownership and prepared statements; DAO and pooling remain separate later layers.
+- MySQL C API wrapper with RAII connection ownership, prepared statements, and a fixed-size connection pool for future DAO work.
 - Custom TLV binary protocol with TCP sticky-packet / half-packet handling.
 - Safe cross-thread connection access through `EventLoop::runInLoop()` and `EventLoop::queueInLoop()`.
 - Future demo clients: CLI, Python E2E client, and Qt Widgets three-column chat client.
@@ -77,7 +77,7 @@ Important boundaries:
 - `liteim_net`: `Buffer`, `SocketUtil`, `UniqueFd`, `Channel`, `Epoller`, `EventLoop`, `Acceptor`, `Session`, `EventLoopThread`, `EventLoopThreadPool`, `SignalWatcher`, and `TcpServer`.
 - `liteim_concurrency`: fixed-size business `ThreadPool`.
 - `liteim/timer`: `TimerHeap` and `TimerManager`, linked into the network layer because `TimerManager` depends on `EventLoop` and `Channel`.
-- `liteim_storage`: storage DTOs, the `IStorage` interface, `MySqlConnection`, `PreparedStatement`, and `MySqlQueryResult` for future MySQL-backed users, friends, groups, messages, offline messages, and history.
+- `liteim_storage`: storage DTOs, the `IStorage` interface, `MySqlConnection`, `PreparedStatement`, `MySqlQueryResult`, `MySqlPool`, and `ConnectionGuard` for future MySQL-backed users, friends, groups, messages, offline messages, and history.
 - `liteim_cache`: cache DTOs and the `ICache` interface for future Redis-backed online sessions, unread counters, and login failure limiting.
 
 ## Build And Test
@@ -183,7 +183,7 @@ Run tests:
 ctest --test-dir build --output-on-failure
 ```
 
-The Step 23 MySQL integration tests use `Config::defaults()`, so they target the local Docker MySQL endpoint `127.0.0.1:33060` with user `liteim` and password `6`. If that container is not running, those tests skip instead of failing unrelated unit-test runs. Start the local dependency stack first when validating the storage layer:
+The Step 23/24 MySQL integration tests use `Config::defaults()`, so they target the local Docker MySQL endpoint `127.0.0.1:33060` with user `liteim` and password `6`. If that container is not running, those tests skip instead of failing unrelated unit-test runs. Start the local dependency stack first when validating the storage layer:
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d --wait
@@ -263,7 +263,7 @@ LiteIM is being built in phases:
 | Phase | Goal |
 | --- | --- |
 | Network base | CMake, GoogleTest, base utilities, TLV protocol, frame decoder, Buffer, socket helpers, Reactor interfaces, `Epoller`, `Channel`, `EventLoop`, `Acceptor`, `Session`, multi-Reactor `TcpServer`, business `ThreadPool`, timerfd heartbeat cleanup, and signalfd shutdown. |
-| Storage and cache | MySQL connection pool, RAII connection guard, prepared statement wrapper, DAO layer, Redis client/pool, online status, unread counters, and login rate limiting. |
+| Storage and cache | MySQL C API wrapper, prepared statement wrapper, MySQL connection pool, RAII connection guard, DAO layer, Redis client/pool, online status, unread counters, and login rate limiting. |
 | IM services | Register/login, friend list, private chat, group chat, offline messages, history loading, heartbeat protocol, graceful shutdown, and BotGateway routing. |
 | Tooling and validation | CLI client, Python E2E tests, benchmark tooling, broader GoogleTest/gMock coverage, ASan/UBSan, and CI. |
 | Demo clients | Qt Widgets chat client with login, conversation list, message bubbles, group chat, AI Bot entry, heartbeat state, and disconnect feedback. |

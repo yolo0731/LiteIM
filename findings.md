@@ -8,6 +8,28 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-11 Step 24 MySqlPool / ConnectionGuard Findings
+
+本次进入 `Step 24：实现 MySqlPool 和 ConnectionGuard`，只实现 MySQL 固定连接池和 RAII 借还边界，不实现 DAO、业务服务、Redis client 或运行时 server 集成。
+
+已经确认并采用的设计：
+
+- `MySqlPool` 保存 `MySqlConfig`，`start()` 一次性创建 `pool_size` 个 `MySqlConnection` 并连接 MySQL。
+- `ConnectionGuard` 是 move-only RAII 对象，析构或 `reset()` 时归还借出的连接，避免调用方忘记 release。
+- `acquire(std::chrono::milliseconds timeout, ConnectionGuard& guard)` 使用 `std::condition_variable` 等待空闲连接；连接耗尽时返回超时错误，不永久阻塞。
+- 借出连接前先 `ping()`；失败时关闭旧连接并按原 `MySqlConfig` 重连，覆盖 MySQL 连接失效/服务重启后的常见恢复路径。
+- `close()` 标记连接池关闭，唤醒等待线程；空闲连接立即关闭，已借出的连接归还时关闭，不重新进入空闲队列。
+- `ConnectionGuard` 持有连接池共享状态，避免 pool 对象析构后已借出 guard 归还时访问悬空 `this`。
+- 连接池 API 是阻塞 API，只能给后续 business `ThreadPool` 使用；Reactor I/O 线程仍然不允许直接 acquire MySQL 连接。
+
+本次不采用/不改：
+
+- 不实现 `UserDao`、`AuthDao`、`MessageDao` 或任何 SQL 业务方法。
+- 不接入 `TcpServer`、`Session`、`ThreadPool`、AuthService 或 ChatService。
+- 不实现 Redis client / RedisPool。
+- 不新增后台保活线程、动态扩缩容、连接最大寿命或 prepared statement 缓存。
+- 不新增 public raw-pointer `release()`，归还连接统一通过 `ConnectionGuard::reset()` 和析构完成。
+
 ## 2026-05-11 Step 23 MySqlConnection / PreparedStatement Findings
 
 本次进入 `Step 23：实现 MySqlConnection 和 PreparedStatement`，只封装 MySQL C API 的连接和 prepared statement，不实现连接池、DAO、业务服务或 Redis。

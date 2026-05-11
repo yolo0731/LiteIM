@@ -31,6 +31,7 @@ The workspace documentation roles are now separated:
 
 | Phase | Status | Notes |
 | --- | --- | --- |
+| Step 24 MySqlPool and ConnectionGuard | done | Added fixed-size `MySqlPool`, move-only `ConnectionGuard`, blocking `acquire(timeout, guard)`, close semantics, borrow-time ping/reconnect, and Docker-backed tests for capacity, timeout, RAII return, close failure, concurrent borrow/release, and reconnect after a closed borrowed connection. No DAO, Redis client, business service, or runtime server integration introduced. |
 | Step 23 MySqlConnection and PreparedStatement | done | Added `MySqlConnection`, `PreparedStatement`, `MySqlQueryResult`, real MySQL C API linking through `pkg-config mysqlclient`, and Docker-backed integration tests for ping, prepared select, insert/query, bad SQL, and special-character binding. No MySQL pool, DAO, Redis client, or runtime server integration introduced. |
 | Step 22 Docker Compose and MySQL init SQL | done | Added `docker/docker-compose.yml`, MySQL schema init SQL, idempotent seed data with `alice` / `bob` / `mira_bot` / `dev_group`, README local dependency docs, Step 22 tutorial, and verified real MySQL/Redis startup with a temporary Compose project. Local development now uses MySQL 8.0 series on host port `33060`, Redis on `63790`, and password `6` for MySQL/Redis dev credentials. No C++ MySQL/Redis client, DAO, or runtime server integration introduced. |
 | Step 21 storage/cache interfaces | done | Added `IStorage` / `ICache` abstractions, DTO type headers, header-only CMake interface targets, fake/null interface tests, README/tutorial/planning docs. No MySQL/Redis client, DAO, business service, or runtime dependency introduced. |
@@ -204,7 +205,8 @@ Current route status:
 - Step 21 `IStorage / ICache abstractions` is complete.
 - Step 22 `Docker Compose and MySQL init SQL` is complete.
 - Step 23 `MySqlConnection and PreparedStatement` is complete.
-- Default next implementation step is Step 24 `MySqlPool and ConnectionGuard`.
+- Step 24 `MySqlPool and ConnectionGuard` is complete.
+- Default next implementation step is Step 25 `UserDao and AuthDao`.
 
 LiteIM phases:
 

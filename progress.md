@@ -1,5 +1,57 @@
 # LiteIM Progress
 
+## 2026-05-11 Step 24 MySqlPool / ConnectionGuard
+
+本次进入 `Step 24：实现 MySqlPool 和 ConnectionGuard`，目标是在 Step 23 单连接封装之上提供业务线程可复用的固定 MySQL 连接池。
+
+概念边界：
+
+- `MySqlPool` 负责固定数量连接、线程安全 `acquire(timeout, guard)`、连接失效重连和关闭。
+- `ConnectionGuard` 负责借出连接的 RAII 自动归还。
+- 本 Step 不实现 DAO、AuthService、ChatService、Redis client，也不让网络 I/O 线程访问 MySQL。
+
+已完成代码：
+
+- 新增 `include/liteim/storage/MySqlPool.hpp`。
+- 新增 `src/storage/MySqlPool.cpp`。
+- `src/storage/CMakeLists.txt` 接入 `MySqlPool.cpp`。
+- 新增 `tests/storage/mysql_pool_test.cpp`。
+- `tests/CMakeLists.txt` 接入 Step 24 测试。
+
+新增测试：
+
+- `MySqlPoolTest.HeaderIsSelfContained`
+- `MySqlPoolTest.RejectsZeroPoolSize`
+- `MySqlPoolIntegrationTest.AcquiresConnectedConnection`
+- `MySqlPoolIntegrationTest.AcquireTimesOutWhenAllConnectionsAreBorrowed`
+- `MySqlPoolIntegrationTest.ConnectionGuardReturnsConnectionOnDestruction`
+- `MySqlPoolIntegrationTest.CloseMakesAcquireFail`
+- `MySqlPoolIntegrationTest.MultipleThreadsAcquireAndReleaseConnections`
+- `MySqlPoolIntegrationTest.ReconnectsConnectionThatWasClosedWhileBorrowed`
+
+已完成文档同步：
+
+- README 更新 storage 模块说明和 MySQL storage 测试说明。
+- 新增 `tutorials/step24_mysql_pool.md`。
+- 更新 `task_plan.md`、`findings.md` 和本文件。
+
+当前验证：
+
+- RED：新增测试后首次 `cmake --build build` 按预期失败，错误为缺少 `liteim/storage/MySqlPool.hpp`。
+- `cmake --build build`：通过。
+- `docker compose -f docker/docker-compose.yml ps`：MySQL 8.0 / Redis 7.2 容器均 healthy。
+- `ctest --test-dir build -R "MySqlPoolTest|MySqlPoolIntegrationTest" --output-on-failure`：8/8 通过。
+- `ctest --test-dir build --output-on-failure`：194/194 通过。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，服务端收到 SIGTERM 后优雅退出。
+- `git diff --check`：通过。
+- `.gitkeep` 和旧 `server/net`、`server/protocol`、SQLite、`InMemoryStorage`、`step15_sqlite` 路径检查无输出。
+
+提交信息：
+
+```text
+feat(storage): implement mysql connection pool
+```
+
 ## 2026-05-11 Step 23 MySqlConnection / PreparedStatement
 
 本次进入 `Step 23：实现 MySqlConnection 和 PreparedStatement`，目标是封装 MySQL C API，为后续连接池和 DAO 层提供最底层的连接与 prepared statement 能力。
