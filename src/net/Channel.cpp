@@ -100,6 +100,9 @@ void Channel::handleEvent() {
     const auto active_events = revents_;
 
     if ((active_events & EPOLLHUP) != 0 && (active_events & EPOLLIN) == 0) {
+        if ((active_events & EPOLLERR) != 0 && error_callback_) {
+            error_callback_();
+        }
         if (close_callback_) {
             close_callback_();
         }

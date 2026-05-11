@@ -90,6 +90,20 @@ TEST(ChannelTest, HangupWithoutReadableEventInvokesCloseOnly) {
     EXPECT_EQ(read_count, 0);
 }
 
+TEST(ChannelTest, HangupWithErrorWithoutReadableEventInvokesErrorThenClose) {
+    liteim::Channel channel(nullptr, 10);
+    std::vector<std::string> calls;
+    channel.setErrorCallback([&calls]() { calls.push_back("error"); });
+    channel.setCloseCallback([&calls]() { calls.push_back("close"); });
+
+    channel.setRevents(EPOLLHUP | EPOLLERR);
+    channel.handleEvent();
+
+    ASSERT_EQ(calls.size(), 2U);
+    EXPECT_EQ(calls[0], "error");
+    EXPECT_EQ(calls[1], "close");
+}
+
 TEST(ChannelTest, ErrorEventInvokesErrorCallback) {
     liteim::Channel channel(nullptr, 10);
     int error_count = 0;

@@ -80,6 +80,26 @@ TEST(FrameDecoderTest, MultiplePacketsInOneFeedAreDecoded) {
     EXPECT_EQ(packets[1].body, bytesFromString("two"));
 }
 
+TEST(FrameDecoderTest, ManySmallPacketsInOneFeedAreDecoded) {
+    liteim::FrameDecoder decoder;
+    constexpr std::size_t kPacketCount = 4096;
+    const auto encoded = makeEncodedPacket(liteim::MessageType::PrivateMessageRequest, 1, "x");
+    liteim::Bytes stream;
+    stream.reserve(encoded.size() * kPacketCount);
+    for (std::size_t index = 0; index < kPacketCount; ++index) {
+        stream.insert(stream.end(), encoded.begin(), encoded.end());
+    }
+    std::vector<liteim::Packet> packets;
+
+    const auto status = decoder.feed(stream, packets);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    ASSERT_EQ(packets.size(), kPacketCount);
+    EXPECT_EQ(decoder.bufferedBytes(), 0U);
+    EXPECT_EQ(packets.front().body, bytesFromString("x"));
+    EXPECT_EQ(packets.back().body, bytesFromString("x"));
+}
+
 TEST(FrameDecoderTest, HalfPacketThenStickyPacketAreDecodedTogether) {
     liteim::FrameDecoder decoder;
     const auto first = makeEncodedPacket(liteim::MessageType::PrivateMessageRequest, 11, "first");
