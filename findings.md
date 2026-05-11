@@ -8,6 +8,29 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-11 Step 29 OnlineStatusCache Findings
+
+本次进入 `Step 29：实现 OnlineStatusCache`，只实现 Redis 在线状态缓存，不实现未读计数、登录失败限制、业务 service、SessionManager、OnlineService 或网络层运行时接入。
+
+已经确认并采用的设计：
+
+- `OnlineStatusCache` 是 `RedisPool` 之上的窄 cache 组件，负责 `setUserOnline()`、`refreshUserOnline()`、`setUserOffline()`、`isUserOnline()` 和 `getOnlineSession()`。
+- 在线状态 key 固定为 `online:user:<user_id>`，符合 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Step 29 设计。
+- value 保存 `user_id`、`session_id`、`server_id` 和 `last_active_time_ms`，带简单版本前缀和 `server_id` 长度，避免 server id 中包含冒号时被错误切分。
+- `setUserOnline(user_id, server_id, session_id, ttl)` 自动填充当前毫秒时间；`setUserOnline(OnlineSession, ttl)` 在 `last_active_time_ms <= 0` 时也会自动补当前时间。
+- 上线写入使用 `RedisClient::setex()`，心跳刷新使用 `RedisClient::expire()`，下线删除使用 `RedisClient::del()`，读取状态使用 `RedisClient::get()`。
+- `refreshUserOnline()` 对不存在 key 返回 `NotFound`；`setUserOffline()` 对不存在 key 视为成功，依赖 Redis TTL 兜底最终一致性。
+- `isUserOnline()` 只有在 key 存在且 value 可解析时返回 online=true；损坏 value 返回 `ParseError`，避免把错误缓存静默当成有效在线状态。
+- Redis API 仍然是阻塞 API，只能给后续 business `ThreadPool` 使用；Reactor I/O 线程仍然不能直接调用。
+
+本次不采用/不改：
+
+- 不实现 Step 30 的 `UnreadCounter`、`LoginRateLimiter` 或对应 Redis key。
+- 不实现 Step 31 的 `SessionManager`、`OnlineService`、登录成功写 Redis、心跳 runtime 续期或断开连接 runtime 清理。
+- 不接入 `ThreadPool`、`TcpServer`、`Session`、AuthService、ChatService 或任何运行时业务流程。
+- 不实现 Redis Cluster、Pub/Sub、Streams、分布式锁、pipeline 或异步 Redis。
+- 不修改 Docker Compose、Redis 初始化数据、MySQL schema、seed 数据或 Step 21 `ICache` 接口。
+
 ## 2026-05-11 Step 28 RedisClient / RedisPool Findings
 
 本次进入 `Step 28：实现 RedisClient 和 RedisPool`，只实现 Redis 阻塞客户端和固定连接池，不实现在线状态 cache、未读数、登录失败限制、业务 service 或网络层运行时接入。

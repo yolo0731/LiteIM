@@ -2,6 +2,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(HIREDIS REQUIRED IMPORTED_TARGET hiredis)
 
 add_library(liteim_cache STATIC
+    OnlineStatusCache.cpp
     RedisClient.cpp
     RedisPool.cpp
 )

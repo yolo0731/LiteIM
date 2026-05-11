@@ -1,5 +1,61 @@
 # LiteIM Progress
 
+## 2026-05-11 Step 29 OnlineStatusCache
+
+本次进入 `Step 29：实现 OnlineStatusCache`，目标是在 Step 28 `RedisClient` / `RedisPool` 之上提供 Redis TTL 在线状态缓存。
+
+概念边界：
+
+- `OnlineStatusCache` 只管理 `online:user:<user_id>` 在线状态 key。
+- 在线状态保存 `user_id`、`session_id`、`server_id` 和 `last_active_time_ms`。
+- 本 Step 不实现未读计数、登录失败限制、业务 service、SessionManager、OnlineService，也不修改 `TcpServer` / `Session` 运行时行为。
+
+已完成测试 RED：
+
+- 新增 `tests/cache/online_status_cache_test.cpp`。
+- `tests/CMakeLists.txt` 接入 Step 29 测试。
+- RED：新增测试后首次 `cmake --build build` 按预期失败，错误为缺少 `liteim/cache/OnlineStatusCache.hpp`。
+
+已完成代码：
+
+- 新增 `include/liteim/cache/OnlineStatusCache.hpp`。
+- 新增 `src/cache/OnlineStatusCache.cpp`。
+- `src/cache/CMakeLists.txt` 接入 `OnlineStatusCache.cpp`。
+- `OnlineStatusCache` 通过 `RedisPool::acquire()` 借 Redis 连接，使用 `SETEX` 上线写 TTL、`EXPIRE` 心跳刷新 TTL、`DEL` 下线删除、`GET` 查询和解析 session。
+
+新增测试：
+
+- `OnlineStatusCacheTest.HeaderIsSelfContained`
+- `OnlineStatusCacheIntegrationTest.SetUserOnlineMakesUserQueryable`
+- `OnlineStatusCacheIntegrationTest.ServerIdMayContainColon`
+- `OnlineStatusCacheIntegrationTest.RefreshUserOnlineExtendsTtl`
+- `OnlineStatusCacheIntegrationTest.SetUserOfflineRemovesOnlineSession`
+- `OnlineStatusCacheIntegrationTest.TtlExpiryMakesUserOffline`
+- `OnlineStatusCacheIntegrationTest.RefreshMissingUserReturnsNotFound`
+
+已完成文档同步：
+
+- README 更新 cache 模块说明、本地 Redis 说明和 storage/cache 测试命令。
+- 新增 `tutorials/step29_online_status_cache.md`。
+- 更新 `task_plan.md`、`findings.md` 和本文件。
+
+当前验证：
+
+- RED：新增测试后首次 `cmake --build build` 按预期失败，错误为缺少 `liteim/cache/OnlineStatusCache.hpp`。
+- `cmake --build build`：通过。
+- `docker compose -f docker/docker-compose.yml ps`：MySQL 8.0 / Redis 7.2 容器均 healthy。
+- `ctest --test-dir build -R "OnlineStatusCache" --output-on-failure`：7/7 通过。
+- `ctest --test-dir build --output-on-failure`：237/237 通过。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，服务端收到 SIGTERM 后优雅退出。
+- `git diff --check`：通过。
+- `.gitkeep` 和旧 `server/net`、`server/protocol`、SQLite、`InMemoryStorage`、`step15_sqlite` 路径检查无输出。
+
+提交信息：
+
+```text
+feat(cache): add redis online status cache
+```
+
 ## 2026-05-11 Step 28 RedisClient / RedisPool
 
 本次进入 `Step 28：实现 RedisClient 和 RedisPool`，目标是在 Step 21 cache 接口和 Step 22 Docker Redis 之上提供 hiredis 阻塞客户端与固定连接池。
