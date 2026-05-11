@@ -8,6 +8,31 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-11 Step 26 MessageDao / OfflineMessageDao Findings
+
+本次进入 `Step 26：实现 MessageDao 和 OfflineMessageDao`，只实现 MySQL `messages` / `offline_messages` DAO，不实现 Redis、业务 service、网络层运行时接入或 schema 变更。
+
+已经确认并采用的设计：
+
+- `MessageDao` 负责 `savePrivateMessage()`、`saveGroupMessage()` 和 `getHistoryByConversation()`。
+- `OfflineMessageDao` 负责 `saveOfflineMessage()`、`getOfflineMessages()` 和 `markOfflineDelivered()`。
+- DAO 继续沿用 Step 25 的 `Status + output parameter` 风格，通过 `MySqlPool::acquire()` 借连接，通过 `PreparedStatement` 参数绑定 SQL。
+- `savePrivateMessage()` / `saveGroupMessage()` 接收 `MessageRecord`，由调用方提供 `ConversationKey`，本 Step 不在 DAO 内定义私聊 conversation id 生成策略。
+- 群聊消息如果输入 `receiver_id == 0`，DAO 落库时用 `conversation.id` 作为 `receiver_id`，保持和 Step 22 seed 数据一致。
+- 历史消息按 `message_id DESC` 返回；`before_message_id` 作为游标查询更旧消息。
+- 历史查询 `limit` 最大 50，超过 50 时截断为 50；`limit == 0` 作为无效参数处理。
+- 离线消息查询只返回 `delivered = 0` 的 pending 记录，并 join `messages` 填充完整 `MessageRecord`。
+- `savePrivateMessage()` / `saveGroupMessage()` 在同一连接上的事务里完成 insert + `LAST_INSERT_ID()` 查回，避免 DAO 返回失败但消息行已经落库的半成品。
+- `markOfflineDelivered()` 对多个 message id 使用同一连接上的事务，避免部分标记成功。
+- MySQL 不支持把 `START TRANSACTION` 放进 prepared statement 协议；事务控制语句通过 `MySqlConnection::executeSimple()` 走 `mysql_query()`，普通业务 SQL 仍然使用 prepared statement 参数绑定。
+
+本次不采用/不改：
+
+- 不实现 AuthService、ChatService、HistoryService 或 user-session 绑定。
+- 不接入 `ThreadPool`、`TcpServer`、`Session` 或运行时消息路由。
+- 不实现 Redis 未读计数、在线状态或登录失败限制。
+- 不修改 MySQL schema、seed 数据或 Step 21 `IStorage` 接口。
+
 ## 2026-05-11 Step 25 UserDao / AuthDao Findings
 
 本次进入 `Step 25：实现 UserDao 和 AuthDao`，只实现 users 表 DAO，不实现 MessageDao、业务服务、Redis client 或运行时 server 集成。

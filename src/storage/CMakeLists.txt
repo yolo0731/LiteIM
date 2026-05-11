@@ -3,8 +3,10 @@ pkg_check_modules(MYSQLCLIENT REQUIRED IMPORTED_TARGET mysqlclient)
 
 add_library(liteim_storage STATIC
     AuthDao.cpp
+    MessageDao.cpp
     MySqlConnection.cpp
     MySqlPool.cpp
+    OfflineMessageDao.cpp
     UserDao.cpp
 )
 

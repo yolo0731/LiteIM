@@ -1,5 +1,61 @@
 # LiteIM Progress
 
+## 2026-05-11 Step 26 MessageDao / OfflineMessageDao
+
+本次进入 `Step 26：实现 MessageDao 和 OfflineMessageDao`，目标是在 Step 23/24/25 的 MySQL wrapper、连接池和 users DAO 之上提供消息表和离线消息表 DAO。
+
+概念边界：
+
+- `MessageDao` 只做 `messages` 表私聊/群聊消息落库和会话历史分页查询，消息落库的 insert + 查回记录在同一事务内完成。
+- `OfflineMessageDao` 只做 `offline_messages` 表待投递记录保存、pending 拉取和 delivered 标记。
+- 本 Step 不做 Redis 未读数、不接入业务 service、不修改 `TcpServer` / `Session` 运行时行为。
+
+已完成测试 RED：
+
+- 新增 `tests/storage/message_dao_test.cpp`。
+- `tests/CMakeLists.txt` 接入 Step 26 测试。
+- RED：新增测试后首次 `cmake --build build` 按预期失败，错误为缺少 `liteim/storage/MessageDao.hpp`。
+
+已完成代码：
+
+- 新增 `include/liteim/storage/MessageDao.hpp`。
+- 新增 `include/liteim/storage/OfflineMessageDao.hpp`。
+- 新增 `src/storage/MessageDao.cpp`。
+- 新增 `src/storage/OfflineMessageDao.cpp`。
+- `src/storage/CMakeLists.txt` 接入 Step 26 DAO 源文件。
+- `MySqlConnection` 新增 `executeSimple()`，用于 `START TRANSACTION`、`COMMIT`、`ROLLBACK` 这类无参数控制语句。
+
+新增测试：
+
+- `MessageDaoTest.HeadersAreSelfContained`
+- `MessageDaoIntegrationTest.SavePrivateMessagePersistsRecord`
+- `MessageDaoIntegrationTest.SaveGroupMessagePersistsRecord`
+- `MessageDaoIntegrationTest.OfflineMessageSaveFetchAndDeliveredFlow`
+- `MessageDaoIntegrationTest.HistoryReturnsNewestMessagesBeforeCursor`
+- `MessageDaoIntegrationTest.HistoryLimitIsCappedAtFifty`
+
+已完成文档同步：
+
+- README 更新 storage 模块说明和 MySQL storage 测试说明。
+- 新增 `tutorials/step26_message_dao.md`。
+- 更新 `task_plan.md`、`findings.md` 和本文件。
+
+当前验证：
+
+- `cmake --build build`：通过。
+- `docker compose -f docker/docker-compose.yml ps`：MySQL 8.0 / Redis 7.2 容器均 healthy。
+- `ctest --test-dir build -R "MessageDaoTest|MessageDaoIntegrationTest" --output-on-failure`：6/6 通过。
+- `ctest --test-dir build --output-on-failure`：208/208 通过。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，服务端收到 SIGTERM 后优雅退出。
+- `git diff --check`：通过。
+- `.gitkeep` 和旧 `server/net`、`server/protocol`、SQLite、`InMemoryStorage`、`step15_sqlite` 路径检查无输出。
+
+提交信息：
+
+```text
+feat(storage): implement message dao and offline messages
+```
+
 ## 2026-05-11 Step 25 UserDao / AuthDao
 
 本次进入 `Step 25：实现 UserDao 和 AuthDao`，目标是在 Step 23/24 的 MySQL wrapper 和连接池之上提供 users 表 DAO。

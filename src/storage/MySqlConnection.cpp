@@ -150,6 +150,25 @@ Status MySqlConnection::ping() {
     return Status::ok();
 }
 
+Status MySqlConnection::executeSimple(const std::string& sql) {
+    if (!isConnected()) {
+        return Status::error(ErrorCode::InvalidArgument, "MySQL connection is not connected");
+    }
+    if (mysql_query(handle_, sql.c_str()) != 0) {
+        return mysqlError(handle_, "mysql_query failed");
+    }
+
+    MYSQL_RES* result = mysql_store_result(handle_);
+    if (result != nullptr) {
+        mysql_free_result(result);
+        return Status::ok();
+    }
+    if (mysql_field_count(handle_) != 0) {
+        return mysqlError(handle_, "mysql_store_result failed");
+    }
+    return Status::ok();
+}
+
 void MySqlConnection::close() noexcept {
     if (handle_ != nullptr) {
         mysql_close(handle_);

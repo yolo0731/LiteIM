@@ -45,6 +45,7 @@ public:
 
     Status connect(const MySqlConfig& config);
     Status ping();
+    Status executeSimple(const std::string& sql);
     void close() noexcept;
 
     bool isConnected() const noexcept;
