@@ -46,12 +46,7 @@ public:
     void setErrorCallback(EventCallback callback);
 
     void tie(const std::shared_ptr<void>& owner);
-
-    // handleEvent() keeps a local shared_ptr guard when tied, then dispatches
-    // callbacks directly without copying them. A callback must not destroy this
-    // Channel or reset the callback object currently being run. If callback
-    // execution can drop the owning object, call tie() first so the owner stays
-    // alive for the duration of handleEvent().
+    // tie函数的作用是将Channel对象与一个shared_ptr对象关联起来，防止在事件回调执行过程中，Channel对象被销毁。
     void handleEvent();
 
 private:

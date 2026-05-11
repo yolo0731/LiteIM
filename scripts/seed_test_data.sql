@@ -78,12 +78,12 @@ INSERT INTO offline_messages (
 ) VALUES
     (1002, 5001, 0, @now_ms, NULL),
     (1001, 5003, 0, @now_ms, NULL)
-ON DUPLICATE KEY UPDATE
+ON DUPLICATE KEY UPDATE /* 如果主键冲突，更新消息状态 */
     delivered = VALUES(delivered),
     created_at_ms = VALUES(created_at_ms),
     delivered_at_ms = VALUES(delivered_at_ms);
 
-ALTER TABLE users AUTO_INCREMENT = 10000;
+ALTER TABLE users AUTO_INCREMENT = 10000; /* 下一个用户ID从10000开始 */
 ALTER TABLE chat_groups AUTO_INCREMENT = 10000;
 ALTER TABLE messages AUTO_INCREMENT = 10000;
 ALTER TABLE offline_messages AUTO_INCREMENT = 10000;

@@ -22,7 +22,7 @@ Status errnoStatus(const char* action, int error_number) {
     return Status::error(ErrorCode::IoError,
                          std::string(action) + " failed with errno " + std::to_string(error_number));
 }
-
+// 把 pthread 相关函数返回的错误码，包装成 Status 错误对象
 Status pthreadStatus(const char* action, int error_number) {
     return Status::error(ErrorCode::IoError,
                          std::string(action) + " failed with error " + std::to_string(error_number));
@@ -35,7 +35,7 @@ SignalWatcher::SignalWatcher(EventLoop* loop, std::vector<int> signals, SignalCa
     if (loop_ == nullptr) {
         throw std::invalid_argument("SignalWatcher requires a valid EventLoop");
     }
-    ::sigemptyset(&signal_set_);
+    ::sigemptyset(&signal_set_); // 初始化信号集合
     ::sigemptyset(&old_signal_set_);
 }
 
@@ -97,6 +97,7 @@ Status SignalWatcher::startInLoop() {
     }
 
     signal_channel_.reset();
+    // signalfd函数创建一个新的文件描述符，用于接收指定信号的通知。
     signal_fd_.reset(::signalfd(-1, &signal_set_, SFD_NONBLOCK | SFD_CLOEXEC));
     if (!signal_fd_) {
         const auto status = errnoStatus("signalfd", errno);
@@ -146,7 +147,7 @@ void SignalWatcher::stopInLoop() noexcept {
 Status SignalWatcher::rebuildSignalSet() {
     ::sigemptyset(&signal_set_);
     for (const int signo : signals_) {
-        if (::sigaddset(&signal_set_, signo) < 0) {
+        if (::sigaddset(&signal_set_, signo) < 0) { // 把信号加入 signal_set_
             return errnoStatus("sigaddset", errno);
         }
     }
@@ -154,7 +155,7 @@ Status SignalWatcher::rebuildSignalSet() {
 }
 
 Status SignalWatcher::blockSignals() {
-    const int rc = ::pthread_sigmask(SIG_BLOCK, &signal_set_, &old_signal_set_);
+    const int rc = ::pthread_sigmask(SIG_BLOCK, &signal_set_, &old_signal_set_); // 保存之前的信号掩码到 old_signal_set_
     if (rc != 0) {
         return pthreadStatus("pthread_sigmask", rc);
     }
@@ -179,11 +180,11 @@ void SignalWatcher::handleRead() noexcept {
 
     handling_signal_event_ = true;
     while (signal_fd_) {
-        signalfd_siginfo info{};
-        const auto n = ::read(signal_fd_.fd(), &info, sizeof(info));
+        signalfd_siginfo info{}; // 定义一个 signalfd_siginfo 结构体变量，用于存储从 signalfd 读取到的信号信息
+        const auto n = ::read(signal_fd_.fd(), &info, sizeof(info)); // n 是实际读取到的字节数
         if (n == static_cast<ssize_t>(sizeof(info))) {
             try {
-                callback_(static_cast<int>(info.ssi_signo));
+                callback_(static_cast<int>(info.ssi_signo)); // 传入信号编号,执行对应的回调函数
             } catch (...) {
             }
             continue;
@@ -191,7 +192,7 @@ void SignalWatcher::handleRead() noexcept {
         if (n < 0 && errno == EINTR) {
             continue;
         }
-        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) { // 非阻塞
             break;
         }
         break;

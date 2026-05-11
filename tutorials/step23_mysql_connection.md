@@ -1,94 +1,409 @@
 # Step 23：MySqlConnection 和 PreparedStatement
 
+Step 23 的目标是封装 MySQL C API，让后续 DAO 不直接操作 `MYSQL*`、`MYSQL_STMT*` 和 `MYSQL_BIND`。
+
+到 Step 22 为止，LiteIM 已经有本地 MySQL schema 和 seed 数据，但 C++ 代码还不能安全地连接数据库。Step 23 解决的问题是：
+
+```text
+如何用 C++17 写一个小而清楚的 MySQL prepared statement 封装？
+```
+
+答案是引入 `MySqlConnection`、`PreparedStatement` 和 `MySqlQueryResult`。
+
 ## 1. 概念
 
-Step 22 已经用 Docker Compose 启动了本地 MySQL，并初始化了 LiteIM 的表和 seed 数据。Step 23 开始把 C++ 代码接到真实 MySQL，但只做最底层封装：
+MySQL C API 是 C 风格接口：
 
-- `MySqlConnection`：RAII 持有一个 MySQL C API 连接。
-- `PreparedStatement`：封装 `MYSQL_STMT`，负责预编译 SQL、绑定参数、执行更新和查询。
-- `MySqlQueryResult`：用输出参数承载查询结果。
+- 连接用 `MYSQL*`。
+- 预处理语句用 `MYSQL_STMT*`。
+- 参数和结果绑定用 `MYSQL_BIND` 数组。
+- 错误信息从连接或 statement 里读取。
 
-本 Step 不做连接池、不做 DAO、不接入业务服务。网络 I/O 线程仍然不能访问 MySQL；后续真正查询数据库时，MySQL 操作必须放到 business `ThreadPool`。
+如果 DAO 每个函数都直接写这些细节，会有几个问题：
 
-## 2. hpp 接口说明
+- 资源释放容易漏。
+- 参数绑定容易写错。
+- SQL 注入风险更难审查。
+- 错误语义不统一。
+- 后续连接池难以复用连接对象。
+
+Step 23 把这些 C API 细节收进两个 RAII 类：
+
+```text
+MySqlConnection
+    owns MYSQL*
+    connect / ping / close / executeSimple
+
+PreparedStatement
+    owns MYSQL_STMT*
+    prepare / bind / executeUpdate / executeQuery
+```
+
+本 Step 只封装单连接和单 statement，不实现连接池、不实现 DAO、不接入业务服务。
+
+## 2. 本 Step 新增 / 修改文件
+
+新增：
+
+```text
+include/liteim/storage/MySqlConnection.hpp
+src/storage/MySqlConnection.cpp
+tests/storage/mysql_connection_test.cpp
+tutorials/step23_mysql_connection.md
+```
+
+同时更新：
+
+```text
+src/storage/CMakeLists.txt
+tests/CMakeLists.txt
+README.md
+task_plan.md
+findings.md
+progress.md
+```
+
+`liteim_storage` 从纯接口目标升级为静态库，并通过 `pkg-config mysqlclient` 链接系统 MySQL client。
+
+## 3. MySqlConnection.hpp 接口说明
+
+### `MySqlRow`
+
+```cpp
+struct MySqlRow {
+    std::vector<std::optional<std::string>> values;
+};
+```
+
+查询结果的一行。每个字段都用 `std::optional<std::string>` 表达：
+
+- 有值：字段不是 SQL NULL。
+- `std::nullopt`：字段是 SQL NULL。
+
+当前统一把 MySQL 结果转成字符串，再由 DAO 按字段语义解析成 `uint64`、`int64` 或业务字符串。这样 wrapper 保持简单，不在底层绑定业务类型。
 
 ### `MySqlQueryResult`
 
-`MySqlQueryResult` 保存一次查询的列名和行数据：
+```cpp
+class MySqlQueryResult {
+public:
+    void clear();
+    const std::vector<std::string>& columns() const noexcept;
+    const std::vector<MySqlRow>& rows() const noexcept;
+};
+```
 
-- `columns()`：返回查询结果列名。
-- `rows()`：返回所有行。
-- `clear()`：清空结果，供 `executeQuery()` 重复写入。
+`MySqlQueryResult` 是 `executeQuery()` 的输出对象。
 
-每行是 `MySqlRow`，字段类型是 `std::optional<std::string>`。这样 SQL `NULL` 可以表达为 `std::nullopt`，非空字段统一先转成字符串。DAO 层后续再把字符串解析成 `UserRecord`、`MessageRecord` 等强类型结构。
+- `clear()` 清空列名和行数据，`executeQuery()` 开始时会先调用。
+- `columns()` 返回 MySQL result metadata 里的列名。
+- `rows()` 返回所有已拉取行。
+
+关键成员变量：
+
+- `columns_`：列名。
+- `rows_`：完整结果集。
+
+`PreparedStatement` 是 friend，因为只有 statement 执行查询时能填充结果内部字段。外部只能读，不能绕过接口写。
 
 ### `MySqlConnection`
 
-`MySqlConnection` 拥有一个 `MYSQL*`：
+```cpp
+class MySqlConnection {
+public:
+    MySqlConnection() = default;
+    ~MySqlConnection();
+    MySqlConnection(MySqlConnection&& other) noexcept;
+    MySqlConnection& operator=(MySqlConnection&& other) noexcept;
 
-- `connect(const MySqlConfig&)`：用 `Config` 里的 host、port、user、password、database 连接 MySQL，并设置字符集为 `utf8mb4`。
-- `ping()`：调用 `mysql_ping()` 检查连接是否仍然可用。
-- `close()`：关闭连接，可重复调用。
-- `isConnected()`：用于测试和上层判断连接状态。
+    Status connect(const MySqlConfig& config);
+    Status ping();
+    Status executeSimple(const std::string& sql);
+    void close() noexcept;
+    bool isConnected() const noexcept;
+};
+```
 
-对象不可拷贝、可移动。它不加锁，也不承诺跨线程共享；后续 Step 24 的连接池会负责把连接借给业务线程使用。
+所有权：
+
+- `MySqlConnection` 拥有一个 `MYSQL* handle_`。
+- 析构时自动 `close()`。
+- 禁止拷贝，允许移动。
+- 移动后旧对象不再拥有连接。
+
+`connect(config)`：
+
+- 先关闭旧连接。
+- 调用 `mysql_init()`。
+- 设置字符集 `utf8mb4`。
+- 调用 `mysql_real_connect()` 连接 Step 22 的 MySQL。
+- 失败时返回 `Status::error(...)` 并清理 handle。
+
+`ping()`：
+
+- 检查连接是否存在。
+- 调用 `mysql_ping()`。
+- 后续连接池借出连接前会用它判断连接是否失效。
+
+`executeSimple(sql)`：
+
+- 走 `mysql_query()`。
+- 用于 `START TRANSACTION`、`COMMIT`、`ROLLBACK` 这类事务控制语句。
+- 如果 SQL 返回结果集，会立即 `mysql_store_result()` 并释放，避免连接上残留未消费结果。
+- 普通用户输入 SQL 仍然应该走 `PreparedStatement`，不能通过它拼接。
+
+关键成员变量：
+
+- `MYSQL* handle_{nullptr}`：MySQL C API 连接资源。
+- `bool connected_{false}`：表示连接是否成功建立。
+
+private helper：
+
+- `nativeHandle()` 只给 `PreparedStatement` 使用，避免 DAO 直接拿 `MYSQL*`。
+
+线程边界：
+
+- 单个 `MySqlConnection` 不加锁。
+- 一个连接一次只应在一个业务线程使用。
+- Reactor I/O 线程不能直接调用 MySQL。
 
 ### `PreparedStatement`
 
-`PreparedStatement` 绑定到一个已连接的 `MySqlConnection`：
+```cpp
+class PreparedStatement {
+public:
+    explicit PreparedStatement(MySqlConnection& connection);
+    ~PreparedStatement();
+    PreparedStatement(PreparedStatement&& other) noexcept;
+    PreparedStatement& operator=(PreparedStatement&& other) noexcept;
 
-- `prepare(sql)`：调用 `mysql_stmt_prepare()` 预编译 SQL。
-- `bindInt64(index, value)`：绑定 `BIGINT` / 整数参数，index 从 0 开始。
-- `bindString(index, value)`：绑定字符串参数，特殊字符不会拼进 SQL。
-- `executeUpdate(affected_rows)`：执行 `INSERT` / `UPDATE` / `DELETE` / DDL，并输出 affected rows。
-- `executeQuery(result)`：执行 `SELECT`，把列名和行数据写入 `MySqlQueryResult`。
-- `close()`：关闭 statement，可重复调用。
-
-失败语义仍然是 `Status`：MySQL API 调用失败时返回 `ErrorCode::IoError` 和底层错误信息；未连接、未 prepare、参数下标越界、缺少参数绑定等调用错误返回 `InvalidArgument`。
-
-## 3. 运行流程
-
-一次查询的典型流程：
-
-```text
-Config::defaults()
-  -> MySqlConnection::connect()
-  -> PreparedStatement::prepare("SELECT username FROM users WHERE user_id = ?")
-  -> bindInt64(0, 1001)
-  -> executeQuery(result)
-  -> result.rows()[0].values[0] == "alice"
+    Status prepare(const std::string& sql);
+    Status bindInt64(std::size_t index, std::int64_t value);
+    Status bindString(std::size_t index, const std::string& value);
+    Status executeUpdate(std::uint64_t& affected_rows);
+    Status executeQuery(MySqlQueryResult& result);
+    unsigned int lastErrorNumber() const noexcept;
+    void close() noexcept;
+};
 ```
 
-一次写入流程：
+所有权：
+
+- `PreparedStatement` 拥有一个 `MYSQL_STMT*`，藏在 `PreparedStatementImpl` 中。
+- 析构时自动 `close()`。
+- 禁止拷贝，允许移动。
+- 它不拥有 `MySqlConnection`，只保存 `MySqlConnection* connection_`，所以 statement 生命周期不能超过连接。
+
+`prepare(sql)`：
+
+- 关闭旧 statement。
+- 检查连接已建立。
+- 调用 `mysql_stmt_init()` 和 `mysql_stmt_prepare()`。
+- 根据 `mysql_stmt_param_count()` 初始化参数绑定数组。
+
+`bindInt64(index, value)`：
+
+- `index` 是从 0 开始的参数位置。
+- 绑定为 `MYSQL_TYPE_LONGLONG`。
+- 下标越界或未 prepare 返回 `InvalidArgument`。
+
+`bindString(index, value)`：
+
+- 把字符串存进 `parameter_values`，再让 `MYSQL_BIND` 指向内部字符串数据。
+- 这样 `executeUpdate()` / `executeQuery()` 前参数内存仍然有效。
+
+`executeUpdate(affected_rows)`：
+
+- 先检查所有参数都已绑定。
+- 调用 `mysql_stmt_bind_param()`。
+- 调用 `mysql_stmt_execute()`。
+- 用 `mysql_stmt_affected_rows()` 输出影响行数。
+- 适合 `INSERT`、`UPDATE`、`DELETE`。
+
+`executeQuery(result)`：
+
+- 清空输出结果。
+- 绑定参数并执行。
+- 读取 result metadata 和列名。
+- 把每列先按字符串缓冲读取。
+- 对 SQL NULL 写入 `std::nullopt`。
+- 对超过初始缓冲的列用 `mysql_stmt_fetch_column()` 拉完整字段。
+
+`lastErrorNumber()`：
+
+- 暴露 `mysql_stmt_errno()`。
+- 后续 DAO 用它识别 MySQL duplicate key errno `1062`，再转换成 `ErrorCode::AlreadyExists`。
+
+关键成员和 helper：
+
+- `connection_`：非 owning 指针，指向外部连接。
+- `impl_`：隐藏 `MYSQL_STMT*`、参数 `MYSQL_BIND`、参数值缓存。
+- `bindParameters()`：执行前确认每个参数都已绑定。
+- `isPrepared()`：判断 statement 是否可执行。
+
+失败语义：
+
+- 未连接、未 prepare、参数缺失、参数下标越界返回 `InvalidArgument`。
+- MySQL C API 错误返回 `IoError` 并携带 MySQL error text。
+- 查询语句没有结果集时，`executeQuery()` 返回 `InvalidArgument`。
+
+## MySqlConnection / PreparedStatement 的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+它们位于 MySQL DAO 之下、MySQL C API 之上。后续 DAO 不直接 include `<mysql.h>`，而是：
 
 ```text
-PreparedStatement::prepare("INSERT INTO table (id, text_value) VALUES (?, ?)")
-  -> bindInt64(0, 7)
-  -> bindString(1, "quote ' OR 1=1 --")
-  -> executeUpdate(affected_rows)
+DAO
+    -> MySqlPool::acquire()
+    -> MySqlConnection
+    -> PreparedStatement
+    -> MySQL C API
 ```
 
-关键点是：用户输入只进入 `bind*()`，不会通过字符串拼接进入 SQL。即使字符串里有引号、反斜杠、换行、中文或类似注入片段，也只是普通字段值。
+本 Step 之后，用户 DAO、消息 DAO、好友群组 DAO 都会复用这套封装。
 
-## 4. 测试
+### 2. 上下层调用连接
 
-新增 `tests/storage/mysql_connection_test.cpp`：
+```text
+AuthService / ChatService
+    -> business ThreadPool
+    -> UserDao / MessageDao / FriendDao / GroupDao
+    -> MySqlPool
+    -> MySqlConnection
+    -> PreparedStatement
+    -> mysqlclient
+    -> Docker MySQL
+```
 
-- `MySqlConnectionTest.HeaderIsSelfContained`：确认新头文件可以直接使用。
-- `MySqlIntegrationTest.ConnectsAndPingsLocalMySql`：连接 Docker MySQL 并 `ping()` 成功。
-- `MySqlIntegrationTest.PreparedStatementExecutesSimpleSelect`：通过 prepared statement 查询 seed 用户 `alice`。
-- `MySqlIntegrationTest.ExecuteUpdateAndQueryRoundTripSpecialCharacters`：创建临时表，插入并查询含引号、反斜杠、换行和中文的字符串，验证参数绑定不是 SQL 拼接。
-- `MySqlIntegrationTest.InvalidSqlReturnsErrorStatus`：错误 SQL 返回失败 `Status` 和错误信息。
+`MySqlConnection` 不知道 `Session`，不回调网络层，也不做业务判断。
 
-这些测试默认连接 `127.0.0.1:33060`，用户 `liteim`，密码 `6`。如果本地 Docker MySQL 没启动，测试会 skip；做 Step 23 验证时应该先启动 Docker 依赖。
+### 3. 整体运行链路
 
-## 5. 验证命令
+以查询用户为例：
+
+1. DAO 从连接池拿到 `MySqlConnection`。
+2. 构造 `PreparedStatement statement(connection)`。
+3. `prepare("SELECT ... WHERE username = ?")`。
+4. `bindString(0, username)`。
+5. `executeQuery(result)`。
+6. DAO 检查 `result.rows()`。
+7. DAO 把字符串字段解析成 `UserRecord`。
+8. `ConnectionGuard` 析构后归还连接。
+
+### 4. 自身内部运行流程
+
+连接流程：
+
+```text
+connect(config)
+    -> close old handle
+    -> mysql_init
+    -> set utf8mb4
+    -> mysql_real_connect
+    -> connected_ = true
+```
+
+statement 更新流程：
+
+```text
+prepare SQL
+    -> bind every parameter
+    -> bindParameters()
+    -> mysql_stmt_execute
+    -> mysql_stmt_affected_rows
+    -> mysql_stmt_free_result
+```
+
+statement 查询流程：
+
+```text
+prepare SQL
+    -> bind every parameter
+    -> execute
+    -> fetch metadata
+    -> bind result columns
+    -> fetch rows
+    -> convert each column to optional<string>
+    -> free result
+```
+
+### 5. 小例子和边界
+
+小例子：
+
+```cpp
+MySqlConnection connection;
+auto status = connection.connect(config.mysql);
+if (!status.isOk()) {
+    return status;
+}
+
+PreparedStatement statement(connection);
+status = statement.prepare("SELECT username FROM users WHERE user_id = ?");
+if (!status.isOk()) {
+    return status;
+}
+status = statement.bindInt64(0, 1001);
+if (!status.isOk()) {
+    return status;
+}
+
+MySqlQueryResult result;
+status = statement.executeQuery(result);
+```
+
+边界：
+
+- 不要用 `executeSimple()` 拼用户输入。
+- 同一个 `MySqlConnection` 不跨线程共享。
+- `PreparedStatement` 不能活得比连接更久。
+- 本 Step 不做连接池和事务封装，只提供基础能力。
+
+## 后续实现 / 关键设计说明
+
+Step 23 故意只做 thin wrapper：
+
+- 连接池放到 Step 24。
+- DAO 放到 Step 25-27。
+- Redis 放到 Step 28。
+- 网络业务接入放到 Step 31 以后。
+
+使用 `pkg-config mysqlclient` 是为了稳定查找系统 MySQL client，而不是依赖当前 shell 里可能被 Anaconda 改写的 `mysql_config`。
+
+## 测试设计
+
+测试分两类：
+
+- 头文件 / 不可用 MySQL 行为：验证 header 自包含、连接失败返回错误而不是崩溃。
+- Docker MySQL 集成测试：验证真实连接、`ping()`、prepared select、insert/query、错误 SQL 和特殊字符绑定。
+
+特殊字符绑定测试的目的不是证明 MySQL 永远安全，而是证明当前路径不拼接用户输入 SQL，参数通过 `MYSQL_BIND` 传入。
+
+## 验证命令
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d --wait
 cmake --build build
-ctest --test-dir build -R "MySqlConnectionTest|MySqlIntegrationTest|StorageInterfaceTest" --output-on-failure
+docker compose -f docker/docker-compose.yml ps
+ctest --test-dir build -R "MySqlConnection" --output-on-failure
 ctest --test-dir build --output-on-failure
+git diff --check
 ```
 
-本 Step 不改变 `TcpServer` / `Session` / `ThreadPool` 的运行时行为。后续 Step 24 才实现 `MySqlPool` 和 `ConnectionGuard`。
+如果 Docker MySQL 没启动，集成测试会 skip 或失败，先启动本地依赖：
+
+```bash
+docker compose -f docker/docker-compose.yml up -d
+```
+
+## 面试时怎么讲
+
+可以这样说：
+
+> Step 23 把 MySQL C API 包成 RAII 对象。`MySqlConnection` 拥有 `MYSQL*`，负责连接、ping、关闭和简单事务控制语句；`PreparedStatement` 拥有 `MYSQL_STMT*`，负责 prepare、参数绑定、更新和查询。查询结果统一输出成 `MySqlQueryResult`，字段用 `optional<string>` 表达 SQL NULL。DAO 以后只依赖这些 C++ 封装，不直接操作 MySQL C 指针，也不拼接用户输入 SQL。
+
+## 提交信息
+
+```text
+feat(storage): add mysql connection and prepared statement
+```

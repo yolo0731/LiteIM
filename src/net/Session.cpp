@@ -140,13 +140,11 @@ void Session::startInLoop() {
     channel_->enableReading();
     channel_registered_ = true;
     state_ = SessionState::kStarted;
-    if (output_buffer_.readableBytes() > 0) {
-        channel_->enableWriting();
-    }
 }
 
 void Session::sendEncodedInLoop(Bytes encoded) {
     loop_->assertInLoopThread();
+    // TcpServer 会在通过回调暴露 Session 前先启动它；kStarted 前发送属于契约违背，直接忽略。
     if (state_ != SessionState::kStarted || closed_.load() || encoded.empty()) {
         return;
     }

@@ -1,5 +1,25 @@
 # LiteIM Progress
 
+## 2026-05-11 Step 21-29 Tutorial Format Alignment
+
+本次按已有计划修正 `tutorials/step21_storage_cache_interfaces.md` 到 `tutorials/step29_online_status_cache.md` 的 Markdown 教程结构。
+
+已完成：
+
+- Step 21 补齐独立概念章节，扩写 `StorageTypes.hpp`、`IStorage.hpp`、`CacheTypes.hpp` 和 `ICache.hpp` 的 DTO、接口、失败语义、线程边界和后续实现边界。
+- Step 22 改成 Docker Compose / SQL 脚本契约说明，补 MySQL/Redis 服务契约、schema、seed 数据、Redis 空实例边界和标准运行流程。
+- Step 23-29 全部扩写到详细接口说明和两层运行流程：既说明它们在 LiteIM 业务架构里的上下游位置，也说明模块自身内部如何运行。
+- 每个 Step 都补齐测试设计、验证命令、面试说法和提交信息章节。
+- 本次只修改 Step 21-29 教程和 planning 记录，不修改 `tutorials/step20_backpressure.md`，也不改 C++/SQL 行为。
+
+当前验证：
+
+- 教程结构扫描：Step 21-29 均包含接口/契约说明、作用场景和运行流程、验证命令、提交信息；运行流程章节均包含 5 个固定小节。
+- `git diff --check`：通过。
+- `cmake --build build`：通过。
+- `ctest --test-dir build -R "StorageInterfaceTest|CacheInterfaceTest|MySql|UserDao|MessageDao|FriendGroupDao|Redis|OnlineStatusCache" --output-on-failure`：60/60 通过。
+- `ctest --test-dir build --output-on-failure`：237/237 通过。
+
 ## 2026-05-11 Step 29 OnlineStatusCache
 
 本次进入 `Step 29：实现 OnlineStatusCache`，目标是在 Step 28 `RedisClient` / `RedisPool` 之上提供 Redis TTL 在线状态缓存。

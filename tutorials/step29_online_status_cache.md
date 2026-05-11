@@ -1,34 +1,66 @@
 # Step 29：OnlineStatusCache
 
+Step 29 的目标是在 RedisPool 之上实现在线状态缓存。
+
+到 Step 28 为止，LiteIM 已经能安全执行 Redis 命令，但业务层还不应该手写 Redis key 和 value 格式。Step 29 解决的问题是：
+
+```text
+登录、心跳、断开连接和消息路由如何通过统一组件读写用户在线状态？
+```
+
+答案是 `OnlineStatusCache`。
+
 ## 1. 概念
 
-Step 29 把 Redis 从“能执行命令的基础设施”推进到第一个真实 cache 能力：在线状态。
+在线状态不是永久数据，适合 Redis TTL。
 
-在线状态不是最终持久化数据，它表示某个用户当前是否在某个 LiteIM server 和 session 上在线。它适合放 Redis，而不是 MySQL，原因是：
-
-- 在线状态会频繁刷新，心跳一次就可能续 TTL。
-- 断线清理可能失败，但 TTL 到期后可以自动兜底。
-- 后续好友列表、会话列表和多进程扩展都可以读 Redis 判断在线状态。
-
-本 Step 的 Redis key 固定为：
+LiteIM 第一版在线状态 key：
 
 ```text
 online:user:<user_id>
 ```
 
-value 保存 `user_id`、`session_id`、`server_id` 和 `last_active_time_ms`。`SETEX` 写入 key 和 TTL，`EXPIRE` 刷新 TTL，`DEL` 下线删除，`GET` 查询当前在线 session。
+value 保存：
 
-本 Step 不做未读计数、登录失败限制、AuthService、SessionManager、OnlineService，也不把 Redis 接进 `TcpServer` / `Session` 运行时。Redis 仍然是阻塞 API，后续只能由 business `ThreadPool` 调用，不能在 Reactor I/O 线程里直接调用。
+```text
+user_id
+session_id
+last_active_time_ms
+server_id
+```
 
-## 2. hpp 接口说明
+TTL 表示在线状态有效期：
 
-新增头文件：
+- 登录成功：写 key + TTL。
+- 收到心跳或完整有效业务包：刷新 TTL。
+- 连接断开：删除 key。
+- 异常断开或删除失败：TTL 到期兜底自动离线。
+
+Step 29 只实现 cache 组件，不把它接入登录流程、心跳 runtime 或 `Session` 关闭流程。这些会在后续业务 service 步骤完成。
+
+## 2. 本 Step 新增 / 修改文件
+
+新增：
 
 ```text
 include/liteim/cache/OnlineStatusCache.hpp
+src/cache/OnlineStatusCache.cpp
+tests/cache/online_status_cache_test.cpp
+tutorials/step29_online_status_cache.md
 ```
 
-核心接口：
+同时更新：
+
+```text
+src/cache/CMakeLists.txt
+tests/CMakeLists.txt
+README.md
+task_plan.md
+findings.md
+progress.md
+```
+
+## 3. OnlineStatusCache.hpp 接口说明
 
 ```cpp
 class OnlineStatusCache {
@@ -45,129 +77,364 @@ public:
     Status setUserOffline(std::uint64_t user_id);
     Status isUserOnline(std::uint64_t user_id, bool& online);
     Status getOnlineSession(std::uint64_t user_id, OnlineSession& session);
+
+private:
+    RedisPool& pool_;
+    std::chrono::milliseconds acquire_timeout_;
 };
 ```
 
-`OnlineStatusCache` 持有外部传入的 `RedisPool&`，它不拥有连接池。业务层需要保证 `RedisPool` 已经 `start()`，并且生命周期长于 `OnlineStatusCache`。
+### 构造函数
 
-接口语义：
+`OnlineStatusCache(RedisPool& pool, acquire_timeout)` 保存 Redis 连接池引用和 acquire 超时时间。
 
-- `setUserOnline(user_id, server_id, session_id, ttl)`：登录成功后写入在线状态；`last_active_time_ms` 自动取当前时间。
-- `setUserOnline(OnlineSession, ttl)`：允许调用方传入完整 session；如果 `last_active_time_ms <= 0`，实现会自动补当前时间。
-- `refreshUserOnline(user_id, ttl)`：心跳成功后刷新已有 key 的 TTL；如果 key 不存在，返回 `NotFound`。
-- `setUserOffline(user_id)`：断开连接或登出时删除在线 key；key 不存在也视为成功。
-- `isUserOnline(user_id, online)`：查询 key 是否存在且 value 可解析。
-- `getOnlineSession(user_id, session)`：读取在线 session；key 不存在返回 `NotFound`。
+所有权边界：
 
-失败语义：
+- `OnlineStatusCache` 不拥有 `RedisPool`。
+- 调用方必须保证 `RedisPool` 生命周期长于 cache。
+- 每个方法内部临时 acquire 一个 Redis client，方法结束后 guard 自动归还。
 
-- `user_id == 0`、`session_id == 0`、空 `server_id` 或非正 TTL 返回 `InvalidArgument`。
-- Redis 连接池借不到连接、命令失败或连接错误返回底层 `Status`。
-- 在线 key 不存在时，`getOnlineSession()` 和 `refreshUserOnline()` 返回 `NotFound`。
-- Redis value 无法解析时返回 `ParseError`，说明缓存内容损坏或版本不匹配。
+线程边界：
 
-## 3. 作用场景和运行流程
+- 方法会阻塞等待 Redis 连接和命令结果。
+- 只能在 business 线程使用。
+- 不允许在 Reactor I/O loop 直接调用。
 
-### 使用场景
+关键成员：
 
-后续 Step 31 登录成功后会做两件事：
+- `RedisPool& pool_`：Redis 连接池。
+- `std::chrono::milliseconds acquire_timeout_`：默认 200ms，避免业务线程永久等连接。
 
-```text
-SessionManager 绑定 user_id -> session_id
-OnlineStatusCache 写 online:user:<user_id> 并设置 TTL
+### `setUserOnline(user_id, server_id, session_id, ttl)`
+
+```cpp
+Status setUserOnline(std::uint64_t user_id,
+                     const std::string& server_id,
+                     std::uint64_t session_id,
+                     std::chrono::seconds ttl);
 ```
 
-心跳成功时刷新 TTL：
+便捷重载，用基础字段构造 `OnlineSession`。
 
-```text
-收到完整合法 heartbeat Packet
-  -> business ThreadPool
-  -> OnlineStatusCache::refreshUserOnline(user_id, ttl)
+语义：
+
+- 自动填充 `last_active_time_ms = Timestamp::now().millisecondsSinceEpoch()`。
+- 再调用 `setUserOnline(const OnlineSession&, ttl)`。
+
+输入要求：
+
+- `user_id > 0`。
+- `session_id > 0`。
+- `server_id` 非空。
+- `ttl > 0`。
+
+### `setUserOnline(const OnlineSession&, ttl)`
+
+```cpp
+Status setUserOnline(const OnlineSession& session, std::chrono::seconds ttl);
 ```
 
-断开连接或登出时删除 key：
+写入 Redis 在线状态。
+
+流程：
+
+1. 如果 `last_active_time_ms <= 0`，自动补当前时间。
+2. 校验 session。
+3. 校验 ttl。
+4. 从 RedisPool acquire client。
+5. 序列化 session。
+6. 执行 `SETEX online:user:<user_id> <ttl> <value>`。
+
+Redis key：
 
 ```text
-Session close
-  -> SessionManager 解除绑定
-  -> OnlineStatusCache::setUserOffline(user_id)
+online:user:<user_id>
 ```
 
-### 内部流程
-
-上线写入：
+Redis value：
 
 ```text
-setUserOnline()
-  -> 校验 user_id / session_id / server_id / ttl
-  -> RedisPool::acquire()
-  -> 序列化 OnlineSession
-  -> RedisClient::setex("online:user:<id>", value, ttl)
+v1:<user_id>:<session_id>:<last_active_time_ms>:<server_id_size>:<server_id>
 ```
 
-TTL 刷新：
+value 里保存 `server_id_size`，所以 `server_id` 可以包含冒号，不会被错误切分。
+
+### `refreshUserOnline()`
+
+```cpp
+Status refreshUserOnline(std::uint64_t user_id, std::chrono::seconds ttl);
+```
+
+刷新用户在线状态 TTL。
+
+流程：
+
+1. 校验 `user_id` 和 ttl。
+2. acquire Redis client。
+3. 执行 `EXPIRE online:user:<user_id> <ttl>`。
+4. 如果 Redis 返回 0，说明 key 不存在，返回 `NotFound`。
+
+这个函数只刷新 TTL，不重写 value。`last_active_time_ms` 是写在线时的记录，后续如果业务需要每次心跳同步更新时间，可以再扩展。
+
+### `setUserOffline()`
+
+```cpp
+Status setUserOffline(std::uint64_t user_id);
+```
+
+删除在线状态 key。
+
+语义：
+
+- key 存在：删除，返回 ok。
+- key 不存在：`DEL` 返回 0，但仍返回 ok。
+
+原因：
+
+断开连接清理应该幂等。即使删除失败或 key 已过期，Redis TTL 也会兜底最终离线。
+
+### `isUserOnline()`
+
+```cpp
+Status isUserOnline(std::uint64_t user_id, bool& online);
+```
+
+查询用户是否在线。
+
+语义：
+
+- 调用开始先 `online = false`。
+- key 不存在：返回 ok，保持 `online=false`。
+- key 存在：解析 value。
+- value 解析成功：`online=true`。
+- value 损坏：返回 `ParseError`，不静默当成在线或离线。
+
+为什么损坏 value 返回错误：
+
+在线状态 value 是服务端内部格式。如果 Redis 里已有损坏数据，继续当成离线会掩盖数据污染，继续当成在线会错误路由消息。
+
+### `getOnlineSession()`
+
+```cpp
+Status getOnlineSession(std::uint64_t user_id, OnlineSession& session);
+```
+
+读取完整在线 session。
+
+语义：
+
+- 调用开始先清空 `session`。
+- key 不存在返回 `NotFound`。
+- key 存在但格式损坏返回 `ParseError`。
+- 成功时填充完整 `OnlineSession`。
+
+后续消息路由会用它找到目标用户当前 `server_id` 和 `session_id`。
+
+### private helper
+
+`OnlineStatusCache.cpp` 内部 helper 包括：
+
+- `onlineKey(user_id)`：生成 `online:user:<id>`。
+- `validateUserId()` / `validateTtl()` / `validateSession()`：参数校验。
+- `acquireClient()`：从 RedisPool 获取 client，并检查 guard 非空。
+- `serializeSession()`：把 `OnlineSession` 编成 `v1:` value。
+- `parseSessionValue()`：解析 Redis value。
+- `readToken()`：按冒号读取字段。
+- `parseUint64()` / `parseInt64()`：解析数值字段。
+- `offlineStatus()`：构造用户离线 `NotFound`。
+- `parseStatus()`：构造 value 损坏 `ParseError`。
+
+这些 helper 都不暴露在头文件里，因为 key/value 格式是 `OnlineStatusCache` 的内部契约。
+
+## OnlineStatusCache 的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+`OnlineStatusCache` 位于业务 service 和 RedisPool 之间。
+
+后续会在这些场景使用：
+
+- AuthService 登录成功后写在线状态。
+- HeartbeatService 或业务包处理成功后刷新 TTL。
+- Session 断开后写下线。
+- ChatService 发送消息前查询接收者是否在线。
+- 私聊路由需要 `getOnlineSession()` 找到目标 session。
+
+当前 Step 只提供组件，不接入这些 runtime 流程。
+
+### 2. 上下层调用连接
 
 ```text
-refreshUserOnline()
-  -> 校验 user_id / ttl
-  -> RedisPool::acquire()
-  -> RedisClient::expire(key, ttl, updated)
-  -> updated=false 表示 key 已不存在，返回 NotFound
+AuthService / ChatService / HeartbeatService
+    -> business ThreadPool
+    -> OnlineStatusCache
+    -> RedisPool::acquire()
+    -> RedisClient
+    -> Redis SETEX / GET / EXPIRE / DEL
+    -> online:user:<user_id>
 ```
 
-读取 session：
+上层只看到业务方法，不需要知道 Redis key 和 value 格式。
+
+### 3. 整体运行链路
+
+登录成功链路：
+
+1. AuthService 校验用户名和密码。
+2. AuthService 拿到 user_id 和当前 Session 的 session_id。
+3. 调用 `setUserOnline(user_id, server_id, session_id, ttl)`。
+4. `OnlineStatusCache` 写 `online:user:<user_id>`。
+5. Redis 自动维护 TTL。
+
+心跳续期链路：
+
+1. 服务端收到完整有效入站 Packet。
+2. 后续 HeartbeatService 判断用户已登录。
+3. 调用 `refreshUserOnline(user_id, ttl)`。
+4. Redis `EXPIRE` 成功则继续在线。
+5. 如果 key 不存在，返回 `NotFound`，说明 Redis 状态已经过期或未写入。
+
+发送消息链路：
+
+1. ChatService 要发送给 target user。
+2. 调用 `isUserOnline(target_user, online)`。
+3. 如果 online=false，落离线消息并更新未读。
+4. 如果 online=true，调用 `getOnlineSession()` 拿 session 信息。
+5. 后续通过 SessionManager 找到连接并投递。
+
+断开连接链路：
+
+1. Session close 后，后续 service 得知 user_id。
+2. 调用 `setUserOffline(user_id)`。
+3. 删除 Redis key。
+4. 如果没删到，也依赖 TTL 兜底。
+
+### 4. 自身内部运行流程
+
+上线写入流程：
 
 ```text
-getOnlineSession()
-  -> RedisPool::acquire()
-  -> RedisClient::get(key)
-  -> NIL 返回 NotFound
-  -> 解析 value 到 OnlineSession
+input fields / OnlineSession
+    -> fill last_active_time_ms if needed
+    -> validate user/session/server/ttl
+    -> acquire RedisConnectionGuard
+    -> serialize "v1:..."
+    -> SETEX online:user:<id> ttl value
 ```
 
-### 一个小例子
-
-用户 `1001` 在 `liteim-dev-1` 的 session `42` 登录：
+查询在线流程：
 
 ```text
-SETEX online:user:1001 30 "v1:1001:42:...:12:liteim-dev-1"
+online = false
+    -> validate user_id
+    -> acquire RedisConnectionGuard
+    -> GET online:user:<id>
+    -> nil: ok + false
+    -> string: parseSessionValue()
+    -> parse ok: online = true
+    -> parse failed: ParseError
 ```
 
-30 秒内持续收到心跳：
+读取 session 流程：
 
 ```text
-EXPIRE online:user:1001 30
+session = {}
+    -> validate user_id
+    -> GET key
+    -> nil: NotFound
+    -> parse value into OnlineSession
 ```
 
-如果进程崩溃导致没有执行 `DEL`，这个 key 最多保留 30 秒，然后 Redis 自动让用户变为离线。
-
-## 4. 测试
-
-新增测试文件：
+value 解析流程：
 
 ```text
-tests/cache/online_status_cache_test.cpp
+check "v1:" prefix
+    -> read user_id
+    -> read session_id
+    -> read last_active_time_ms
+    -> read server_id_size
+    -> read remaining bytes as server_id
+    -> compare server_id.size() with declared size
+    -> validate session
 ```
 
-覆盖：
+### 5. 小例子和边界
 
-- `OnlineStatusCacheTest.HeaderIsSelfContained`：头文件可独立使用，非法 user id 在未连接 Redis 前就返回 `InvalidArgument`。
-- `OnlineStatusCacheIntegrationTest.SetUserOnlineMakesUserQueryable`：上线后 `isUserOnline()` 为 true，`getOnlineSession()` 能读回 user、session、server 和活跃时间。
-- `OnlineStatusCacheIntegrationTest.ServerIdMayContainColon`：`server_id` 中包含冒号时仍能按长度字段正确解析。
-- `OnlineStatusCacheIntegrationTest.RefreshUserOnlineExtendsTtl`：刷新 TTL 后，超过原 TTL 仍然在线。
-- `OnlineStatusCacheIntegrationTest.SetUserOfflineRemovesOnlineSession`：下线删除 key，之后查询为离线，读取 session 返回 `NotFound`。
-- `OnlineStatusCacheIntegrationTest.TtlExpiryMakesUserOffline`：TTL 到期后自动离线。
-- `OnlineStatusCacheIntegrationTest.RefreshMissingUserReturnsNotFound`：刷新不存在用户返回 `NotFound`。
+小例子：
 
-Redis 集成测试继续使用 `Config::defaults().redis`，也就是 Step 22 Docker Redis：`127.0.0.1:63790`，密码 `6`。Redis 不可用时测试 skip，避免无 Docker 环境下误报失败。
+```cpp
+OnlineStatusCache cache(redis_pool);
 
-## 5. 验证命令
+auto status = cache.setUserOnline(1001, "liteim-dev-1", 42, std::chrono::seconds(30));
+if (!status.isOk()) {
+    return status;
+}
+
+bool online = false;
+status = cache.isUserOnline(1001, online);
+```
+
+边界：
+
+- `user_id == 0` 是无效参数。
+- `session_id == 0` 是无效参数。
+- `server_id.empty()` 是无效参数。
+- `ttl <= 0` 是无效参数。
+- `refreshUserOnline()` 对不存在 key 返回 `NotFound`。
+- `setUserOffline()` 对不存在 key 仍返回 ok。
+- 损坏 value 返回 `ParseError`。
+- RedisPool acquire 超时会向上返回错误。
+- 阻塞 Redis 操作只能在 business 线程执行。
+
+## 后续实现 / 关键设计说明
+
+Step 29 不实现：
+
+- `UnreadCounter`。
+- `LoginRateLimiter`。
+- AuthService 登录成功写 Redis。
+- 心跳 runtime 续期。
+- Session 断开 runtime 清理。
+- SessionManager。
+- OnlineService。
+- 跨节点路由。
+- Redis Cluster / Pub/Sub / Streams。
+
+这些都属于后续 Step。当前只把在线状态 Redis key 的读写语义固定并测试。
+
+## 测试设计
+
+测试覆盖：
+
+- `OnlineStatusCache.hpp` 头文件自包含。
+- `setUserOnline()` 后可以查询在线状态。
+- `server_id` 包含冒号时仍能正确解析。
+- `refreshUserOnline()` 能延长 TTL。
+- `setUserOffline()` 删除在线状态。
+- TTL 到期后用户自动离线。
+- 刷新不存在用户返回 `NotFound`。
+- 无效上线参数返回 `InvalidArgument`。
+
+损坏 value 返回 `ParseError` 是当前实现的接口边界，后续如果扩展 Redis value 兼容性测试，应补专门用例覆盖这条路径。当前集成测试使用 Docker Redis，并用测试前缀 key 清理隔离。
+
+## 验证命令
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d --wait
 cmake --build build
+docker compose -f docker/docker-compose.yml ps
 ctest --test-dir build -R "OnlineStatusCache" --output-on-failure
 ctest --test-dir build --output-on-failure
+git diff --check
 ```
 
-本 Step 只完成在线状态 cache，不实现 Step 30 的未读计数和登录限流，也不进入 Step 31 的 `SessionManager` / `OnlineService`。
+## 面试时怎么讲
+
+可以这样说：
+
+> Step 29 在 RedisPool 上实现在线状态缓存。key 固定为 `online:user:<user_id>`，value 使用带版本和 server_id 长度的格式保存 user_id、session_id、last_active_time_ms 和 server_id，TTL 表示在线有效期。登录成功用 `SETEX` 写入，心跳用 `EXPIRE` 刷新，断开连接用 `DEL` 删除，查询用 `GET` 并解析 value。key 不存在时 `isUserOnline()` 返回 false，`getOnlineSession()` 返回 `NotFound`，损坏 value 返回 `ParseError`，避免错误路由。
+
+## 提交信息
+
+```text
+feat(cache): add redis online status cache
+```

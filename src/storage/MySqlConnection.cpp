@@ -39,9 +39,7 @@ struct ResultColumnBuffer {
     bool error{false};
 };
 
-Status fetchFullColumn(MYSQL_STMT* statement,
-                       unsigned int column,
-                       unsigned long length,
+Status fetchFullColumn(MYSQL_STMT* statement, unsigned int column, unsigned long length,
                        std::optional<std::string>& value) {
     std::vector<char> buffer(static_cast<std::size_t>(length) + 1U);
     unsigned long fetched_length = 0;
@@ -72,9 +70,9 @@ Status fetchFullColumn(MYSQL_STMT* statement,
 } // namespace
 
 struct PreparedStatementImpl {
-    MYSQL_STMT* statement{nullptr};
-    std::vector<MYSQL_BIND> parameters;
-    std::vector<ParameterValue> parameter_values;
+    MYSQL_STMT* statement{nullptr};               // MySQL预处理语句的原生句柄
+    std::vector<MYSQL_BIND> parameters;           // 存储参数绑定信息的数组，大小等于预处理语句的 ? 参数数量
+    std::vector<ParameterValue> parameter_values; // 自己定义的真实参数值存储区
 };
 
 void MySqlQueryResult::clear() {
@@ -95,8 +93,7 @@ MySqlConnection::~MySqlConnection() {
 }
 
 MySqlConnection::MySqlConnection(MySqlConnection&& other) noexcept
-    : handle_(std::exchange(other.handle_, nullptr)),
-      connected_(std::exchange(other.connected_, false)) {
+    : handle_(std::exchange(other.handle_, nullptr)), connected_(std::exchange(other.connected_, false)) {
 }
 
 MySqlConnection& MySqlConnection::operator=(MySqlConnection&& other) noexcept {
@@ -111,25 +108,20 @@ MySqlConnection& MySqlConnection::operator=(MySqlConnection&& other) noexcept {
 Status MySqlConnection::connect(const MySqlConfig& config) {
     close();
 
-    handle_ = mysql_init(nullptr);
-    if (handle_ == nullptr) {
+    handle_ = mysql_init(nullptr); // 创建/初始化一个 MYSQL 原生连接句柄
+    if (handle_ == nullptr) {      // 创建失败
         return Status::error(ErrorCode::InternalError, "mysql_init failed");
     }
 
+    // mysql_options(...)给这个连接句柄 handle_ 设置一个选项
     if (mysql_options(handle_, MYSQL_SET_CHARSET_NAME, kUtf8Mb4) != 0) {
         const auto status = mysqlError(handle_, "mysql_options MYSQL_SET_CHARSET_NAME failed");
         close();
         return status;
     }
 
-    MYSQL* connected = mysql_real_connect(handle_,
-                                          config.host.c_str(),
-                                          config.user.c_str(),
-                                          config.password.c_str(),
-                                          config.database.c_str(),
-                                          config.port,
-                                          nullptr,
-                                          0);
+    MYSQL* connected = mysql_real_connect(handle_, config.host.c_str(), config.user.c_str(), config.password.c_str(),
+                                          config.database.c_str(), config.port, nullptr, 0);
     if (connected == nullptr) {
         const auto status = mysqlError(handle_, "mysql_real_connect failed");
         close();

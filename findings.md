@@ -8,6 +8,17 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-11 Step 21-29 Tutorial Format Alignment Findings
+
+本次是 Markdown-only 教程格式修正，不修改 C++、SQL、CMake、README 或 `PROJECT_MEMORY.md`。
+
+确认并采用的修正文档规则：
+
+- `tutorials/step21_storage_cache_interfaces.md` 到 `tutorials/step29_online_status_cache.md` 都按固定教学结构补齐：概念、新增/修改文件、详细接口或契约说明、作用场景和运行流程、后续边界、测试设计、验证命令、面试说法和提交信息。
+- `作用场景和运行流程` 不再只写函数流水线；每个 Step 都拆成 5 个小节：在 LiteIM 里的具体使用场景、上下层调用连接、整体运行链路、自身内部运行流程、小例子和边界。
+- `hpp 接口说明` 需要覆盖 public API、关键成员变量、private helper、失败语义、线程边界和所有权边界；Step 22 没有 C++ header，所以写等价的 Docker Compose / SQL 脚本契约说明。
+- 本次明确避开已有未提交的 `tutorials/step20_backpressure.md`、net 源码/header 和 `scripts/seed_test_data.sql` 改动，避免把用户侧或其他任务改动混进本轮教程修正。
+
 ## 2026-05-11 Step 29 OnlineStatusCache Findings
 
 本次进入 `Step 29：实现 OnlineStatusCache`，只实现 Redis 在线状态缓存，不实现未读计数、登录失败限制、业务 service、SessionManager、OnlineService 或网络层运行时接入。

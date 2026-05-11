@@ -1,128 +1,428 @@
 # Step 27：FriendDao 和 GroupDao
 
+Step 27 的目标是在 MySQL 存储层补齐好友关系和群组成员 DAO。
+
+到 Step 26 为止，LiteIM 已经能访问用户表、保存消息和管理离线消息，但联系人和群聊还缺少关系数据访问。Step 27 解决的问题是：
+
+```text
+好友关系、建群、加群、退群和成员列表如何通过 DAO 稳定落 MySQL？
+```
+
+答案是实现 `FriendDao` 和 `GroupDao`。
+
 ## 1. 概念
 
-Step 27 把 Step 22 建好的 `friendships`、`chat_groups`、`group_members` 三张表封装成 DAO。它仍然是阻塞 MySQL 数据访问层，后续只能放到 business `ThreadPool` 中调用，不能直接放进 Reactor I/O 线程。
+好友和群组属于 IM 的关系层数据。
 
-本 Step 只做数据访问：
+好友关系第一版使用直接双向关系：
 
-- `FriendDao` 添加双向好友关系、查询某个用户的好友列表。
-- `GroupDao` 创建群、添加群成员、移除普通成员、查询群成员、按 group id 查询群资料。
-- DAO 不持有 `Session`，不操作 `EventLoop`，不做登录态、在线状态、未读数或消息路由。
+```text
+addFriendship(1001, 1002)
+    -> insert (1001, 1002)
+    -> insert (1002, 1001)
+```
 
-第一版好友关系没有申请审批，调用 `addFriendship()` 就直接建立双向关系。第一版群权限只区分 owner 和 normal member：owner 存在 `chat_groups.owner_id`，普通成员和 owner 都在 `group_members` 里。
+群组第一版只区分 owner 和普通成员：
 
-## 2. hpp 接口说明
+```text
+chat_groups.owner_id
+group_members(group_id, user_id)
+```
 
-### `FriendDao`
+不做：
 
-`FriendDao` 依赖 `MySqlPool`：
+- 好友申请审批。
+- 拉黑、备注、分组。
+- 群管理员。
+- 群禁言。
+- 群公告。
+- 入群审批。
+
+Step 27 只做 DAO，不接入 ChatService，也不做 Redis 缓存。
+
+## 2. 本 Step 新增 / 修改文件
+
+新增：
+
+```text
+include/liteim/storage/FriendDao.hpp
+include/liteim/storage/GroupDao.hpp
+src/storage/FriendDao.cpp
+src/storage/GroupDao.cpp
+tests/storage/friend_group_dao_test.cpp
+tutorials/step27_friend_group_dao.md
+```
+
+同时更新：
+
+```text
+src/storage/CMakeLists.txt
+tests/CMakeLists.txt
+README.md
+task_plan.md
+findings.md
+progress.md
+```
+
+## 3. FriendDao.hpp 接口说明
 
 ```cpp
-explicit FriendDao(MySqlPool& pool,
-                   std::chrono::milliseconds acquire_timeout = std::chrono::milliseconds(500));
+class FriendDao {
+public:
+    explicit FriendDao(MySqlPool& pool,
+                       std::chrono::milliseconds acquire_timeout = std::chrono::milliseconds(500));
+
+    Status addFriendship(std::uint64_t user_id, std::uint64_t friend_id);
+    Status getFriends(std::uint64_t user_id, std::vector<UserRecord>& friends);
+};
 ```
 
-public 方法：
+### 构造函数
 
-- `addFriendship(user_id, friend_id)`：在一个事务里插入两个方向的好友关系。
-- `getFriends(user_id, friends)`：查询某个用户的好友列表，并返回完整 `UserRecord`。
+保存非 owning `MySqlPool*` 和 acquire timeout。
 
-`addFriendship()` 会拒绝 `0` id 和自己加自己。重复添加同一对好友是幂等的：已有行不会更新 `created_at_ms`，也不会插入重复数据。
+关键成员：
 
-### `GroupDao`
+- `MySqlPool* pool_`。
+- `std::chrono::milliseconds acquire_timeout_`。
 
-`GroupDao` 同样依赖 `MySqlPool`：
+线程边界：
+
+- 会阻塞 MySQL，只能在 business 线程使用。
+- 不直接操作网络层对象。
+
+### `addFriendship()`
 
 ```cpp
-explicit GroupDao(MySqlPool& pool,
-                  std::chrono::milliseconds acquire_timeout = std::chrono::milliseconds(500));
+Status addFriendship(std::uint64_t user_id, std::uint64_t friend_id);
 ```
 
-public 方法：
+输入要求：
 
-- `createGroup(request, created_group)`：创建群，并把 owner 同步写入 `group_members`。
-- `addGroupMember(group_id, user_id)`：添加成员，重复添加保持幂等。
-- `removeGroupMember(group_id, user_id)`：移除普通成员。
-- `getGroupMembers(group_id, members)`：查询群成员，join `users` 返回 username 和 nickname。
-- `findGroupById(group_id, group)`：按 id 查询群资料。
+- `user_id != 0`。
+- `friend_id != 0`。
+- 两者不能相等。
+- 两者都不能超过 MySQL signed bind 范围。
 
-`createGroup()` 用事务包住 `chat_groups` 插入、`LAST_INSERT_ID()` 查回和 owner 成员插入。这样失败时会整体 `ROLLBACK`，不会留下只有群资料、没有 owner 成员的半成品。
+数据库语义：
 
-`removeGroupMember()` 会先查询 `chat_groups.owner_id`。如果要移除的是 owner，返回 `InvalidArgument`，避免 owner 仍在群资料里但不在成员表。
+- 在同一事务中写入两个方向：
+  - `(user_id, friend_id)`
+  - `(friend_id, user_id)`
+- 使用 `ON DUPLICATE KEY UPDATE created_at_ms = friendships.created_at_ms` 保持幂等。
+- 重复添加不会生成脏数据，也不会刷新旧关系时间。
 
-## 3. 作用场景和运行流程
+失败语义：
 
-后续添加好友的大致流程会是：
+- 参数错误返回 `InvalidArgument`。
+- 外键不存在或 MySQL 错误返回对应 MySQL `Status`。
+- 任意插入失败都会 `ROLLBACK`。
+
+### `getFriends()`
+
+```cpp
+Status getFriends(std::uint64_t user_id, std::vector<UserRecord>& friends);
+```
+
+查询某用户的好友列表。
+
+SQL 语义：
+
+- 从 `friendships` join `users`。
+- 返回完整 `UserRecord`。
+- 按 `u.user_id ASC` 排序，保持测试和接口稳定。
+
+输出：
+
+- 调用开始先 clear。
+- 没有好友返回 ok + 空 vector。
+
+### private helper
+
+`.cpp` 内部 helper 包括：
+
+- `validateUserId()`：检查非 0 和 signed bind 范围。
+- `bindUserId()`：校验后绑定参数。
+- `rowToUserRecord()`：把 join 后的 users 行转换成 `UserRecord`。
+- `rollbackSilently()`：事务失败时尽力回滚。
+
+## 4. GroupDao.hpp 接口说明
+
+```cpp
+class GroupDao {
+public:
+    explicit GroupDao(MySqlPool& pool,
+                      std::chrono::milliseconds acquire_timeout = std::chrono::milliseconds(500));
+
+    Status createGroup(const CreateGroupRequest& request, GroupRecord& created_group);
+    Status addGroupMember(std::uint64_t group_id, std::uint64_t user_id);
+    Status removeGroupMember(std::uint64_t group_id, std::uint64_t user_id);
+    Status getGroupMembers(std::uint64_t group_id, std::vector<GroupMemberRecord>& members);
+    Status findGroupById(std::uint64_t group_id, GroupRecord& group);
+};
+```
+
+### 构造函数
+
+和 `FriendDao` 一样，保存非 owning pool 指针和 acquire timeout。
+
+### `createGroup()`
+
+```cpp
+Status createGroup(const CreateGroupRequest& request, GroupRecord& created_group);
+```
+
+输入要求：
+
+- `request.owner_id != 0`。
+- `request.group_name` 不能为空。
+- owner id 不能超过 signed bind 范围。
+
+事务语义：
 
 ```text
-business ThreadPool
-  -> FriendDao::addFriendship(user_id, friend_id)
-  -> EventLoop::queueInLoop() 返回 AddFriendResponse
+START TRANSACTION
+    -> INSERT chat_groups
+    -> SELECT LAST_INSERT_ID()
+    -> INSERT owner into group_members
+COMMIT
 ```
 
-DAO 内部添加好友：
+这样避免出现“群已创建，但 owner 不在成员表”的半成品。
+
+输出：
+
+- `created_group` 是查回的完整 `GroupRecord`。
+
+### `addGroupMember()`
+
+```cpp
+Status addGroupMember(std::uint64_t group_id, std::uint64_t user_id);
+```
+
+语义：
+
+- 校验 group_id / user_id。
+- 向 `group_members` 插入成员。
+- 使用 `ON DUPLICATE KEY UPDATE joined_at_ms = group_members.joined_at_ms` 保持幂等。
+- 重复加群不刷新入群时间。
+
+### `removeGroupMember()`
+
+```cpp
+Status removeGroupMember(std::uint64_t group_id, std::uint64_t user_id);
+```
+
+流程：
+
+1. 校验 group_id / user_id。
+2. 查询 `chat_groups.owner_id`。
+3. 如果要移除 owner，返回 `InvalidArgument`。
+4. 删除 `group_members` 里的普通成员。
+5. affected rows 为 0 时返回 `NotFound`。
+
+为什么 owner 不能被普通移除：
+
+`chat_groups.owner_id` 仍指向 owner。如果把 owner 从 members 删除，会出现“群主不是群成员”的不一致状态。
+
+### `getGroupMembers()`
+
+```cpp
+Status getGroupMembers(std::uint64_t group_id, std::vector<GroupMemberRecord>& members);
+```
+
+查询群成员列表。
+
+SQL 语义：
+
+- 从 `group_members` join `users`。
+- 返回 `user_id`、`username`、`nickname`、`joined_at_ms`。
+- 按 `joined_at_ms ASC, user_id ASC` 排序。
+
+输出：
+
+- 开始先 clear。
+- 没有成员返回 ok + 空 vector。
+
+### `findGroupById()`
+
+```cpp
+Status findGroupById(std::uint64_t group_id, GroupRecord& group);
+```
+
+按 group id 查询群资料。
+
+失败语义：
+
+- 参数非法返回 `InvalidArgument`。
+- 群不存在返回 `NotFound`。
+- 多行或行格式异常返回 `InternalError`。
+
+### private helper
+
+`.cpp` 内部 helper 包括：
+
+- `validateId()` / `bindId()`：统一校验 group_id / user_id。
+- `rowToGroupRecord()`：解析群资料。
+- `rowToGroupMemberRecord()`：解析成员列表行。
+- `querySingleGroup()`：统一处理群不存在、多行和正常单行。
+- `queryLastInsertedGroup()`：建群后查回自增 id。
+- `queryGroupOwner()`：移除成员前查询 owner。
+- `insertGroupMember()`：建群和加成员共用的幂等插入。
+- `rollbackSilently()`：事务失败时回滚。
+
+## FriendDao / GroupDao 的作用场景和运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+后续业务 service 会使用这些 DAO：
+
+- FriendService：添加好友、拉取好友列表。
+- GroupService：建群、加群、退群、拉成员列表、查询群资料。
+- ChatService：发送群消息前可以查询群成员。
+- HistoryService：展示会话信息时可以补充群名或成员信息。
+
+### 2. 上下层调用连接
 
 ```text
-MySqlPool::acquire(timeout, guard)
-  -> START TRANSACTION
-  -> INSERT INTO friendships (user_id, friend_id)
-  -> INSERT INTO friendships (friend_id, user_id)
-  -> ON DUPLICATE KEY UPDATE no-op
-  -> COMMIT
-  -> 失败时 ROLLBACK
-  -> ConnectionGuard 析构归还连接
+Friend/Group Packet
+    -> Session
+    -> business ThreadPool
+    -> FriendService / GroupService
+    -> FriendDao / GroupDao
+    -> MySqlPool
+    -> friendships / chat_groups / group_members
 ```
 
-后续建群的大致流程会是：
+DAO 不向客户端推送通知，也不缓存群成员；这些是后续 service 和 Redis cache 的职责。
+
+### 3. 整体运行链路
+
+添加好友链路：
+
+1. FriendService 校验请求者身份。
+2. 调用 `FriendDao::addFriendship(user_id, friend_id)`。
+3. DAO 在事务中写两个方向。
+4. service 组装响应。
+
+创建群链路：
+
+1. GroupService 收到建群请求。
+2. 调用 `GroupDao::createGroup({owner_id, group_name}, group)`。
+3. DAO 在事务中插入群，再插入 owner 成员。
+4. service 返回群资料。
+
+移除成员链路：
+
+1. GroupService 校验操作者权限。
+2. 调用 `removeGroupMember(group_id, user_id)`。
+3. DAO 查询 owner。
+4. owner 不允许移除；普通成员可删除。
+
+### 4. 自身内部运行流程
+
+好友双向写入流程：
 
 ```text
-business ThreadPool
-  -> GroupDao::createGroup(request, created_group)
-  -> EventLoop::queueInLoop() 返回 CreateGroupResponse
+validate user_id/friend_id
+    -> reject same id
+    -> pool.acquire()
+    -> START TRANSACTION
+    -> INSERT two rows with ON DUPLICATE KEY no-op
+    -> COMMIT
 ```
 
-DAO 内部建群：
+建群流程：
 
 ```text
-MySqlPool::acquire(timeout, guard)
-  -> START TRANSACTION
-  -> INSERT INTO chat_groups ...
-  -> SELECT ... WHERE group_id = LAST_INSERT_ID()
-  -> INSERT INTO group_members (group_id, owner_id)
-  -> COMMIT
-  -> 失败时 ROLLBACK
+validate owner and group_name
+    -> pool.acquire()
+    -> START TRANSACTION
+    -> INSERT chat_groups
+    -> SELECT LAST_INSERT_ID()
+    -> INSERT owner into group_members
+    -> COMMIT
 ```
 
-查询群成员：
+成员查询流程：
 
 ```text
-MySqlPool::acquire(timeout, guard)
-  -> SELECT group_members JOIN users
-  -> GroupMemberRecord(user_id, username, nickname, joined_at_ms)
+validate group_id
+    -> pool.acquire()
+    -> SELECT group_members JOIN users
+    -> rowToGroupMemberRecord()
+    -> sorted vector
 ```
 
-## 4. 测试
+### 5. 小例子和边界
 
-新增 `tests/storage/friend_group_dao_test.cpp`：
+小例子：
 
-- `FriendGroupDaoTest.HeadersAreSelfContained`：`FriendDao` / `GroupDao` 头文件可独立使用。
-- `FriendGroupDaoIntegrationTest.AddFriendshipCreatesBidirectionalRelationship`：添加好友后双方好友列表都能看到对方。
-- `FriendGroupDaoIntegrationTest.RepeatedAddFriendshipDoesNotCreateDuplicates`：重复添加和反向重复添加不产生重复关系。
-- `FriendGroupDaoIntegrationTest.CreateGroupPersistsGroupAndOwnerMembership`：创建群成功，能按 id 查回群资料，owner 自动进入成员表。
-- `FriendGroupDaoIntegrationTest.AddGroupMemberIsIdempotent`：重复加入同一成员不会产生重复成员。
-- `FriendGroupDaoIntegrationTest.RemoveGroupMemberRemovesNormalMember`：移除普通成员后成员列表只剩 owner。
-- `FriendGroupDaoIntegrationTest.FindMissingGroupReturnsNotFound`：不存在的 group id 返回 `NotFound`。
+```cpp
+auto status = friend_dao.addFriendship(1001, 1002);
+if (!status.isOk()) {
+    return status;
+}
 
-测试使用 `step27_` 用户名和群名，SetUp/TearDown 只清理自己的测试用户、好友关系、群组和群成员，不修改 seed 用户 `alice`、`bob`、`mira_bot`。
+std::vector<UserRecord> friends;
+status = friend_dao.getFriends(1001, friends);
+```
 
-## 5. 验证命令
+边界：
+
+- 不能把自己加为好友。
+- 重复添加好友是幂等的。
+- 建群时 owner 自动成为成员。
+- 重复加群成员是幂等的。
+- owner 不能被普通 remove。
+- DAO 不实现好友申请、群权限系统或成员缓存。
+
+## 后续实现 / 关键设计说明
+
+Step 27 仍然只是存储层。
+
+它不实现：
+
+- FriendService / GroupService。
+- 群消息发送扩散。
+- Redis 群成员缓存。
+- 群管理员和审批流程。
+- 网络 runtime 接入。
+
+这些都留到业务 service 层做组合。
+
+## 测试设计
+
+测试覆盖：
+
+- 头文件自包含。
+- 添加好友后双方关系存在。
+- 重复添加好友不产生重复关系。
+- 创建群后群资料存在，owner 是成员。
+- 重复添加群成员幂等。
+- 移除普通成员成功。
+- 查询不存在群返回 `NotFound`。
+
+测试用例在 MySQL 中创建独立用户和群，避免依赖 seed 数据的可变状态。
+
+## 验证命令
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d --wait
 cmake --build build
-ctest --test-dir build -R "FriendGroupDaoTest|FriendGroupDaoIntegrationTest" --output-on-failure
+docker compose -f docker/docker-compose.yml ps
+ctest --test-dir build -R "FriendGroupDao" --output-on-failure
 ctest --test-dir build --output-on-failure
+git diff --check
 ```
 
-本 Step 不实现 Redis client、FriendService、GroupService、AuthService、ChatService、user-session 绑定或网络层运行时路由。它只把好友和群组关系封装成 MySQL DAO。
+## 面试时怎么讲
+
+可以这样说：
+
+> Step 27 实现好友和群组 DAO。好友关系第一版用 friendships 表的两行表达双向关系，`addFriendship()` 在一个事务里插入两个方向，并用 `ON DUPLICATE KEY UPDATE` 做幂等 no-op。群组用 `chat_groups.owner_id` 表达群主，用 `group_members` 表达成员；建群时在一个事务里插入群资料和 owner 成员，移除成员前会查询 owner，拒绝把群主从成员表删除。DAO 只做数据访问，不做好友审批、群权限系统或网络通知。
+
+## 提交信息
+
+```text
+feat(storage): implement friend and group dao
+```

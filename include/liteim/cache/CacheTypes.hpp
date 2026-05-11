@@ -6,7 +6,7 @@
 #include <string>
 
 namespace liteim {
-
+// 定义缓存相关的数据结构，包括在线会话、未读消息键、登录尝试键
 struct OnlineSession {
     std::uint64_t user_id{0};
     std::uint64_t session_id{0};
