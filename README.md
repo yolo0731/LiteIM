@@ -77,7 +77,7 @@ Important boundaries:
 - `liteim_net`: `Buffer`, `SocketUtil`, `UniqueFd`, `Channel`, `Epoller`, `EventLoop`, `Acceptor`, `Session`, `EventLoopThread`, `EventLoopThreadPool`, `SignalWatcher`, and `TcpServer`.
 - `liteim_concurrency`: fixed-size business `ThreadPool`.
 - `liteim/timer`: `TimerHeap` and `TimerManager`, linked into the network layer because `TimerManager` depends on `EventLoop` and `Channel`.
-- `liteim_storage`: storage DTOs, the `IStorage` interface, `MySqlConnection`, `PreparedStatement`, `MySqlQueryResult`, `MySqlPool`, `ConnectionGuard`, `UserDao`, `AuthDao`, `MessageDao`, and `OfflineMessageDao` for future MySQL-backed users, friends, groups, messages, offline messages, and history.
+- `liteim_storage`: storage DTOs, the `IStorage` interface, `MySqlConnection`, `PreparedStatement`, `MySqlQueryResult`, `MySqlPool`, `ConnectionGuard`, `UserDao`, `AuthDao`, `MessageDao`, `OfflineMessageDao`, `FriendDao`, and `GroupDao` for future MySQL-backed users, friends, groups, messages, offline messages, and history.
 - `liteim_cache`: cache DTOs and the `ICache` interface for future Redis-backed online sessions, unread counters, and login failure limiting.
 
 ## Build And Test
@@ -183,11 +183,11 @@ Run tests:
 ctest --test-dir build --output-on-failure
 ```
 
-The Step 23-26 MySQL integration tests use `Config::defaults()`, so they target the local Docker MySQL endpoint `127.0.0.1:33060` with user `liteim` and password `6`. If that container is not running, those tests skip instead of failing unrelated unit-test runs. Start the local dependency stack first when validating the storage layer:
+The Step 23-27 MySQL integration tests use `Config::defaults()`, so they target the local Docker MySQL endpoint `127.0.0.1:33060` with user `liteim` and password `6`. If that container is not running, those tests skip instead of failing unrelated unit-test runs. Start the local dependency stack first when validating the storage layer:
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d --wait
-ctest --test-dir build -R "MySql|UserDao|MessageDao" --output-on-failure
+ctest --test-dir build -R "MySql|UserDao|MessageDao|FriendGroupDao" --output-on-failure
 ```
 
 Useful repository checks:

@@ -31,6 +31,7 @@ The workspace documentation roles are now separated:
 
 | Phase | Status | Notes |
 | --- | --- | --- |
+| Step 27 FriendDao and GroupDao | done | Added `FriendDao` / `GroupDao` for bidirectional idempotent friendships, friend listing through `users`, group creation with owner membership in one transaction, idempotent member join, normal-member removal, member listing, and `findGroupById()`. No Redis, service layer, network runtime integration, schema changes, group admin, mute, announcement, or approval workflow introduced. |
 | Step 26 MessageDao and OfflineMessageDao | done | Added `MessageDao` / `OfflineMessageDao` for private/group message persistence, pending offline-message save/fetch/delivered flow, and conversation history cursor pagination with `limit` capped at 50. `MySqlConnection::executeSimple()` covers transaction control statements for delivered marking. No Redis, service layer, network runtime integration, or schema changes introduced. |
 | Step 25 UserDao and AuthDao | done | Added `UserDao` / `AuthDao` for users-table data access, `ErrorCode::AlreadyExists`, structured duplicate-key conversion through `PreparedStatement::lastErrorNumber()`, and Docker-backed tests for create, duplicate username, find by username/id, missing user, and username existence. No service, session, Redis, message DAO, or runtime server integration introduced. |
 | Step 24 MySqlPool and ConnectionGuard | done | Added fixed-size `MySqlPool`, move-only `ConnectionGuard`, blocking `acquire(timeout, guard)`, close semantics, borrow-time ping/reconnect, and Docker-backed tests for capacity, timeout, RAII return, close failure, concurrent borrow/release, and reconnect after a closed borrowed connection. No DAO, Redis client, business service, or runtime server integration introduced. |
@@ -210,7 +211,8 @@ Current route status:
 - Step 24 `MySqlPool and ConnectionGuard` is complete.
 - Step 25 `UserDao and AuthDao` is complete.
 - Step 26 `MessageDao and OfflineMessageDao` is complete.
-- Default next implementation step is Step 27 `FriendDao and GroupDao`.
+- Step 27 `FriendDao and GroupDao` is complete.
+- Default next implementation step is Step 28 `RedisClient and RedisPool`.
 
 LiteIM phases:
 

@@ -8,6 +8,31 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-11 Step 27 FriendDao / GroupDao Findings
+
+本次进入 `Step 27：实现 FriendDao 和 GroupDao`，只实现 MySQL `friendships`、`chat_groups` 和 `group_members` DAO，不实现 Redis、业务 service、网络层运行时接入或 schema 变更。
+
+已经确认并采用的设计：
+
+- `FriendDao` 负责 `addFriendship()` 和 `getFriends()`。
+- `GroupDao` 负责 `createGroup()`、`addGroupMember()`、`removeGroupMember()`、`getGroupMembers()` 和 `findGroupById()`。
+- DAO 继续沿用 Step 25/26 的 `Status + output parameter` 风格，通过 `MySqlPool::acquire()` 借连接，通过 `PreparedStatement` 参数绑定 SQL。
+- 好友关系第一版没有申请审批；`addFriendship(user_id, friend_id)` 在一个事务里写入 `(user_id, friend_id)` 和 `(friend_id, user_id)` 两个方向。
+- 重复添加好友使用 `ON DUPLICATE KEY UPDATE` 的 no-op 分支保持幂等，不更新已有关系时间，也不产生重复行。
+- `getFriends()` join `users` 返回完整 `UserRecord`，按 `user_id ASC` 排序，便于测试和后续接口稳定。
+- `createGroup()` 在一个事务里插入 `chat_groups`，再把 owner 插入 `group_members`，避免出现“群已创建但 owner 不在成员表”的半成品。
+- 第一版群权限只区分 owner 和 normal member；owner 身份由 `chat_groups.owner_id` 表达，`group_members` 表不新增 role 列。
+- `addGroupMember()` 对重复成员幂等；`removeGroupMember()` 删除 normal member，并拒绝移除 owner，避免群主仍在 `chat_groups.owner_id` 但不在成员表。
+- `findGroupById()` 是 `GroupDao` 的具体 DAO 查询能力，不修改 Step 21 的 `IStorage` 接口；后续 service 如果需要统一抽象再扩展。
+
+本次不采用/不改：
+
+- 不实现好友申请、审批、拉黑、备注或删除好友双向策略之外的业务流程。
+- 不实现群管理员、禁言、公告、群资料编辑或群权限系统。
+- 不接入 `ThreadPool`、`TcpServer`、`Session` 或运行时 IM service。
+- 不实现 Redis 在线状态、未读数、登录失败限制或群成员缓存。
+- 不修改 MySQL schema、seed 数据或 Step 21 `IStorage` 接口。
+
 ## 2026-05-11 Step 26 MessageDao / OfflineMessageDao Findings
 
 本次进入 `Step 26：实现 MessageDao 和 OfflineMessageDao`，只实现 MySQL `messages` / `offline_messages` DAO，不实现 Redis、业务 service、网络层运行时接入或 schema 变更。

@@ -1,5 +1,61 @@
 # LiteIM Progress
 
+## 2026-05-11 Step 27 FriendDao / GroupDao
+
+本次进入 `Step 27：实现 FriendDao 和 GroupDao`，目标是在 Step 23/24/25 的 MySQL wrapper、连接池和 users DAO 之上提供好友表和群组表 DAO。
+
+概念边界：
+
+- `FriendDao` 只做 `friendships` 表的双向好友关系写入和好友列表查询。
+- `GroupDao` 只做 `chat_groups` / `group_members` 表的建群、成员增删查和按 id 查群。
+- 本 Step 不做好友申请审批、群管理员/禁言/公告、Redis 缓存、不接入业务 service、不修改 `TcpServer` / `Session` 运行时行为。
+
+已完成测试 RED：
+
+- 新增 `tests/storage/friend_group_dao_test.cpp`。
+- `tests/CMakeLists.txt` 接入 Step 27 测试。
+- RED：新增测试后首次 `cmake --build build` 按预期失败，错误为缺少 `liteim/storage/FriendDao.hpp`。
+
+已完成代码：
+
+- 新增 `include/liteim/storage/FriendDao.hpp`。
+- 新增 `include/liteim/storage/GroupDao.hpp`。
+- 新增 `src/storage/FriendDao.cpp`。
+- 新增 `src/storage/GroupDao.cpp`。
+- `src/storage/CMakeLists.txt` 接入 Step 27 DAO 源文件。
+
+新增测试：
+
+- `FriendGroupDaoTest.HeadersAreSelfContained`
+- `FriendGroupDaoIntegrationTest.AddFriendshipCreatesBidirectionalRelationship`
+- `FriendGroupDaoIntegrationTest.RepeatedAddFriendshipDoesNotCreateDuplicates`
+- `FriendGroupDaoIntegrationTest.CreateGroupPersistsGroupAndOwnerMembership`
+- `FriendGroupDaoIntegrationTest.AddGroupMemberIsIdempotent`
+- `FriendGroupDaoIntegrationTest.RemoveGroupMemberRemovesNormalMember`
+- `FriendGroupDaoIntegrationTest.FindMissingGroupReturnsNotFound`
+
+已完成文档同步：
+
+- README 更新 storage 模块说明和 MySQL storage 测试说明。
+- 新增 `tutorials/step27_friend_group_dao.md`。
+- 更新 `task_plan.md`、`findings.md` 和本文件。
+
+当前验证：
+
+- `cmake --build build`：通过。
+- `docker compose -f docker/docker-compose.yml ps`：MySQL 8.0 / Redis 7.2 容器均 healthy。
+- `ctest --test-dir build -R "FriendGroupDaoTest|FriendGroupDaoIntegrationTest" --output-on-failure`：7/7 通过。
+- `ctest --test-dir build --output-on-failure`：215/215 通过。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，服务端收到 SIGTERM 后优雅退出。
+- `git diff --check`：通过。
+- `.gitkeep` 和旧 `server/net`、`server/protocol`、SQLite、`InMemoryStorage`、`step15_sqlite` 路径检查无输出。
+
+提交信息：
+
+```text
+feat(storage): implement friend and group dao
+```
+
 ## 2026-05-11 Step 26 MessageDao / OfflineMessageDao
 
 本次进入 `Step 26：实现 MessageDao 和 OfflineMessageDao`，目标是在 Step 23/24/25 的 MySQL wrapper、连接池和 users DAO 之上提供消息表和离线消息表 DAO。
