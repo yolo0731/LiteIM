@@ -1,14 +1,25 @@
-add_library(liteim_cache INTERFACE)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(HIREDIS REQUIRED IMPORTED_TARGET hiredis)
 
-target_compile_features(liteim_cache INTERFACE cxx_std_17)
+add_library(liteim_cache STATIC
+    RedisClient.cpp
+    RedisPool.cpp
+)
+
+target_compile_features(liteim_cache PUBLIC cxx_std_17)
 
 target_include_directories(liteim_cache
-    INTERFACE
+    PUBLIC
         ${PROJECT_SOURCE_DIR}/include
 )
 
 target_link_libraries(liteim_cache
-    INTERFACE
+    PUBLIC
         liteim_base
         liteim_storage
+        PkgConfig::HIREDIS
 )
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(liteim_cache PRIVATE -Wall -Wextra -Wpedantic)
+endif()

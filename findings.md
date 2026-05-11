@@ -8,6 +8,29 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-11 Step 28 RedisClient / RedisPool Findings
+
+本次进入 `Step 28：实现 RedisClient 和 RedisPool`，只实现 Redis 阻塞客户端和固定连接池，不实现在线状态 cache、未读数、登录失败限制、业务 service 或网络层运行时接入。
+
+已经确认并采用的设计：
+
+- `liteim_cache` 从 header-only interface target 升级为静态库，并通过 `pkg-config hiredis` 链接系统 hiredis。
+- `RedisClient` 拥有一个 `redisContext*`，负责 `connect()`、`ping()`、`setex()`、`get()`、`del()`、`incr()`、`expire()`、`eval()`、`close()` 和析构释放。
+- `connect()` 使用 `RedisConfig` 的 host、port、password、db；默认连接 Step 22 Docker Redis `127.0.0.1:63790`，密码 `6`。
+- Redis 命令使用 `redisCommandArgv()`，避免拼接命令字符串时把 key/value/script 内容误解释成命令片段。
+- `get()` 和 `eval()` 用 `std::optional<std::string>` 输出 Redis NIL；`incr()` 输出 `std::int64_t`；`del()` 输出删除数量；`expire()` 输出是否刷新到已有 key。
+- `RedisPool` 保存固定数量 `RedisClient`，`start()` 一次性连接，`acquire(timeout, guard)` 等待空闲连接，超时返回 `IoError`。
+- `RedisConnectionGuard` 是 move-only RAII 借还对象，析构或 `reset()` 时归还连接；`RedisPool::release()` 是显式 release 包装。
+- 借出连接前先 `ping()`；失败时关闭旧 context 并按原 `RedisConfig` 重连。
+- Redis API 是阻塞 API，只能给后续 business `ThreadPool` 使用；Reactor I/O 线程仍然不能直接调用。
+
+本次不采用/不改：
+
+- 不实现 `OnlineStatusCache`、未读计数 cache、登录失败 limiter 或 Redis key 命名规范。
+- 不接入 `ThreadPool`、`TcpServer`、`Session`、AuthService、ChatService 或任何运行时业务流程。
+- 不实现 Redis Cluster、Pub/Sub、Streams、分布式锁、pipeline 或异步 Redis。
+- 不修改 Docker Compose、Redis 初始化数据、MySQL schema、seed 数据或 Step 21 `ICache` 接口。
+
 ## 2026-05-11 Step 27 FriendDao / GroupDao Findings
 
 本次进入 `Step 27：实现 FriendDao 和 GroupDao`，只实现 MySQL `friendships`、`chat_groups` 和 `group_members` DAO，不实现 Redis、业务 service、网络层运行时接入或 schema 变更。

@@ -1,5 +1,70 @@
 # LiteIM Progress
 
+## 2026-05-11 Step 28 RedisClient / RedisPool
+
+本次进入 `Step 28：实现 RedisClient 和 RedisPool`，目标是在 Step 21 cache 接口和 Step 22 Docker Redis 之上提供 hiredis 阻塞客户端与固定连接池。
+
+概念边界：
+
+- `RedisClient` 只封装 Redis 连接、认证、DB 选择和基础命令。
+- `RedisPool` 只负责固定数量 Redis 连接、线程安全 `acquire(timeout, guard)`、显式 `release()`、RAII 归还和失效重连。
+- 本 Step 不实现在线状态 cache、未读数、登录失败限制、不接入业务 service、不修改 `TcpServer` / `Session` 运行时行为。
+
+已完成测试 RED：
+
+- 新增 `tests/cache/redis_client_pool_test.cpp`。
+- `tests/CMakeLists.txt` 接入 Step 28 测试。
+- RED：新增测试后首次 `cmake --build build` 按预期失败，错误为缺少 `liteim/cache/RedisClient.hpp`。
+
+已完成代码：
+
+- 新增 `include/liteim/cache/RedisClient.hpp`。
+- 新增 `include/liteim/cache/RedisPool.hpp`。
+- 新增 `src/cache/RedisClient.cpp`。
+- 新增 `src/cache/RedisPool.cpp`。
+- `src/cache/CMakeLists.txt` 从 header-only interface target 升级为静态库，并通过 `pkg-config hiredis` 链接 hiredis。
+
+新增测试：
+
+- `RedisClientTest.HeaderIsSelfContained`
+- `RedisClientTest.UnavailableRedisReturnsErrorStatus`
+- `RedisPoolTest.RejectsZeroPoolSize`
+- `RedisIntegrationTest.ConnectsAndPingsLocalRedis`
+- `RedisIntegrationTest.SetexAndGetRoundTripValue`
+- `RedisIntegrationTest.GetMissingKeyReturnsEmptyOptional`
+- `RedisIntegrationTest.ExpireRefreshesTtl`
+- `RedisIntegrationTest.IncrReturnsIncrementedInteger`
+- `RedisIntegrationTest.DelRemovesExistingKey`
+- `RedisIntegrationTest.EvalCanReadRedisKey`
+- `RedisPoolIntegrationTest.AcquiresConnectedRedisClient`
+- `RedisPoolIntegrationTest.AcquireTimesOutWhenAllClientsAreBorrowed`
+- `RedisPoolIntegrationTest.ReleaseReturnsClientToPool`
+- `RedisPoolIntegrationTest.MultipleThreadsAcquireAndReleaseClients`
+- `RedisPoolIntegrationTest.ReconnectsClientThatWasClosedWhileBorrowed`
+
+已完成文档同步：
+
+- README 更新 cache 模块说明、hiredis 构建依赖和 Redis 集成测试说明。
+- 新增 `tutorials/step28_redis_client_pool.md`。
+- 更新 `task_plan.md`、`findings.md` 和本文件。
+
+当前验证：
+
+- RED：新增测试后首次 `cmake --build build` 按预期失败，错误为缺少 `liteim/cache/RedisClient.hpp`。
+- `cmake --build build`：通过。
+- `docker compose -f docker/docker-compose.yml ps`：MySQL 8.0 / Redis 7.2 容器均 healthy。
+- `ctest --test-dir build -R "RedisClientTest|RedisIntegrationTest|RedisPoolTest|RedisPoolIntegrationTest" --output-on-failure`：15/15 通过。
+- `ctest --test-dir build --output-on-failure`：230/230 通过。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，服务端收到 SIGTERM 后优雅退出。
+- `git diff --check`：通过。
+- `.gitkeep` 和旧 `server/net`、`server/protocol`、SQLite、`InMemoryStorage`、`step15_sqlite` 路径检查无输出。
+
+提交信息：
+
+```text
+feat(cache): implement redis client and pool
+```
+
 ## 2026-05-11 Step 27 FriendDao / GroupDao
 
 本次进入 `Step 27：实现 FriendDao 和 GroupDao`，目标是在 Step 23/24/25 的 MySQL wrapper、连接池和 users DAO 之上提供好友表和群组表 DAO。

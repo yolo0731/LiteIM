@@ -31,6 +31,7 @@ The workspace documentation roles are now separated:
 
 | Phase | Status | Notes |
 | --- | --- | --- |
+| Step 28 RedisClient and RedisPool | done | Added hiredis-backed blocking `RedisClient`, fixed-size `RedisPool`, move-only `RedisConnectionGuard`, Redis auth/db selection, `ping`, `setex`, `get`, `del`, `incr`, `expire`, `eval`, acquire timeout, explicit `release()`, close semantics, borrow-time ping/reconnect, and Docker-backed tests. No online-status cache, unread counter, login limiter, service layer, network runtime integration, key schema beyond test keys, Redis Cluster, Pub/Sub, Streams, or distributed locks introduced. |
 | Step 27 FriendDao and GroupDao | done | Added `FriendDao` / `GroupDao` for bidirectional idempotent friendships, friend listing through `users`, group creation with owner membership in one transaction, idempotent member join, normal-member removal, member listing, and `findGroupById()`. No Redis, service layer, network runtime integration, schema changes, group admin, mute, announcement, or approval workflow introduced. |
 | Step 26 MessageDao and OfflineMessageDao | done | Added `MessageDao` / `OfflineMessageDao` for private/group message persistence, pending offline-message save/fetch/delivered flow, and conversation history cursor pagination with `limit` capped at 50. `MySqlConnection::executeSimple()` covers transaction control statements for delivered marking. No Redis, service layer, network runtime integration, or schema changes introduced. |
 | Step 25 UserDao and AuthDao | done | Added `UserDao` / `AuthDao` for users-table data access, `ErrorCode::AlreadyExists`, structured duplicate-key conversion through `PreparedStatement::lastErrorNumber()`, and Docker-backed tests for create, duplicate username, find by username/id, missing user, and username existence. No service, session, Redis, message DAO, or runtime server integration introduced. |
@@ -212,7 +213,8 @@ Current route status:
 - Step 25 `UserDao and AuthDao` is complete.
 - Step 26 `MessageDao and OfflineMessageDao` is complete.
 - Step 27 `FriendDao and GroupDao` is complete.
-- Default next implementation step is Step 28 `RedisClient and RedisPool`.
+- Step 28 `RedisClient and RedisPool` is complete.
+- Default next implementation step is Step 29 `OnlineStatusCache`.
 
 LiteIM phases:
 
