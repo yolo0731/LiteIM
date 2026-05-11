@@ -76,6 +76,7 @@ public:
     Status bindString(std::size_t index, const std::string& value);
     Status executeUpdate(std::uint64_t& affected_rows);
     Status executeQuery(MySqlQueryResult& result);
+    unsigned int lastErrorNumber() const noexcept;
     void close() noexcept;
 
 private:

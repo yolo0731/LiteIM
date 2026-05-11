@@ -1,5 +1,61 @@
 # LiteIM Progress
 
+## 2026-05-11 Step 25 UserDao / AuthDao
+
+本次进入 `Step 25：实现 UserDao 和 AuthDao`，目标是在 Step 23/24 的 MySQL wrapper 和连接池之上提供 users 表 DAO。
+
+概念边界：
+
+- `UserDao` 只做用户创建和按 username/id 查询。
+- `AuthDao` 当前只做 username 存在性查询。
+- DAO 不做注册/登录业务判断、不做密码校验、不接入网络层或 Redis。
+
+已完成代码：
+
+- 新增 `include/liteim/storage/UserDao.hpp`。
+- 新增 `include/liteim/storage/AuthDao.hpp`。
+- 新增 `src/storage/UserDao.cpp`。
+- 新增 `src/storage/AuthDao.cpp`。
+- `src/storage/CMakeLists.txt` 接入 DAO 源文件。
+- `ErrorCode` 新增 `AlreadyExists`。
+- `PreparedStatement` 新增 `lastErrorNumber()`，用于 DAO 识别 MySQL duplicate key errno。
+- 新增 `tests/storage/user_dao_test.cpp`。
+- `tests/CMakeLists.txt` 接入 Step 25 测试。
+
+新增测试：
+
+- `UserDaoTest.HeadersAreSelfContained`
+- `UserDaoIntegrationTest.CreateUserPersistsAndReturnsCreatedRecord`
+- `UserDaoIntegrationTest.CreateUserWorksWithSingleConnectionPool`
+- `UserDaoIntegrationTest.DuplicateUsernameReturnsAlreadyExists`
+- `UserDaoIntegrationTest.FindUserByUsernameReturnsCreatedUser`
+- `UserDaoIntegrationTest.FindUserByIdReturnsCreatedUser`
+- `UserDaoIntegrationTest.FindMissingUserReturnsNotFound`
+- `UserDaoIntegrationTest.UsernameExistsReportsExistingAndMissingUsers`
+
+已完成文档同步：
+
+- README 更新 storage 模块说明和 MySQL storage 测试说明。
+- 新增 `tutorials/step25_user_dao.md`。
+- 更新 `task_plan.md`、`findings.md` 和本文件。
+
+当前验证：
+
+- RED：新增测试后首次 `cmake --build build` 按预期失败，错误为缺少 `liteim/storage/AuthDao.hpp`。
+- `cmake --build build`：通过。
+- `docker compose -f docker/docker-compose.yml ps`：MySQL 8.0 / Redis 7.2 容器均 healthy。
+- `ctest --test-dir build -R "UserDaoTest|UserDaoIntegrationTest|ErrorCodeTest" --output-on-failure`：9/9 通过。
+- `ctest --test-dir build --output-on-failure`：202/202 通过。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，服务端收到 SIGTERM 后优雅退出。
+- `git diff --check`：通过。
+- `.gitkeep` 和旧 `server/net`、`server/protocol`、SQLite、`InMemoryStorage`、`step15_sqlite` 路径检查无输出。
+
+提交信息：
+
+```text
+feat(storage): implement user dao
+```
+
 ## 2026-05-11 Step 24 MySqlPool / ConnectionGuard
 
 本次进入 `Step 24：实现 MySqlPool 和 ConnectionGuard`，目标是在 Step 23 单连接封装之上提供业务线程可复用的固定 MySQL 连接池。

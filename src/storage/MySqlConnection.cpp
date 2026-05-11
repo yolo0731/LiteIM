@@ -377,6 +377,13 @@ Status PreparedStatement::executeQuery(MySqlQueryResult& result) {
     return Status::ok();
 }
 
+unsigned int PreparedStatement::lastErrorNumber() const noexcept {
+    if (!impl_ || impl_->statement == nullptr) {
+        return 0;
+    }
+    return mysql_stmt_errno(impl_->statement);
+}
+
 void PreparedStatement::close() noexcept {
     if (impl_ && impl_->statement != nullptr) {
         mysql_stmt_close(impl_->statement);

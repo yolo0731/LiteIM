@@ -8,6 +8,29 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-11 Step 25 UserDao / AuthDao Findings
+
+本次进入 `Step 25：实现 UserDao 和 AuthDao`，只实现 users 表 DAO，不实现 MessageDao、业务服务、Redis client 或运行时 server 集成。
+
+已经确认并采用的设计：
+
+- `UserDao` 负责 `createUser()`、`findUserByUsername()` 和 `findUserById()`。
+- `AuthDao` 当前只负责 `usernameExists()`，给后续 AuthService 的注册/登录流程使用。
+- DAO 方法内部通过 `MySqlPool::acquire()` 临时借连接，使用 `PreparedStatement` 执行参数化 SQL，方法返回时由 `ConnectionGuard` 自动归还连接。
+- 新增 `ErrorCode::AlreadyExists` 表达唯一约束冲突；`users.username` 重复不再作为普通 `IoError` 暴露给上层。
+- `PreparedStatement::lastErrorNumber()` 暴露 `mysql_stmt_errno()`，DAO 用 MySQL duplicate key errno `1062` 结构化识别用户名唯一约束冲突。
+- 查询不存在用户返回 `ErrorCode::NotFound`，而不是返回默认 `UserRecord` + ok。
+- `password_hash` 和 `password_salt` 仍按 Step 22 schema 存字符串字段；本 Step 不做密码 hash 计算或验证。
+- 集成测试用 `step25_` 用户名前缀并在 SetUp/TearDown 清理测试用户，避免污染 seed 用户。
+
+本次不采用/不改：
+
+- 不实现 `MessageDao`、`OfflineMessageDao`、好友/群组 DAO。
+- 不实现 AuthService、ChatService、注册/登录业务判断或密码校验。
+- 不接入 `ThreadPool`、`TcpServer`、`Session` 或运行时 user-session 绑定。
+- 不实现 Redis 登录失败限制、在线状态或未读计数。
+- 不修改 MySQL schema 或 seed 数据。
+
 ## 2026-05-11 Step 24 MySqlPool / ConnectionGuard Findings
 
 本次进入 `Step 24：实现 MySqlPool 和 ConnectionGuard`，只实现 MySQL 固定连接池和 RAII 借还边界，不实现 DAO、业务服务、Redis client 或运行时 server 集成。

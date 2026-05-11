@@ -10,6 +10,8 @@ const char* toString(ErrorCode code) noexcept {
         return "InvalidArgument";
     case ErrorCode::NotFound:
         return "NotFound";
+    case ErrorCode::AlreadyExists:
+        return "AlreadyExists";
     case ErrorCode::IoError:
         return "IoError";
     case ErrorCode::ParseError:

@@ -6,6 +6,7 @@ enum class ErrorCode {
     Ok = 0,
     InvalidArgument,
     NotFound,
+    AlreadyExists,
     IoError,
     ParseError,
     ConfigError,
