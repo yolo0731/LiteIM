@@ -202,11 +202,9 @@ socket 新读到的 Bytes
 
 如果 header 校验失败，`FrameDecoder` 进入错误状态，后续输入都会被拒绝直到 `reset()`；如果只是 body 没收齐，它不会报错，而是等待下一次 `feed()` 补齐。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：第一次收到 10 字节时，`bufferedBytes()` 是 10，输出 0 个 Packet。第二次收到剩余 header 和 body 后，`feed()` 拼出完整 Packet，输出 1 个 Packet，并把已消费字节删除。
-
-边界：magic 错误会把 `error_` 置 true，上层通常关闭连接；body 长度上限由 Packet 层拒绝；decoder 不关心 fd、线程或业务语义，只处理字节流到 Packet 的边界。
+假设 Alice 的客户端发送一个 `seq_id=7`、body 58 字节的私聊 `Packet`。第一次 `read()` 只收到 10 字节 header，`FrameDecoder::bufferedBytes()` 变成 10，输出 0 个 Packet；第二次收到剩余 68 字节后，decoder 拼出完整 Packet，输出 1 个请求，后续 `Session` 才刷新 `last_active_time` 并把消息交给业务回调。
 
 ## 4. 内部缓冲
 
@@ -324,8 +322,12 @@ ctest --test-dir build --output-on-failure
 
 > TCP 是字节流，没有消息边界，所以我实现了一个 socket-agnostic 的 `FrameDecoder`。它内部维护未消费字节缓冲，每次 `feed()` 新字节后，先等够固定 20 字节 header，再根据 `body_len` 判断完整帧长度；如果数据不足就继续缓存，如果足够就输出一个或多个完整 `Packet`。错误 header 会让 decoder 进入 error 状态，后续拒绝继续解析，交给上层关闭连接。这个模块只负责流式解包，不处理 socket I/O、不解析 TLV、不做业务路由，边界清楚。
 
-## 9. 本 Step 提交信息
+## 面试常见追问
 
-```text
-feat(protocol): implement tcp frame decoder
-```
+### Q1：FrameDecoder 为什么不直接解析 TLV？
+
+它只负责 TCP 字节流到 Packet 的边界恢复。TLV 属于业务 body 解析，分开后 Session 可以先确认 Packet 完整合法，再交给更高层解释字段。
+
+### Q2：错误 header 后为什么进入 error 状态？
+
+协议魔数、版本或长度已经非法时，继续从同一字节流猜边界很容易误解析。进入 error 状态并让上层关闭连接更简单，也更安全。

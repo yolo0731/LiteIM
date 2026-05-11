@@ -396,28 +396,9 @@ guard.reset/destructor
     -> else: close client
 ```
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：
-
-```cpp
-RedisConnectionGuard guard;
-auto status = redis_pool.acquire(std::chrono::milliseconds(200), guard);
-if (!status.isOk()) {
-    return status;
-}
-
-status = guard->setex("online:user:1001", "value", std::chrono::seconds(30));
-```
-
-边界：
-
-- key 不能为空。
-- TTL 必须大于 0。
-- Redis client 未连接时命令返回 `InvalidArgument`。
-- acquire 超时返回 `IoError`。
-- Redis 错误回复转换成 `Status`，不崩溃。
-- 这是一套阻塞 API，不在 I/O loop 使用。
+Redis 开发实例在 `127.0.0.1:63790`，密码 `6`。`RedisClient::setex("online:user:1002", 90, value)` 可以写 Bob 的在线状态，`get()` 读回 value，`expire()` 刷新 TTL。多个业务线程通过 `RedisPool` 借连接，借出前 `PING`，如果测试中关闭了底层连接，下次借出会按原配置重连。
 
 ## 后续实现 / 关键设计说明
 
@@ -470,8 +451,12 @@ git diff --check
 
 > Step 28 用 hiredis 实现 Redis 阻塞客户端和固定大小连接池。`RedisClient` 拥有 `redisContext*`，负责 connect/auth/select、ping、setex、get、del、incr、expire 和 eval。所有命令都用 `redisCommandArgv()` 传参，避免拼接字符串。`RedisPool` 和 `RedisConnectionGuard` 负责线程安全借还、超时等待、借出前 ping 和失败重连。Redis API 是阻塞的，所以只能在 business 线程池里使用，不能放到 Reactor I/O 线程。
 
-## 提交信息
+## 面试常见追问
 
-```text
-feat(cache): implement redis client and pool
-```
+### Q1：为什么 RedisClient 也是阻塞 API？
+
+第一版 Redis 用在 business 线程里，目标是清楚可测的状态访问，不在 Reactor I/O 线程直接调用。异步 Redis 或 pipeline 不是当前边界。
+
+### Q2：为什么借出前要 ping/reconnect？
+
+本地 Redis 或连接可能重启失效。借出前探活可以把坏连接替换掉，让调用方拿到尽量可用的 client。

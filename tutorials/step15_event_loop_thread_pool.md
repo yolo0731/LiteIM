@@ -152,11 +152,9 @@ TcpServer 需要为新连接选择 I/O loop
 
 `next_` 只在 base loop 线程里推进，所以这里不需要额外加锁；它只负责连接分布，不负责启动或停止具体 `Session`。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：`io_thread_count = 2` 时，前三个连接会被分配到 `loop0`、`loop1`、`loop0`。每个连接创建后都固定在自己的 loop 中处理读写。
-
-边界：child `EventLoop` 必须在它实际运行的线程中构造；返回的 `EventLoop*` 不拥有对象，只在对应 `EventLoopThread` 运行期间有效；0 线程 fallback 不创建子线程，但仍要求 pool `start()` 后才能 `getNextLoop()`；worker 线程内部调用 `stop()` 不能 join 自己。
+服务器配置 `server.io_threads=2` 时，base loop 只负责 accept，子 loop 轮转管理连接。Alice 的连接分到 `io-loop-0` 得到 `session_id=42`，Bob 的连接分到 `io-loop-1` 得到 `session_id=43`。后续 Alice 发 `conversation_id=10011002` 的消息时，读写都留在 Alice 的 owner loop，跨线程响应通过 `queueInLoop()` 回来。
 
 ## 3. EventLoopThread 的职责
 
@@ -358,9 +356,3 @@ Step 15 完成时，CTest 通过 133 个测试，其中 9 个是新增的 Step 1
 **为什么 stop() 要调用 quit() 后 join？**
 
 `quit()` 让 loop 从 `epoll_wait()` 中醒来并退出循环，`join()` 保证工作线程真正结束，避免后台线程悬挂。
-
-## 10. 提交信息
-
-```text
-feat(net): add event loop thread pool
-```

@@ -177,11 +177,9 @@ Channel 按 revents_ 分发 read / write / close / error callback
 
 Step 9 只定义这些接口边界，真正的 `epoll_ctl` 行为在 Step 10，真正的 callback 分发在 Step 11，真正的 event loop 主循环在 Step 12。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：listen fd 可读时，`Acceptor` 的 `listen_channel_` 收到 `EPOLLIN`，`handleEvent()` 调用 `Acceptor::handleRead()`，里面循环 `accept4()` 接收连接。
-
-边界：`Channel` 不关闭 fd，fd owner 负责资源释放；`Channel` 注册、更新和移除必须发生在 owner loop 线程；`Epoller` 只保存 `Channel*`，所以 Channel 必须先从 epoll 移除再析构；跨线程任务应通过 `EventLoop::queueInLoop()` 回到 owner loop。
+以 `session_id=42` 的连接为例：`Channel` 保存 fd=57 关注 `EPOLLIN`，`Epoller` 负责把 fd=57 注册到 epoll，`EventLoop` 在 I/O 线程里等待事件。收到 `seq_id=7` 的私聊 Packet 后，Channel 触发读回调，Session 解包，再把业务处理投递到后续 `ThreadPool`。
 
 ## 3. Channel 接口
 
@@ -421,9 +419,3 @@ ctest --test-dir build --output-on-failure
 **为什么需要 `isInLoopThread()`？**
 
 one-loop-per-thread 模型要求一个 `EventLoop` 固定在自己的线程里处理 fd 事件。线程归属检查可以帮助后续发现跨线程误操作，跨线程任务需要通过 `queueInLoop()` 或 `runInLoop()` 回到正确 I/O 线程。
-
-## 13. 提交信息
-
-```text
-feat(net): define reactor core interfaces
-```

@@ -143,11 +143,9 @@ Channel 更新请求
 
 这层只维护 “fd 数字对应哪个 `Channel*`” 和 “内核 epoll 关注什么事件”。它不拥有 fd，不关闭 fd，也不直接执行 read/write callback。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：`Session` 输出缓冲从空变非空时调用 `channel_->enableWriting()`，最终 `Epoller` 对连接 fd 做 `EPOLL_CTL_MOD`，让 epoll 开始关注 `EPOLLOUT`。
-
-边界：`epoll_wait()` 被信号打断返回 `EINTR` 不算 fatal；事件数组填满会扩容；同一个 fd 已经被另一个 Channel 注册时返回错误，避免 fd 复用导致旧 Channel 被误触发。
+base loop 监听 fd=10，某个 I/O loop 管理 Bob 的连接 fd=57。`Epoller::updateChannel()` 把 fd=57 的 `EPOLLIN` 注册进去；Alice 发来 `message_id=5001` 对应的 TCP 字节后，`poll(10000ms)` 返回这个 Channel，EventLoop 再调用 `Channel::handleEvent()`。如果 Bob 的 output buffer 还有数据，Channel 会额外关注 `EPOLLOUT`。
 
 ## 3. Epoller 的公开接口
 
@@ -373,9 +371,3 @@ ctest --test-dir build --output-on-failure
 **`epoll_wait()` 被信号打断怎么办？**
 
 如果返回 `-1` 且 `errno == EINTR`，本实现把它当成非致命情况，返回空 active list 和 `Status::ok()`。上层下一轮可以继续 poll。
-
-## 15. 提交信息
-
-```text
-feat(net): implement epoller wrapper
-```

@@ -245,6 +245,7 @@ Status getHistory(const HistoryQuery& query, std::vector<MessageRecord>& message
 
 - `saveMessage()` 负责持久化消息并返回消息 id。
 - `saveMessageWithOfflineRecipients()` 在同一个 MySQL 事务中保存 `messages` 行和多个 `offline_messages` 行；Redis 未读计数仍由业务层在事务成功后处理。
+- `saveMessageWithOfflineRecipients()` 的 MySQL 实现会先对 `offline_user_ids` 去重；如果 `queryLastInsertedMessage()` 已经查回消息但后续离线记录插入或 `COMMIT` 前失败，会 `ROLLBACK` 并清空 `saved_message`，避免上层误用半成功输出。
 - `saveOfflineMessage()` 只保存“某用户待投递某消息”的关系。
 - `getOfflineMessages()` 只拉取 pending 离线消息。
 - `markOfflineDelivered()` 标记已投递，避免重复推送。
@@ -398,24 +399,9 @@ Session 收到 Packet
 4. 业务唯一约束冲突转换成明确错误，例如用户名重复是 `AlreadyExists`。
 5. 阻塞 I/O 不在 Reactor I/O 线程执行。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：
-
-```cpp
-UserRecord user;
-const auto status = storage.findUserByUsername("alice", user);
-if (!status.isOk()) {
-    return status;
-}
-```
-
-边界：
-
-- `IStorage` 不负责密码 hash，也不判断“能不能注册”。
-- `ICache` 不保证在线状态永久存在，Redis TTL 到期后自然离线。
-- 接口不暴露 `MYSQL*`、`redisContext*` 或 SQL 字符串。
-- 接口不保证线程切换；调用方必须自己把阻塞操作放进 business 线程。
+ChatService 未来处理 Alice 发给离线 Bob 的私聊时，会构造 `MessageRecord{conversation_type=1, conversation_id=10011002, sender_id=1001, receiver_id=1002, text=hello bob}`，调用 `saveMessageWithOfflineRecipients(message, {1002}, saved_message)`。MySQL 实现成功后返回 `saved_message.message_id=10000` 这类真实自增 id；随后业务层再用 cache 更新 `unread:user:1002:conversation:1:10011002`，在线状态则读写 `online:user:1002`。如果离线用户列表传入 `{1002, 1002}`，MySQL 实现会先去重，避免重复 pending 离线记录。
 
 ## 后续实现 / 关键设计说明
 
@@ -456,8 +442,12 @@ git diff --check
 
 > Step 21 先把 IM 业务需要的持久化和缓存能力抽象出来。持久化接口覆盖用户、好友公开资料、群组、消息、离线消息和历史查询，缓存接口覆盖在线状态、未读计数和登录失败限制。接口统一返回 `Status`，结果用输出参数，不暴露 MySQL / Redis 具体类型。Pre-Step31 小重构补上真实 `MySqlStorage` / `RedisCache` 聚合适配层，让后续业务 service 可以依赖稳定边界，真实阻塞 I/O 放到 business 线程池执行，网络 I/O 线程只负责 Reactor 和连接读写。
 
-## 提交信息
+## 面试常见追问
 
-```text
-feat(storage): define storage and cache interfaces
-```
+### Q1：为什么先抽 IStorage / ICache？
+
+业务 service 需要依赖稳定抽象，而不是直接依赖 MySQL C API 或 hiredis。这样后续可以用真实 MySQL/Redis 实现，也可以在 service 单测里注入 fake。
+
+### Q2：为什么接口不负责线程切换？
+
+存储和缓存接口表达的是阻塞资源访问契约。是否投递到 business ThreadPool 是调用方的运行时责任，接口层不隐藏线程模型。

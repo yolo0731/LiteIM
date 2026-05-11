@@ -153,11 +153,9 @@ tie_ 尝试提升为 shared_ptr，保护 owner 存活
 
 当前实现允许 `EPOLLERR | EPOLLIN` 先触发 error callback，再继续触发 read callback，这样不会因为错误标志吞掉 socket 缓冲里仍可读取的数据。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：连接对端关闭时，epoll 可能返回 `EPOLLRDHUP | EPOLLIN`。Channel 会调用 read callback，`Session::handleRead()` 读到 0 后走关闭路径。
-
-边界：Channel 的事件开关必须在 owner loop 线程调用；如果 callback 可能释放 owner，必须用 `tie()`；fd 关闭前应先从 EventLoop/Epoller 移除 Channel；`EPOLLERR` 后仍允许读事件继续分发，避免吞掉 socket 缓冲中的剩余数据。
+Bob 的连接 `session_id=42` 绑定 fd=57。fd=57 同一轮事件带着 `EPOLLIN | EPOLLERR` 返回时，Channel 会先触发 error callback 记录 socket 错误，再继续处理 read callback，避免吞掉已经到达的完整 Packet。`Channel` 本身不 close fd，fd 生命周期仍由 `Session` 的 `UniqueFd` 负责。
 
 ## 3. Channel 的职责
 

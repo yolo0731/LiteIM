@@ -1,5 +1,27 @@
 # LiteIM Progress
 
+## 2026-05-12 Markdown Contract Alignment / Doc Drift Fix
+
+本次只做 Markdown / 项目记忆同步，不修改 C++ 代码逻辑，不回滚现有 dirty diff，也不作为 Step31。
+
+已完成文档修复：
+
+- `/home/yolo/jianli/PROJECT_MEMORY.md` 的教程结构约束改为 `概念 -> hpp 接口说明 -> 作用场景和运行流程 -> 测试 -> 面试常见追问`；教程文件不再维护“提交信息”章节。
+- `tutorials/step00_reset.md` 到 `tutorials/step30_unread_login_cache.md` 的运行流程第 5 小节统一改为“该项目代码在实际应用中的具体数据例子”，并改成带 LiteIM 真实数据的场景说明。
+- 移除教程里的“提交信息 / 本 Step 提交信息”章节，补齐缺失的“面试常见追问”，并确保它是每个教程最后的主章节。
+- 同步 MySQL history 索引字段名为 `(conversation_type, conversation_id, message_id)`。
+- 同步 HeartbeatService 与 `Session::last_active_time` 分工：完整合法入站 Packet 在 `Session` 读路径刷新连接活跃时间，HeartbeatService 只返回响应并为已登录用户刷新 Redis 在线 TTL。
+- 同步 `saveMessageWithOfflineRecipients()` 当前契约：重复离线用户先去重；`queryLastInsertedMessage()` 成功后、`COMMIT` 前失败会 `ROLLBACK` 并清空 `saved_message`。
+- 更新 `task_plan.md` 和 `findings.md`，把本轮记为 Markdown contract alignment / doc drift fix，不记成 Step31。
+
+当前验证：
+
+- Markdown 结构扫描：教程无提交信息章节；每个 Step 都包含“面试常见追问”和“该项目代码在实际应用中的具体数据例子”；每个教程最后一个主章节都是“面试常见追问”。
+- 漂移扫描：`PROJECT_MEMORY.md` 无旧 `(conv_type, conv_id, id)` / `conv_id` / `conv_type`；当前教程和 PROJECT_MEMORY 无 HeartbeatService 直接刷新 `Session::last_active_time` 的实现描述；README / AGENTS / CLAUDE 无 `Current Status` / `当前状态`。
+- `git diff --check`：通过。
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build --output-on-failure`：254/254 通过，其中新增通过项为 `SaveMessageWithOfflineRecipientsDeduplicatesOfflineUsers`。
+
 ## 2026-05-12 Pre-Step31 Storage / Cache Contract Cleanup
 
 本次按用户确认开启 Step31 前的独立项目小重构，不把它记成 Step31，也不实现 `SessionManager` / `OnlineService`。
@@ -46,7 +68,7 @@
 - `ctest --test-dir build -R "StorageInterfaceTest|MySqlConnection|FriendGroupDao|MySqlStorage|UnreadCounter|LoginRateLimiter|RedisCache|CacheInterfaceTest" --output-on-failure`：25/25 通过。
 - `ctest --test-dir build -R "MySqlIntegrationTest|MessageDaoIntegrationTest" --output-on-failure`：10/10 通过。
 - `cmake --build build -j2`：通过。
-- `ctest --test-dir build --output-on-failure`：253/253 通过。
+- `ctest --test-dir build --output-on-failure`：254/254 通过，新增通过项来自 `SaveMessageWithOfflineRecipientsDeduplicatesOfflineUsers`。
 - `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过。
 - `git diff --check`：通过。
 

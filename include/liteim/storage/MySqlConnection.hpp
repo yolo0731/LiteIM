@@ -44,7 +44,7 @@ public:
     MySqlConnection(MySqlConnection&& other) noexcept;            // 移动构造函数
     MySqlConnection& operator=(MySqlConnection&& other) noexcept; // 移动赋值运算符
 
-    Status connect(const MySqlConfig& config);    // 连接到MySQL数据库
+    Status connect(const MySqlConfig& config);    // 连接到新的MySQL数据库
     Status ping();                                // 检测连接是否可用
     Status executeSimple(const std::string& sql); // 执行简单的SQL语句（不带参数的查询或更新）
     void close() noexcept;                        // 关闭连接

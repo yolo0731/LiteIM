@@ -205,6 +205,8 @@ TEST_F(MySqlStorageIntegrationTest, SaveMessageWithOfflineRecipientsRollsBackMes
     liteim::MessageRecord saved;
     const auto status = storage->saveMessageWithOfflineRecipients(message, {999999999999ULL}, saved);
     ASSERT_FALSE(status.isOk());
+    EXPECT_EQ(saved.message_id, 0U);
+    EXPECT_TRUE(saved.text.empty());
 
     std::vector<liteim::MessageRecord> history;
     liteim::HistoryQuery query;
@@ -213,4 +215,26 @@ TEST_F(MySqlStorageIntegrationTest, SaveMessageWithOfflineRecipientsRollsBackMes
     const auto history_status = storage->getHistory(query, history);
     ASSERT_TRUE(history_status.isOk()) << history_status.message();
     EXPECT_TRUE(history.empty());
+}
+
+TEST_F(MySqlStorageIntegrationTest, SaveMessageWithOfflineRecipientsDeduplicatesOfflineUsers) {
+    const auto sender = createUser();
+    const auto receiver = createUser();
+    const auto message = makePrivateMessage(sender,
+                                            receiver,
+                                            uniqueConversationId(),
+                                            uniqueMessageText("combined_dedup"));
+
+    liteim::MessageRecord saved;
+    const auto status =
+        storage->saveMessageWithOfflineRecipients(message, {receiver.user_id, receiver.user_id}, saved);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_GE(saved.message_id, 10000U);
+
+    std::vector<liteim::OfflineMessageRecord> pending;
+    const auto offline_status = storage->getOfflineMessages(receiver.user_id, pending);
+    ASSERT_TRUE(offline_status.isOk()) << offline_status.message();
+    ASSERT_EQ(pending.size(), 1U);
+    EXPECT_EQ(pending.front().message.message_id, saved.message_id);
 }

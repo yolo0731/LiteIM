@@ -213,6 +213,12 @@ Status rollbackAndReturn(MySqlConnection& connection, const Status& status) {
     return status;
 }
 
+Status rollbackClearAndReturn(MySqlConnection& connection, MessageRecord& saved_message, const Status& status) {
+    rollbackSilently(connection);
+    saved_message = {};
+    return status;
+}
+
 Status validateOfflineRecipients(const std::vector<std::uint64_t>& offline_user_ids,
                                  std::vector<std::uint64_t>& unique_user_ids) {
     unique_user_ids.clear();
@@ -401,14 +407,14 @@ Status MySqlStorage::saveMessageWithOfflineRecipients(const MessageRecord& messa
 
     const auto query_status = queryLastInsertedMessage(*guard, saved_message);
     if (!query_status.isOk()) {
-        return rollbackAndReturn(*guard, query_status);
+        return rollbackClearAndReturn(*guard, saved_message, query_status);
     }
 
     const auto offline_created_at_ms = Timestamp::now().millisecondsSinceEpoch();
     for (const auto user_id : unique_offline_user_ids) {
         const auto offline_status = insertOfflineMessage(*guard, user_id, saved_message.message_id, offline_created_at_ms);
         if (!offline_status.isOk()) {
-            return rollbackAndReturn(*guard, offline_status);
+            return rollbackClearAndReturn(*guard, saved_message, offline_status);
         }
     }
 

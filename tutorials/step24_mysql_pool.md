@@ -274,34 +274,9 @@ else if ping() failed:
 
 这样实现简单，且只有真正需要连接时才做恢复。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：
-
-```cpp
-MySqlPool pool(config.mysql);
-auto status = pool.start();
-if (!status.isOk()) {
-    return status;
-}
-
-ConnectionGuard guard;
-status = pool.acquire(std::chrono::milliseconds(500), guard);
-if (!status.isOk()) {
-    return status;
-}
-
-PreparedStatement statement(*guard);
-```
-
-边界：
-
-- `pool_size == 0` 是无效配置。
-- timeout 为负数是无效参数。
-- guard 已经持有连接时再次 acquire 是错误。
-- acquire 超时返回错误，不永久等待。
-- `close()` 后等待者会被唤醒。
-- 连接池 API 是阻塞 API，只能在 business 线程使用。
+如果连接池大小是 2，ChatService 可以同时借出两个 `ConnectionGuard`：一个保存 Alice 到 Bob 的 `message_id=5001` 相关消息，另一个查询 `user_id=1001` 的好友列表。第三个业务任务会在 `acquire(timeout)` 等待；guard 析构或 `reset()` 后连接归还池中，避免线程忘记 release 导致连接永久耗尽。
 
 ## 后续实现 / 关键设计说明
 
@@ -346,8 +321,12 @@ git diff --check
 
 > Step 24 在 MySQL 单连接封装之上实现固定大小连接池。`MySqlPool` 启动时创建 N 条连接，内部用 mutex、condition_variable 和 idle 队列管理可借连接。业务线程调用 `acquire(timeout, guard)`，拿不到连接会超时返回，拿到连接前会 ping 并在失效时重连。`ConnectionGuard` 是 move-only RAII 对象，析构时自动归还连接；如果 pool 已关闭，归还时直接关闭连接，避免访问悬空 pool。
 
-## 提交信息
+## 面试常见追问
 
-```text
-feat(storage): implement mysql connection pool
-```
+### Q1：ConnectionGuard 解决了什么问题？
+
+它把借连接和还连接绑定到 RAII 生命周期。业务函数中途返回错误时，guard 析构也会归还连接，不会把池耗尽。
+
+### Q2：为什么 acquire 要有 timeout？
+
+MySQL 是阻塞资源。如果连接都被占用，业务线程不能无限挂住；timeout 可以把资源压力转成可观察的 Status。

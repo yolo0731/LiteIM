@@ -181,11 +181,9 @@ pending + incoming 超过 limit 时记录 warning 并关闭连接
 
 这一步必须发生在 append 前，因为一旦先追加再判断，慢客户端已经占用了更多内存。日志里的 session id、pending、incoming 和 limit 用来定位具体是哪条连接触发了保护。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：高水位设置为 1024 字节，某客户端不读数据，当前 pending 已经 900 字节。服务端再发送一个编码后 200 字节的 Packet 时，`900 + 200 > 1024`，Session 不追加这 200 字节，直接记录 warning 并关闭连接。
-
-边界：单个 encoded Packet 大于高水位，即使 pending 为 0 也会关闭；正常客户端持续读数据时，`handleWrite()` 会 retrieve 已写字节，不触发关闭；出站写不刷新 `last_active_time`，回压和 heartbeat 是两条独立保护线；当前第一版不暂停读、不做低水位恢复，也不按消息优先级丢弃。
+假设 Bob 的 `session_id=43` 一直不读 socket，服务端连续给他推送离线消息。当前 pending output 已有 `4194200` 字节，再追加一条 `PRIVATE_MESSAGE_PUSH message_id=5001` 的 encoded Packet 需要 200 字节，就会超过默认 `4194304` 字节高水位。`Session` 记录 pending/incoming/limit 后关闭慢连接；这个出站压力不会刷新 `last_active_time`。
 
 ## 2. Session 高水位语义
 
@@ -354,3 +352,13 @@ git diff --check
 - 超限关闭后通过 `close_callback_` 清理 `TcpServer::sessions_`。
 - 服务端出站写不刷新 `last_active_time`。
 - 第一版只做高水位硬关闭，复杂恢复策略后续再做。
+
+## 面试常见追问
+
+### Q1：为什么超过高水位直接关闭连接？
+
+慢客户端如果长期不读，服务端继续堆 output buffer 会拖垮内存。第一版用关闭连接做明确保护，比复杂低水位恢复更容易验证。
+
+### Q2：为什么出站写不能刷新 heartbeat 活跃时间？
+
+活跃时间表示客户端最近一次完整合法入站 Packet。服务端持续推送消息并不能证明客户端还在读或还愿意响应心跳，所以不能用写出行为续期。

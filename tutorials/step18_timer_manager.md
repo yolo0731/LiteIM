@@ -248,19 +248,9 @@ timerfd tick 后传入当前 steady now
 
 这个结构让 `cancel()` 不需要扫描 `priority_queue` 中间节点，代价是堆顶可能暂时有 stale entry，但它会在下一次查询或弹出时被清掉。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：
-
-```text
-add(100, A) -> id=1
-add(200, B) -> id=2
-cancel(1)
-```
-
-这时 `heap_` 顶部仍可能是 `{100, 1}`，但 `timers_` 已经没有 `1`。下一次 `nextExpirationMilliseconds()` 或 `popExpired()` 会通过 `removeStaleTopEntries()` 把 id 1 弹掉，id 2 才是最近有效 timer。
-
-边界：`TimerHeap` 没有锁，当前由 `TimerManager` 在 owner loop 线程使用；callback 在 `popExpired()` 中同步执行，不能长时间阻塞 loop；当前 timer 是一次性定时器 / one-shot timer，触发后自动删除，重复执行要由 callback 自己重新 `runAfter()`；`std::priority_queue` 不支持按 id 删除中间节点，所以 `cancel()` 用惰性删除避免 O(n) 扫描。
+TimerHeap 里可以同时有多个定时任务：`timer_id=1` 代表每 5 秒扫描 session 快照，`timer_id=2` 代表未来某个统计任务。若当前时间是 `1700000000000ms`，session 42 的 `last_active_time=1699999910000ms`，超过 90 秒 idle 阈值，扫描回调会关闭它；session 43 刚收到完整 Packet，则继续保留。
 
 ## 4. TimerManager.hpp 接口说明
 
@@ -426,11 +416,9 @@ scheduleHeartbeatCheck() 再注册下一次检查
 
 内部边界是：`EINTR` 只表示本次 read 被打断，继续读取；`EAGAIN` 表示可读状态已经被其他路径消耗，本轮结束；callback 抛出的异常被隔离，避免 timer 事件打断整个 `EventLoop`。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：`TcpServer::scheduleHeartbeatCheck()` 每次 `runAfter(heartbeat_interval, callback)`。callback 关闭 idle session 后再次调用 `scheduleHeartbeatCheck()`，形成固定间隔的一次性定时器续排，而不是 `TimerHeap` 自动重复。
-
-边界：`TimerManager` start/stop/destruct 必须在 owner loop 线程；非 owner 线程直接 stop 会终止进程，避免排队裸 `this` 清理；timer callback 在 owner loop 执行，不能直接做阻塞 MySQL / Redis；`timer_channel_` 不拥有 fd，`timer_fd_` 才是 owner；当前是固定 tick heartbeat timer，不是动态 rearm 的完整 TimerQueue。
+`TimerManager` 通过 timerfd 驱动固定 tick。比如 base loop 每 5 秒收到一次 timerfd 读事件后，执行 `TimerHeap::popExpired(now)`，触发 heartbeat 扫描回调：读取 `session_id=42`、`last_active_time=1699999910000ms`，发现 idle 超时后调用 `Session::close()`；真正 fd 清理仍回到 session 所属 I/O loop。
 
 ## 5. TcpServer 如何接入 heartbeat timeout
 

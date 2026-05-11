@@ -335,37 +335,9 @@ prepare SQL
     -> free result
 ```
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：
-
-```cpp
-MySqlConnection connection;
-auto status = connection.connect(config.mysql);
-if (!status.isOk()) {
-    return status;
-}
-
-PreparedStatement statement(connection);
-status = statement.prepare("SELECT username FROM users WHERE user_id = ?");
-if (!status.isOk()) {
-    return status;
-}
-status = statement.bindInt64(0, 1001);
-if (!status.isOk()) {
-    return status;
-}
-
-MySqlQueryResult result;
-status = statement.executeQuery(result);
-```
-
-边界：
-
-- 不要用 `executeSimple()` 拼用户输入。
-- 同一个 `MySqlConnection` 不跨线程共享。
-- `PreparedStatement` 不能活得比连接更久。
-- 本 Step 不做连接池和事务封装，只提供基础能力。
+测试连接到 Docker MySQL `127.0.0.1:33060/liteim` 后，可以用 prepared statement 查询 `SELECT user_id FROM users WHERE username=?`，绑定 `alice` 得到 `1001`。插入消息时用 `bindUInt64()` 绑定 `conversation_id=10011002`、`sender_id=1001`、`receiver_id=1002`，用 `bindString()` 绑定 `hello bob`，避免把用户输入拼进 SQL 字符串。
 
 ## 后续实现 / 关键设计说明
 
@@ -409,8 +381,12 @@ docker compose -f docker/docker-compose.yml up -d
 
 > Step 23 把 MySQL C API 包成 RAII 对象。`MySqlConnection` 拥有 `MYSQL*`，负责连接、ping、关闭和简单事务控制语句；`PreparedStatement` 拥有 `MYSQL_STMT*`，负责 prepare、signed/unsigned 64-bit 参数绑定、字符串绑定、更新和查询。查询结果统一输出成 `MySqlQueryResult`，字段用 `optional<string>` 表达 SQL NULL。DAO 以后只依赖这些 C++ 封装，不直接操作 MySQL C 指针，也不拼接用户输入 SQL。
 
-## 提交信息
+## 面试常见追问
 
-```text
-feat(storage): add mysql connection and prepared statement
-```
+### Q1：为什么封装 PreparedStatement？
+
+DAO 层需要统一参数绑定、执行和结果读取，避免散落 `MYSQL_STMT*` 生命周期，也避免拼接 SQL 带来的注入风险。
+
+### Q2：为什么 MySqlConnection 不跨线程共享？
+
+连接对象内部状态和 prepared statement 生命周期都不适合并发乱用。后续由 MySqlPool 控制“一个借出的连接同一时间只给一个业务任务使用”。

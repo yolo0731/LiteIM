@@ -257,11 +257,9 @@ stop 后队列清空，worker 退出
 
 这个流程保证业务任务不会持有 `mutex_` 执行，避免一个慢 MySQL / Redis 操作堵住其他 worker 取任务；任务异常也不会让整个线程池退出。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：登录请求到达 I/O loop 后，后续业务层提交一个任务做密码哈希和 MySQL 查询。任务完成后不能直接改 `Session` 内部状态，而是调用 `session->sendPacket(response)`，由 Session 自己投递回 owner loop。
-
-边界：`ThreadPool` 不知道 `Session` 生命周期，业务任务捕获连接时应使用 `weak_ptr` 或短期 `shared_ptr`；不要在 I/O 线程等待业务任务完成；stop 后不接收新任务，但已入队任务会执行完；worker 内部调用 stop 不 join 自己。
+后续 ChatService 收到 Alice 发给 Bob 的消息后，会把阻塞 MySQL 操作投递给 business `ThreadPool`：任务保存 `sender_id=1001`、`receiver_id=1002`、`conversation_id=10011002`、`message_text=hello bob`。保存完成后再用 `queueInLoop()` 把响应投回对应 I/O loop，避免 Reactor 线程卡在数据库调用上。
 
 ## 4. ThreadPool.cpp 实现思路
 

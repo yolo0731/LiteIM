@@ -241,11 +241,9 @@ validateHeader() 检查协议边界
 
 这两个函数只处理 Packet 外壳：`encodePacket()` 不理解 TLV 字段含义，`parseHeader()` 也不消费 body；完整包边界由 `FrameDecoder` 继续判断。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：登录请求可以设置 `msg_type = LoginRequest`、`seq_id = 42`，body 是用户名和密码 TLV。服务端响应时使用 `LoginResponse` 和相同 `seq_id`，客户端就能把响应配回请求。
-
-边界：header 不足 20 字节是 TCP 半包，不是协议错误；magic 或 version 不合法通常说明协议不匹配，上层应关闭连接；body 超过 1MB 时拒绝编码或解析，避免异常客户端拖垮内存。
+一条私聊请求可以表示成：`magic=0x4C494D31`、`version=1`、`msg_type=PRIVATE_MESSAGE_REQUEST`、`seq_id=7`、`body_len=58`。body 里再用 TLV 保存 `sender_id=1001`、`receiver_id=1002`、`conversation_id=10011002` 和文本 `hello bob`。`encodePacket()` 把这些字段写成网络字节序；`FrameDecoder` 收够 20 字节 header 和 58 字节 body 后才产出完整 `Packet`。
 
 ## 5. `validateHeader()`
 
@@ -383,8 +381,12 @@ ctest --test-dir build --output-on-failure
 
 > 我在协议层实现了固定 20 字节的 Packet header，包括 magic、version、flags、msg_type、seq_id 和 body_len。编码时不直接 memcpy 结构体，而是手动按网络字节序写入，避免 CPU 字节序、结构体 padding 和对齐差异影响 wire format。解析时先校验 magic、version 和 body_len 上限，非法包直接返回错误。Packet 层只处理 header 和原始 body 字节，TLV body 编解码和 TCP 半包 / 粘包处理分别放到后续独立模块里，边界比较清楚。
 
-## 11. 本 Step 提交信息
+## 面试常见追问
 
-```text
-feat(protocol): add packet encoding and header validation
-```
+### Q1：为什么 Packet header 固定 20 字节？
+
+固定 header 让 FrameDecoder 可以先稳定判断 magic、version、type、seq_id 和 body_len，再决定是否继续等待 body。这样 TCP 半包和粘包都能按同一套规则处理。
+
+### Q2：为什么 body 不直接用字符串？
+
+body 后续要承载 user_id、conversation_id、message text、错误码等多种字段。TLV 比单字符串更适合逐步扩展协议，同时还能保持二进制边界清楚。

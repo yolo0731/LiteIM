@@ -276,11 +276,9 @@ Session::start() 开启读事件
 
 这样 fd 所有权从 `Acceptor` 到 `TcpServer` 再到 `Session` 全程清楚，业务 callback 也不会在 base loop 里直接操作连接内部状态。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：如果没有设置业务 callback，客户端发送一个 `LoginRequest` Packet，`TcpServer` 不理解登录语义，只把原 Packet echo 回去。这证明网络底座可用，但注册登录业务仍在后续 Step。
-
-边界：`TcpServer` start/stop/destruct 必须在 base loop 线程；accepted fd 全程通过 `UniqueFd` 移动，直到交给 `Session`；`sessions_` 用 mutex 保护跨线程读取；业务线程想发消息应调用 `sendToSession()`，最终由 `Session` 投递回 owner I/O loop。
+Alice 连接建立后，`TcpServer` 分配 `session_id=42` 并把 Session 存入 `sessions_`；Bob 连接建立后得到 `session_id=43`。业务线程保存 `message_id=5001` 后调用 `sendToSession(43, packet)`，TcpServer 只查逻辑 session id 并投递发送任务，不用 fd 当用户身份，也不假设 fd 不会复用。
 
 ## 4. TcpServer.cpp 实现思路
 

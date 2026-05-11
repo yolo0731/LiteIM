@@ -242,11 +242,9 @@ loop.quit()
 
 内部边界是：`EINTR` 表示读取被打断，继续处理；`EAGAIN` 表示本轮信号已经读完；callback 执行期间用 `handling_signal_event_` 保护 Channel 延迟释放，避免在事件栈里销毁正在分发的对象。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：`SIGTERM` 到来时，callback 先 `server.stop()`，再 `loop.quit()`。顺序不能反过来，否则 loop 先退出后，`TcpServer` 可能没有机会在 base loop 中清理 `Acceptor`、`TimerManager` 和 sessions。
-
-边界：`SignalWatcher::start()` 应在 `server.start()` 前调用，让之后创建的 I/O 线程继承被阻塞的 signal mask；signal callback 在 base loop 线程执行，可以安全调用 owner-loop-only 的 `TcpServer::stop()`；不在传统 signal handler 中操作 C++ 对象；`signal_channel_` 不拥有 fd，`signal_fd_` 才是 owner。
+线上进程收到 `SIGTERM` 时，不在传统 signal handler 里直接析构 `TcpServer`。base loop 的 `SignalWatcher` 通过 signalfd 读到 `SIGTERM`，调用关闭回调：先在 base loop 内 `server.stop()`，再 `loop.quit()`。这样即使当前还有 `session_id=42` 或 timerfd 事件，清理路径也保持 owner-loop 顺序。
 
 ## 5. server/main.cpp 如何退出
 

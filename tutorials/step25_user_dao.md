@@ -319,32 +319,9 @@ exists = false
     -> exists = rows not empty
 ```
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：
-
-```cpp
-CreateUserRequest request;
-request.username = "alice";
-request.password_hash = "...";
-request.password_salt = "...";
-request.nickname = "Alice";
-
-UserRecord created;
-const auto status = user_dao.createUser(request, created);
-if (!status.isOk()) {
-    return status;
-}
-```
-
-边界：
-
-- DAO 不计算密码 hash。
-- DAO 不校验密码。
-- DAO 不写 Redis。
-- `NotFound` 表示用户不存在，不是空对象。
-- `AlreadyExists` 表示唯一约束冲突。
-- 所有 MySQL 调用都应在 business 线程执行。
+注册接口未来收到 `username=charlie` 时，AuthService 先用 `AuthDao::usernameExists()` 判断唯一性，再调用 `UserDao::createUser()` 写入 `users`。登录 `alice` 时，`findUserByUsername("alice", user)` 返回 `user_id=1001`、`nickname=Alice`、`password_hash=dev_hash_alice`；好友列表等公开场景则不应把 hash/salt 继续传出去。
 
 ## 后续实现 / 关键设计说明
 
@@ -389,8 +366,12 @@ git diff --check
 
 > Step 25 在 MySQL 连接池之上实现 users 表 DAO。`UserDao` 负责创建用户和按 username/id 查询，`AuthDao` 当前只负责 username 是否存在。DAO 只做数据访问，不做密码 hash 或登录判断。用户名唯一冲突通过 `mysql_stmt_errno() == 1062` 转成 `ErrorCode::AlreadyExists`，不存在用户返回 `NotFound`。所有 DAO 方法临时从 `MySqlPool` 借连接，用 prepared statement 执行 SQL，方法返回时 RAII guard 自动归还连接。
 
-## 提交信息
+## 面试常见追问
 
-```text
-feat(storage): implement user dao
-```
+### Q1：为什么用户名重复要转成 AlreadyExists？
+
+上层注册服务需要区分“用户名已存在”和普通数据库错误。结构化错误比解析 MySQL 文本错误稳定。
+
+### Q2：为什么 find 不存在返回 NotFound？
+
+不存在是明确业务结果，不能返回空 UserRecord 加 ok。否则上层可能把 user_id=0 当成真实用户继续处理。

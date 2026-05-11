@@ -158,11 +158,9 @@ append() 获得连续可写区域
 
 这里的核心是尽量复用已经读走的前缀空间，避免每次 append 都扩容；只有可写尾部和可回收前缀合起来仍不够时，才真的调整 `buffer_` 容量。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：容量 8，写入 `abcdef` 后消费 4 字节，再追加 `WXYZ`。尾部只剩 2 字节，但前面有 4 字节已读空间，`ensureWritableBytes()` 会先把 `ef` 移到开头，再追加新数据，避免扩容。
-
-边界：追加空数据成功；追加非空但指针为空是调用错误；消费超过可读字节不会改变索引。`Buffer` 没有锁，必须由所属 `Session` 的 owner loop 线程访问。
+Bob (`user_id=1002`) 离线期间，Alice 的消息 `message_id=5001` 会等 Bob 下次上线再推送。服务端准备给 Bob 的 `session_id=42` 写出 `PRIVATE_MESSAGE_PUSH` 时，encoded Packet 先 append 到 `Buffer`；如果 socket 只写出前 30 字节，`retrieve(30)` 后剩余字节继续留在 output buffer，下一次 `EPOLLOUT` 再写。
 
 ## 3. Buffer 的公开接口
 
@@ -312,8 +310,12 @@ ctest --test-dir build --output-on-failure
 
 注意不要把 Step 7 说成已经实现了 Reactor 或高并发服务器。当前只是网络层基础组件。
 
-## 10. 提交信息
+## 面试常见追问
 
-```text
-feat(net): add buffer abstraction
-```
+### Q1：Buffer 为什么需要 read/write index？
+
+网络写入经常只完成一部分。read index 标记已经消费的位置，write index 标记可读数据末尾，这样不用每次都搬移整段内存。
+
+### Q2：为什么 retrieve 返回 Status？
+
+调用方可能传入超过 readable bytes 的长度。返回 Status 可以把边界错误显式暴露给测试和上层，而不是触发未定义行为。

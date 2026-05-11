@@ -358,33 +358,9 @@ check "v1:" prefix
     -> validate session
 ```
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：
-
-```cpp
-OnlineStatusCache cache(redis_pool);
-
-auto status = cache.setUserOnline(1001, "liteim-dev-1", 42, std::chrono::seconds(30));
-if (!status.isOk()) {
-    return status;
-}
-
-bool online = false;
-status = cache.isUserOnline(1001, online);
-```
-
-边界：
-
-- `user_id == 0` 是无效参数。
-- `session_id == 0` 是无效参数。
-- `server_id.empty()` 是无效参数。
-- `ttl <= 0` 是无效参数。
-- `refreshUserOnline()` 对不存在 key 返回 `NotFound`。
-- `setUserOffline()` 对不存在 key 仍返回 ok。
-- 损坏 value 返回 `ParseError`。
-- RedisPool acquire 超时会向上返回错误。
-- 阻塞 Redis 操作只能在 business 线程执行。
+Bob 登录成功后，业务层可以写 `OnlineSession{user_id=1002, session_id=43, server_id=liteim-dev-1, last_active_time_ms=1700000000000}`，Redis key 是 `online:user:1002`，TTL 例如 90 秒。后续完整有效入站 Packet 已由 `Session` 刷新 `last_active_time`；已登录用户的业务心跳只需要让 HeartbeatService 调用 `refreshUserOnline(1002, ttl)` 刷新 Redis TTL，不直接修改 `Session::last_active_time`。
 
 ## 后续实现 / 关键设计说明
 
@@ -433,8 +409,12 @@ git diff --check
 
 > Step 29 在 RedisPool 上实现在线状态缓存。key 固定为 `online:user:<user_id>`，value 使用带版本和 server_id 长度的格式保存 user_id、session_id、last_active_time_ms 和 server_id，TTL 表示在线有效期。登录成功用 `SETEX` 写入，心跳用 `EXPIRE` 刷新，断开连接用 `DEL` 删除，查询用 `GET` 并解析 value。key 不存在时 `isUserOnline()` 返回 false，`getOnlineSession()` 返回 `NotFound`，损坏 value 返回 `ParseError`，避免错误路由。
 
-## 提交信息
+## 面试常见追问
 
-```text
-feat(cache): add redis online status cache
-```
+### Q1：Redis 在线状态为什么还需要 TTL？
+
+连接异常断开、进程崩溃或下线清理失败时，TTL 能让在线状态最终过期，避免用户永久显示在线。
+
+### Q2：HeartbeatService 和 Session 活跃时间怎么分工？
+
+Session 读路径在完整合法入站 Packet 后刷新连接活跃时间；HeartbeatService 只处理业务心跳响应，并为已登录用户刷新 Redis 在线 TTL。

@@ -149,11 +149,9 @@ server smoke
     -> process exits normally
 ```
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：后续 Step 7 增加 `BufferTest.AppendIncreasesReadableBytes` 时，不需要重新设计测试入口，只要把新测试源加入 `tests/CMakeLists.txt`，CTest 就能发现。
-
-边界：本 Step 没有 fd、线程或 Reactor 对象。GoogleTest 由 CMake target 管理，不把第三方源码复制进项目目录；`liteim_server` 和 `liteim_tests` 先独立存在，后续再逐步链接 `liteim_base`、`liteim_protocol`、`liteim_net` 等库。
+后续增加 `SessionTest.ReceivesCompletePacket` 这种用例时，测试入口已经准备好：`liteim_tests` 链接 GoogleTest，CTest 负责发现和执行。比如 `Packet.seq_id=7` 的私聊请求在 Step 14 之后会进入 `Session` 测试；Step 1 只需要保证 `tests/CMakeLists.txt` 能把测试源编进同一个目标，`ctest --test-dir build --output-on-failure` 能统一报告结果。
 
 ## 4. 测试验证
 
@@ -204,7 +202,3 @@ ctest --test-dir build --output-on-failure
 **为什么不自己写一个简单测试框架？**
 
 自研框架虽然一开始简单，但后面很难支持 fixture、参数化测试、death test、gMock 和 CI 生态。这个项目目标是实习简历项目，用 GoogleTest 更贴近工程实践。
-
-## 8. 下一步
-
-Step 2：实现 `Config`、`Logger`、`ErrorCode` 等基础模块。

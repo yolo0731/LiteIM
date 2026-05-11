@@ -230,11 +230,9 @@ Packet.body 原始字节
 
 遇到 TLV header 不完整、value 长度超过剩余 body、单字段超过上限或 type 未知时，解析立即结束并把具体错误交给上层。成功路径只是分组保存原始 value，不在这里做登录、权限或业务路由。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：好友列表响应可以多次写入 `TlvType::FriendId`。解析后 `TlvMap[FriendId]` 里有多个 8 字节 value，`getRepeatedUint64()` 返回所有好友 ID。
-
-边界：重复字段是合法行为，单值 get 默认取第一个；未知 `TlvType` 数字仍进入 map，便于老版本忽略新字段；value 长度越界说明 body 损坏，上层可以返回错误响应或关闭连接。
+登录请求的 body 可以由多个 TLV 组成：`username=alice`、`password_hash=dev_hash_alice`、`client_id=cli-linux-01`。私聊请求则可以写入 `sender_id=1001`、`receiver_id=1002`、`conversation_id=10011002`、`text=hello bob`。接收端解析后按 TLV type 取值，即使后续新增 `trace_id` 字段，旧字段的解析边界也不会被破坏。
 
 ## 5. `TlvMap` 的设计
 
@@ -396,8 +394,12 @@ ctest --test-dir build --output-on-failure
 
 > 我把 Packet body 设计成 TLV 格式，每个字段是 2 字节 type、4 字节 len 和可变长 value。TLV 的多字节字段统一使用网络字节序，避免结构体 padding 和大小端问题。解析时先做 len 边界检查，防止非法长度导致越界读取；同一个字段可以重复出现，所以解析结果用 `unordered_map<TlvType, vector<vector<uint8_t>>>` 保存。缺失必需字段不在通用 parser 里判断，而是在 `getString()`、`getUint64()` 或业务 handler 读取字段时返回 `NotFound`，这样协议层和业务层边界更清楚。
 
-## 10. 本 Step 提交信息
+## 面试常见追问
 
-```text
-feat(protocol): implement tlv codec
-```
+### Q1：TLV 相比 JSON 的取舍是什么？
+
+TLV 更贴近本项目的二进制协议路线，字段边界和长度都明确，适合和 Packet header 一起做 TCP 流式解码。代价是可读性不如 JSON，需要工具函数辅助调试。
+
+### Q2：重复字段为什么要保留 vector？
+
+后续群成员、离线消息 id、批量参数都可能出现同一 type 多次。保留 vector 可以让协议支持 repeated field，而不是解析时静默丢数据。

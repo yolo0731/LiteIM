@@ -161,11 +161,9 @@ EAGAIN / EWOULDBLOCK 表示本轮积压连接接完
 
 关键点是 fd 所有权一创建就进入 `UniqueFd`，`Acceptor` 不创建 `Session`，也不解析协议；它只把“新连接来了”这件事交给上层。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：测试用端口 0 构造 `Acceptor`，内核分配可用端口，`port()` 返回实际端口。客户端连接后，callback 收到一个 `UniqueFd`；如果 callback 没有把它移走，离开作用域时自动关闭，避免 fd 泄漏。
-
-边界：`Acceptor` 默认属于 base loop，构造、Channel 注册和 `close()` 都必须在 owner loop 线程；`Channel` 不拥有 listen fd；accepted fd 从 `Acceptor` 到 `TcpServer` 到 `Session` 应全程用 `UniqueFd` 移动。跨线程停止服务端时，上层应先把停止动作投递回 base loop，再在 base loop 内调用 `Acceptor::close()`。
+base loop 正在监听 `0.0.0.0:9000`。Alice 客户端从 `127.0.0.1:52000` 连接进来时，`accept4()` 返回 fd=57，`Acceptor` 立刻用 `UniqueFd` 接住这个 fd，再把它移动给 `TcpServer`。后续 `TcpServer` 分配 `session_id=42`，把 fd 移交给 `Session`；整个过程不出现裸 fd 多次 `release()` 的所有权链。
 
 ## Acceptor 的职责
 
@@ -343,3 +341,13 @@ ctest --test-dir build --output-on-failure
 review hardening 后还可以补充：
 
 > listen fd、accepted fd 和 idle fd 都用 RAII 思路兜底。`Acceptor::close()` 必须在 owner/base loop 线程调用；跨线程停止由 `TcpServer` 或更上层先投递回 base loop，再同步关闭 listen Channel 和 fd。这个硬边界避免在 close/析构路径里捕获裸 `this` 排异步任务。fd 用尽时用 idle fd 套路拒绝一个 pending connection，避免 LT 模式下 `EMFILE` 触发 busy loop，且该异常路径中的日志不会从 `noexcept` helper 里继续抛出。`Channel::tie()` 则为下一步 `Session` 的 `shared_ptr` / `weak_ptr` 生命周期模型预留了基础。
+
+## 面试常见追问
+
+### Q1：Acceptor 为什么不直接创建 Session？
+
+Acceptor 只负责 listen fd 和 accept。Session 分配到哪个 I/O loop、session_id 如何生成、回调如何绑定都属于 TcpServer 的协调职责。
+
+### Q2：为什么 Acceptor::close() 必须 owner-loop-only？
+
+listen Channel 和 fd 注册在 base loop 上，跨线程关闭容易和 epoll 事件分发、对象析构交错。收紧为 owner-loop-only 后，关闭顺序由上层先投递回 base loop 再执行。

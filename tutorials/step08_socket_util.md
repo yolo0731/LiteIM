@@ -145,11 +145,9 @@ UniqueFd
 
 这种顺序的价值是避免重复关闭：哪怕 `close()` 期间出现错误，调用方手里的 fd 也已经失效，不会在后续清理路径里再次关闭同一个数字。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：非阻塞 `connect()` 返回 `EINPROGRESS` 后，后续 fd 可写不代表一定连接成功，需要调用 `getSocketError()`。`error_code == 0` 才表示连接成功。
-
-边界：对无效 fd 设置 option 是调用错误；关闭无效 fd 返回成功，方便 RAII 析构保持幂等；`SO_REUSEPORT` 在不支持的平台返回错误，不静默假装成功。
+服务器监听 `0.0.0.0:9000` 时，`createNonBlockingSocket()` 创建 listen fd，`setReuseAddr()` 方便本地重启，`bindAndListen()` 进入监听状态。Alice 客户端连上后，后续 accepted fd 会保持非阻塞，交给 `Session` 管理；如果某次 `write()` 返回错误，`getSocketError(fd)` 可以把内核错误转成日志中的具体原因。
 
 ## 3. SocketUtil 的公开接口
 
@@ -305,9 +303,3 @@ ctest --test-dir build --output-on-failure
 **为什么 `getSocketError()` 重要？**
 
 非阻塞连接和某些写事件里，事件到来并不等于操作一定成功。读取 `SO_ERROR` 可以拿到 socket 上真正的错误状态。
-
-## 12. 提交信息
-
-```text
-feat(net): add socket utility functions
-```

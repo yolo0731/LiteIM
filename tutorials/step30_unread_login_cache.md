@@ -365,40 +365,9 @@ AuthService / ChatService
 
 当前语义是滑动失败窗口：只要持续失败，每次 `recordFailure()` 都会刷新 key 的 TTL。`allow()` 和 `recordFailure()` 仍然是两个方法，后续 AuthService 如果需要强原子登录限流，可以再把“判断是否允许 + 本次失败递增”合成一个 Lua 脚本；第一版把它作为粗粒度防暴力破解保护。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-未读数例子：
-
-```cpp
-liteim::UnreadKey key;
-key.user_id = 1001;
-key.conversation = {liteim::ConversationType::kPrivate, 2002};
-
-std::uint64_t unread = 0;
-auto status = unread_counter.incrUnread(key, 1, unread);
-// unread == 1
-
-status = unread_counter.clearUnread(key);
-```
-
-登录限制例子：
-
-```cpp
-liteim::LoginAttemptKey key;
-key.username = "alice";
-key.remote_ip = "127.0.0.1";
-
-bool allowed = false;
-auto status = login_limiter.allow(key, 3, allowed);
-```
-
-边界：
-
-- `user_id == 0`、会话 id 为 0、未知会话类型都返回 `InvalidArgument`。
-- `delta == 0` 返回 `InvalidArgument`。
-- 空用户名、空 IP、`max_failures == 0` 或非正 ttl 返回 `InvalidArgument`。
-- Redis value 损坏时返回 `ParseError`。
-- Redis pool 未启动、关闭或 acquire 超时会返回对应 `Status`。
+Alice 给离线 Bob 发送 `conversation_id=10011002` 的私聊后，后续 ChatService 可以调用 `UnreadCounter::incrUnread({user_id=1002, conversation={1, 10011002}}, 1, unread)`，Redis key 是 `unread:user:1002:conversation:1:10011002`，返回 `unread=1`。登录限流则使用 `LoginAttemptKey{username=alice, remote_ip=127.0.0.1}`；连续失败 3 次后，`allow(key, 3, allowed)` 返回 `allowed=false`，登录成功再 `clear()`。
 
 ## 后续实现 / 关键设计说明
 
@@ -460,8 +429,12 @@ git diff --check
 - 阻塞 Redis API 不进入 I/O 线程。
 - TTL 负责登录失败窗口自动恢复。
 
-## 提交信息
+## 面试常见追问
 
-```text
-feat(cache): add unread counter and login limiter
-```
+### Q1：未读计数为什么放 Redis？
+
+未读数是高频状态，适合用 Redis 快速递增、读取和清零；消息正文仍以 MySQL 为准，Redis 不做最终消息来源。
+
+### Q2：登录限流为什么按 username + remote_ip 组合？
+
+只按用户名会让一个攻击源影响所有来源，只按 IP 又无法区分不同账号。组合 key 能覆盖第一版常见暴力尝试场景。

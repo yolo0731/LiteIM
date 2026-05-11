@@ -215,11 +215,9 @@ closeInLoop() 关闭慢连接
 
 这里最重要的线程边界是：`output_buffer_`、`Channel` 和 fd 都只在 Session owner loop 中直接操作，业务线程只能通过 `sendPacket()` 投递。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：业务线程拿到一个 `Session::Ptr` 后调用 `sendPacket()`。如果它不在 I/O loop 线程，`sendPacket()` 不会直接 `write(fd)`，而是把 `sendEncodedInLoop()` 投递回 owner loop，避免跨线程操作 `output_buffer_` 和 `Channel`。
-
-边界：`shared_from_this()` 要求 `Session` 已经由 `shared_ptr` 管理；`pendingOutputBytes()` 只能 owner-loop 查询；服务端出站写不刷新活跃时间，只有完整入站 Packet 才算客户端活跃；Channel 不拥有 fd，关闭顺序是先从 EventLoop 移除 Channel，再释放 `UniqueFd`。
+Alice 的连接是 `session_id=42`，fd=57。她发送 `HEARTBEAT_REQUEST seq_id=7` 或私聊请求时，`Session::handleRead()` 把 TCP 字节喂给 `FrameDecoder`；只有完整、合法 Packet 产出后才刷新 `last_active_time`。服务端给 Bob 推送 `message_id=5001` 只会增加 output buffer 或触发写事件，不会替 Alice 刷新活跃时间。
 
 ## 3. Session 的职责
 
@@ -409,8 +407,7 @@ ctest --test-dir build --output-on-failure
 
 > 发送路径不会无限追加 output buffer。每次 append 前先检查当前待发送字节加本次编码包是否超过配置的输出高水位，默认是 4MB；高于上限就记录日志并关闭连接。这是第一版高水位保护，简单直接，能防止慢客户端或异常网络把服务端内存耗尽。
 
-## 11. 常见追问
-
+## 11. 面试常见追问
 **为什么 `sendPacket()` 要支持跨线程？**  
 后续业务线程完成 MySQL / Redis 操作后，需要给客户端回包。业务线程不能直接写 socket，必须把发送任务投递回连接所属 I/O loop。
 

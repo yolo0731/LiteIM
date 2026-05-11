@@ -355,28 +355,9 @@ validate group_id
     -> sorted vector
 ```
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：
-
-```cpp
-auto status = friend_dao.addFriendship(1001, 1002);
-if (!status.isOk()) {
-    return status;
-}
-
-std::vector<UserProfileRecord> friends;
-status = friend_dao.getFriends(1001, friends);
-```
-
-边界：
-
-- 不能把自己加为好友。
-- 重复添加好友是幂等的。
-- 建群时 owner 自动成为成员。
-- 重复加群成员是幂等的。
-- owner 不能被普通 remove。
-- DAO 不实现好友申请、群权限系统或成员缓存。
+seed 数据里 Alice (`user_id=1001`) 和 Bob (`user_id=1002`) 是好友，`FriendDao::getFriends(1001)` 返回 Bob 的公开资料而不是 password hash。群 `group_id=2001` 的 owner 是 Alice，成员有 `1001`、`1002`、`9001`；`GroupDao::removeGroupMember(2001, 1001)` 会拒绝移除 owner，避免群仍指向 owner_id 但成员表缺失 owner。
 
 ## 后续实现 / 关键设计说明
 
@@ -422,8 +403,12 @@ git diff --check
 
 > Step 27 实现好友和群组 DAO。好友关系第一版用 friendships 表的两行表达双向关系，`addFriendship()` 在一个事务里插入两个方向，并用 `ON DUPLICATE KEY UPDATE` 做幂等 no-op。`getFriends()` 返回公开 `UserProfileRecord`，不把密码 hash 或 salt 带出 DAO。群组用 `chat_groups.owner_id` 表达群主，用 `group_members` 表达成员；建群时在一个事务里插入群资料和 owner 成员，移除成员前会查询 owner，拒绝把群主从成员表删除。DAO 只做数据访问，不做好友审批、群权限系统或网络通知。
 
-## 提交信息
+## 面试常见追问
 
-```text
-feat(storage): implement friend and group dao
-```
+### Q1：为什么好友关系写双向两行？
+
+第一版好友关系是互为好友，不做申请审批。写双向行后，查询任意一方好友列表都能走 `user_id` 条件，不需要额外推导。
+
+### Q2：为什么不能移除群 owner？
+
+`chat_groups.owner_id` 仍指向 owner。如果成员表把 owner 删掉，会让群资料和成员关系不一致，所以 DAO 第一版直接拒绝。

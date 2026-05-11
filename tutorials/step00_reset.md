@@ -104,11 +104,9 @@ CMake / CTest / stale-route scan 验证结果
 
 这里没有真正的 C++ 控制流，重点是文件职责归位：旧路线入口消失，最小根目录还能被构建工具识别，后续 Step 再按当前路线重新创建模块目录。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：如果旧仓库里有 `server/net/EventLoop.hpp`，Step 0 不在旧路径上修补它，而是删除旧目录；后续 Step 9 会在 `include/liteim/net/EventLoop.hpp` 重新定义当前路线的 Reactor 接口。
-
-边界：本 Step 不处理 fd、线程、连接生命周期或业务对象所有权；它只处理文件归属。空目录和 `.gitkeep` 不作为成果保存，后续目录必须由真正需要它的 Step 创建。
+以旧路线文件清理为例：如果仓库里同时存在 `server/net/EventLoop.hpp`、`SQLiteStorage.cpp`、`InMemoryStorage.cpp` 和旧 `build/` 产物，Step 0 不在这些旧文件上继续修补。它会删除旧路径，保留 `README.md`、`task_plan.md`、`findings.md`、`progress.md` 这类身份和过程文件，让后续 Step 9 在 `include/liteim/net/EventLoop.hpp` 重新建立当前 Reactor 接口。后续真实业务数据会落到 MySQL，例如 seed 里的 `user_id=1001`、`conversation_id=10011002`、`message_id=5001`，而不是回到 SQLite 或 `InMemoryStorage` 主线。
 
 ## 4. 测试验证
 
@@ -136,6 +134,12 @@ rg -n "SQLiteStorage|step15_sqlite|InMemoryStorage|server/net|server/protocol" .
 
 可以说：我在正式实现前先统一了项目路线，删除了旧的同步存储和旧目录结构，准备按 Step 逐步建立 `include/liteim/<module>` + `src/<module>` 的分层布局，避免还没实现功能就提前堆目录。
 
-## 6. 下一步
+## 面试常见追问
 
-Step 1：初始化 CMake 工程，创建最小 `liteim_server` 和 `liteim_tests`。
+### Q1：Step 0 为什么不是直接修旧代码？
+
+因为旧代码属于单 Reactor / SQLite / InMemoryStorage 路线，继续修会把后续网络、存储和测试边界带偏。Step 0 的价值是先清掉错误入口，再让每个模块由对应 Step 重新引入。
+
+### Q2：为什么不保留空目录和 `.gitkeep`？
+
+LiteIM 要让目录跟真实模块同步出现。空目录会制造“模块已经存在”的错觉，后续读代码时很难判断它是设计占位还是实际成果。

@@ -260,24 +260,9 @@ SQL 脚本自身按依赖顺序执行：
 5. 最后创建依赖 `messages` 的 `offline_messages`。
 6. seed 先插用户，再插好友、群、成员、消息、离线消息。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：
-
-```bash
-docker compose -f docker/docker-compose.yml up -d
-docker compose -f docker/docker-compose.yml ps
-mysql -h 127.0.0.1 -P 33060 -uliteim -p6 liteim -e "SELECT username FROM users;"
-REDISCLI_AUTH=6 redis-cli -h 127.0.0.1 -p 63790 ping
-```
-
-边界：
-
-- `33060` 是宿主机端口，不是 MySQL X Protocol。
-- Redis 需要密码；无密码连接应该失败。
-- SQL 初始化只在 MySQL 数据目录第一次创建时自动执行。
-- Step 22 不引入 C++ MySQL / Redis 客户端。
-- Step 22 不把 MySQL / Redis 集成测试加入默认单元测试前置条件。
+初始化脚本会写入真实开发数据：`users` 里有 `user_id=1001` 的 `alice`、`user_id=1002` 的 `bob`、`user_id=9001` 的 `mira_bot`；`messages` 里有 `message_id=5001`、`conversation_type=1`、`conversation_id=10011002`、文本 `hello bob`。历史分页依赖 `idx_messages_history(conversation_type, conversation_id, message_id)`，离线拉取依赖 `offline_messages(user_id=1002, message_id=5001, delivered=0)`。
 
 ## 后续实现 / 关键设计说明
 
@@ -328,8 +313,12 @@ docker compose -f docker/docker-compose.yml up -d
 
 > Step 22 先把本地 MySQL / Redis 环境和 schema 固定下来。MySQL 用 Docker Compose 启动 8.0 系列，宿主机端口是 33060，Redis 端口是 63790，两者默认密码都是 6。MySQL 初始化脚本创建用户、好友、群、消息和离线消息表，并准备索引和 seed 数据；Redis 第一版只启动空实例和认证。这样后续 C++ MySQL wrapper、DAO 和 Redis cache 都有稳定的真实依赖可以集成测试。
 
-## 提交信息
+## 面试常见追问
 
-```text
-feat(infra): add mysql redis docker environment
-```
+### Q1：为什么 MySQL 是主线依赖？
+
+LiteIM 的消息、用户、好友、群组和离线消息都需要可恢复的持久化来源。Redis 只保存在线状态、未读数和登录失败窗口，不能替代 MySQL。
+
+### Q2：为什么 seed 里放 `mira_bot`？
+
+PersonaAgent 后续要作为普通 Bot 用户接入 LiteIM。seed 先提供稳定开发账号，BotGateway 和用户类型迁移仍留到后续 Step。

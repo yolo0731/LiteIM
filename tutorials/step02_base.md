@@ -218,11 +218,9 @@ server/main.cpp
 
 它的关键边界是“先把文本整理成配置项，再统一写入 `Config`”。缺文件、未知 key、端口非法或高水位为 0 这类问题不会抛异常给上层，而是通过 `Status::error()` 带着 `ErrorCode` 返回。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：配置文件写 `server.output_high_water_mark_bytes=0` 时，[Config::loadFromFile()](../src/base/Config.cpp#L101) 返回 `InvalidArgument`，server 不应该继续启动一个“任何发送都会超限”的配置。
-
-边界：`Config` 当前是启动期快照，不做动态 reload；`Logger` 内部加锁，适合多线程共享；`Status` 用于可恢复错误，不替代构造函数里无法继续的异常；`Timestamp` 使用 system clock，定时器到期计算由 `TimerManager` 使用 steady clock。
+本地服务启动时会读取类似 `server.host=0.0.0.0`、`server.port=9000`、`server.io_threads=4`、`server.output_high_water_mark_bytes=4194304` 的配置。业务层保存 `user_id=1001` 给 `user_id=1002` 的消息失败时，不抛裸异常，而是返回 `Status::error(...)`；日志中记录模块、错误码和时间戳，方便定位 `conversation_id=10011002` 这条链路的问题。
 
 ## 4. Config 设计
 
@@ -602,11 +600,3 @@ CTest 预期：
 ### 当前 `Logger` 是异步的吗？
 
 不是。Step 2 只建立统一日志入口。当前项目还没有 I/O 线程和业务线程池，没必要过早实现异步日志。后续如果压测发现同步日志影响性能，可以在保持 `Logger` 对外接口不变的情况下升级实现。
-
-## 13. 本 Step 提交
-
-提交信息：
-
-```text
-feat(base): add config logger and error code
-```

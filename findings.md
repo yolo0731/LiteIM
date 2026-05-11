@@ -8,6 +8,19 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-12 Markdown Contract Alignment Findings
+
+本次是 Markdown-only 同步修复，不修改 C++ 逻辑，不回滚现有 dirty diff，也不把它记成 Step31。
+
+确认并修正的文档契约：
+
+- Step 教程主结构不再以“提交信息”收尾；教程只讲概念、接口、运行流程、测试和“面试常见追问”。计划 commit message 只保留在 `/home/yolo/jianli/PROJECT_MEMORY.md` 的 Step 路线和 planning 文件中。
+- 每个教程“作用场景和运行流程”的第 5 小节统一为“该项目代码在实际应用中的具体数据例子”，内容必须使用 LiteIM 真实对象和数值，例如 `user_id=1001`、`conversation_id=10011002`、`message_id=5001`、`seq_id=7`、`session_id=42`、`online:user:1002`。
+- MySQL history 索引字段名统一按当前 schema 表达为 `(conversation_type, conversation_id, message_id)`；旧 `(conv_type, conv_id, id)` 属于历史/简写漂移，不再用于当前设计说明。
+- HeartbeatService 不直接负责刷新 `Session::last_active_time`。完整、合法的入站 Packet 已经在 `Session` 读路径刷新连接活跃时间；HeartbeatService 只返回心跳响应，并为已登录用户刷新 Redis 在线 TTL。
+- `MySqlStorage::saveMessageWithOfflineRecipients()` 当前契约是：先对重复离线用户去重；如果 `queryLastInsertedMessage()` 成功后、`COMMIT` 前插入离线记录失败，会 `ROLLBACK` 并清空 `saved_message` 输出参数，避免半成功结果被上层误用。
+- 当前完整测试总数应记录为 `254/254`，新增通过项来自 `SaveMessageWithOfflineRecipientsDeduplicatesOfflineUsers`。
+
 ## 2026-05-12 Pre-Step31 Storage / Cache Contract Cleanup Findings
 
 本次是 Step31 之前的独立项目小重构，不开启 `SessionManager`、`OnlineService`、AuthService 或 ChatService。

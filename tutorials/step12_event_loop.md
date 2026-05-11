@@ -173,11 +173,9 @@ Epoller::poll() 等待 fd 事件或 eventfd 唤醒
 
 这个设计把“谁可以提交任务”和“谁真正操作 fd / Channel”分开：外部线程只入队，真正执行仍回到 owner loop 线程。
 
-### 5. 小例子和边界
+### 5. 该项目代码在实际应用中的具体数据例子
 
-小例子：业务线程调用 `session->sendPacket(packet)` 时，如果当前不在 Session owner loop，内部会 `queueInLoop()` 一个发送任务。eventfd 唤醒 I/O loop 后，任务在 owner 线程把字节追加进输出 Buffer 并开启写事件。
-
-边界：EventLoop 对象必须在 owner 线程 start/stop/destroy；Channel 更新和移除不能从业务线程直接调用；`queueInLoop()` 可以跨线程使用，但任务不要捕获可能已经析构的裸 `this`；eventfd 由 `UniqueFd` 持有，Channel 只代理事件。
+ChatService 在业务线程保存 `message_id=5001` 后，不能直接写 Bob 的 fd。它只持有 `weak_ptr<Session>`，然后通过 Bob 所属 I/O loop 的 `queueInLoop()` 投递发送任务；eventfd 唤醒那个 EventLoop，最终在 owner thread 内调用 `Session::sendPacket()`，把 `PRIVATE_MESSAGE_PUSH seq_id=7` 放入 output buffer。
 
 ## 3. EventLoop 的核心接口
 
