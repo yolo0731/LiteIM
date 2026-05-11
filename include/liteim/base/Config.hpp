@@ -11,17 +11,17 @@ namespace liteim {
 
 struct MySqlConfig {
     std::string host{"127.0.0.1"};
-    std::uint16_t port{3306};
+    std::uint16_t port{33060};
     std::string user{"liteim"};
-    std::string password{"liteim"};
+    std::string password{"6"};
     std::string database{"liteim"};
     std::uint32_t pool_size{4};
 };
 
 struct RedisConfig {
     std::string host{"127.0.0.1"};
-    std::uint16_t port{6379};
-    std::string password;
+    std::uint16_t port{63790};
+    std::string password{"6"};
     std::uint32_t db{0};
     std::uint32_t pool_size{4};
 };

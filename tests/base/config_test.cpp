@@ -27,8 +27,10 @@ TEST(ConfigTest, DefaultsContainExpectedValues) {
     EXPECT_EQ(config.business_threads, 4U);
     EXPECT_EQ(config.session_output_high_water_mark, 4U * 1024U * 1024U);
     EXPECT_EQ(config.mysql.host, "127.0.0.1");
-    EXPECT_EQ(config.mysql.port, 3306);
-    EXPECT_EQ(config.redis.port, 6379);
+    EXPECT_EQ(config.mysql.port, 33060);
+    EXPECT_EQ(config.mysql.password, "6");
+    EXPECT_EQ(config.redis.port, 63790);
+    EXPECT_EQ(config.redis.password, "6");
     EXPECT_EQ(config.qt_client.server_port, 9000);
 }
 
@@ -93,7 +95,10 @@ TEST(ConfigTest, MissingValuesKeepDefaults) {
     EXPECT_EQ(config.server_port, 10000);
     EXPECT_EQ(config.server_host, "0.0.0.0");
     EXPECT_EQ(config.mysql.host, "127.0.0.1");
-    EXPECT_EQ(config.redis.port, 6379);
+    EXPECT_EQ(config.mysql.port, 33060);
+    EXPECT_EQ(config.mysql.password, "6");
+    EXPECT_EQ(config.redis.port, 63790);
+    EXPECT_EQ(config.redis.password, "6");
 
     std::filesystem::remove(path);
 }

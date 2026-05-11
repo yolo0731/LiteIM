@@ -136,9 +136,12 @@ MySQL: 127.0.0.1:33060
 Redis: 127.0.0.1:63790
 Database: liteim
 MySQL user: liteim
-MySQL password: liteim_dev
-MySQL root password: liteim_root
+MySQL password: 6
+MySQL root password: 6
+Redis password: 6
 ```
+
+The MySQL service uses the `mysql:8.0` image so MySQL Workbench 8.0 can connect without the MySQL 8.4 compatibility warning. The host port `33060` maps to classic MySQL port `3306` inside the container; it is not MySQL X Protocol.
 
 The MySQL container runs `scripts/init_mysql.sql` and `scripts/seed_test_data.sql` the first time its data volume is created. The init script creates the main LiteIM tables:
 
@@ -149,15 +152,15 @@ The MySQL container runs `scripts/init_mysql.sql` and `scripts/seed_test_data.sq
 - `messages`
 - `offline_messages`
 
-The seed script inserts local test users `alice`, `bob`, the Bot user `mira_bot`, a `dev_group`, sample messages, and pending offline-message rows. Redis starts empty; online status, unread counters, and login failure limiting keys will be introduced with the Redis cache implementation.
+The seed script inserts local test users `alice`, `bob`, the Bot user `mira_bot`, a `dev_group`, sample messages, and pending offline-message rows. Redis starts empty but requires the local development password; online status, unread counters, and login failure limiting keys will be introduced with the Redis cache implementation.
 
 Useful checks:
 
 ```bash
 docker compose -f docker/docker-compose.yml ps
-docker compose -f docker/docker-compose.yml exec mysql mysql -uliteim -pliteim_dev liteim -e "SHOW TABLES;"
-docker compose -f docker/docker-compose.yml exec mysql mysql -uliteim -pliteim_dev liteim -e "SELECT user_id, username FROM users ORDER BY user_id;"
-docker compose -f docker/docker-compose.yml exec redis redis-cli ping
+docker compose -f docker/docker-compose.yml exec mysql mysql -uliteim -p6 liteim -e "SHOW TABLES;"
+docker compose -f docker/docker-compose.yml exec mysql mysql -uliteim -p6 liteim -e "SELECT user_id, username FROM users ORDER BY user_id;"
+docker compose -f docker/docker-compose.yml exec redis sh -c 'REDISCLI_AUTH=6 redis-cli ping'
 ```
 
 Stop the local services:

@@ -1,5 +1,31 @@
 # LiteIM Progress
 
+## 2026-05-11 Step 22 Local Dev MySQL 8.0 / Password Alignment
+
+本次在已完成的 Step 22 基础上更新本地开发依赖，不进入 Step 23。
+
+已完成修改：
+
+- `docker/docker-compose.yml`：MySQL 镜像改为 `mysql:8.0`；MySQL `liteim` 用户、MySQL root 用户、Redis 认证密码默认统一为 `6`；Redis 启动时开启 `requirepass`。
+- `Config::defaults()`：MySQL 默认端口改为 `33060`、密码 `6`；Redis 默认端口改为 `63790`、密码 `6`。
+- `tests/base/config_test.cpp`：补充默认 MySQL / Redis 开发端口和密码断言。
+- `README.md`、`tutorials/step22_docker_mysql.md`、`task_plan.md`、`findings.md`：同步 MySQL 8.0、密码 `6`、Redis 认证和 `33060` 非 MySQL X Protocol 的说明。
+
+验证：
+
+- `docker compose -f docker/docker-compose.yml config`：通过。
+- `docker compose -f docker/docker-compose.yml down -v && docker compose -f docker/docker-compose.yml up -d --wait`：重建本地开发数据卷并启动成功，MySQL / Redis 均 healthy。
+- `docker compose -f docker/docker-compose.yml ps`：MySQL 镜像为 `mysql:8.0`，端口仍为 `127.0.0.1:33060->3306`；Redis 端口为 `127.0.0.1:63790->6379`。
+- MySQL 查询验证：`SELECT VERSION()` 返回 `8.0.46`；`SHOW TABLES` 返回 6 张表；seed 可查到 `alice`、`bob`、`mira_bot` 和两条未投递离线消息。
+- Redis 认证验证：未带密码 `redis-cli ping` 返回 `NOAUTH Authentication required.`；`REDISCLI_AUTH=6 redis-cli ping` 返回 `PONG`。
+- MySQL root 账号验证：`mysql -uroot -p6 -e "SELECT VERSION()"` 返回 `8.0.46`。
+- MySQL Workbench keyring 中 `LiteIM Docker Local` 的 `liteim@127.0.0.1:33060` 密码已更新为 `6`。
+- `cmake --build build`：通过。
+- `ctest --test-dir build -R "ConfigTest" --output-on-failure`：7/7 通过。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，服务端收到 SIGTERM 后优雅退出。
+- `ctest --test-dir build --output-on-failure`：181/181 通过。
+- `git diff --check -- docker/docker-compose.yml include/liteim/base/Config.hpp tests/base/config_test.cpp README.md tutorials/step22_docker_mysql.md task_plan.md findings.md progress.md`：通过。
+
 ## 2026-05-10 Step 22 Docker Compose / MySQL Init SQL
 
 本次进入 `Step 22：编写 Docker Compose 和 MySQL 初始化 SQL`，目标是为后续 MySQL / Redis 存储缓存实现准备可重复启动的本地开发环境。
@@ -40,7 +66,8 @@ seed 数据：
 - `docker compose -f docker/docker-compose.yml config`：通过。
 - `LITEIM_MYSQL_PORT=33306 LITEIM_REDIS_PORT=36379 docker compose -p liteim-step22-verify -f docker/docker-compose.yml up -d --wait`：MySQL / Redis 均 healthy。
 - MySQL 查询验证：`SHOW TABLES` 返回 6 张表；`SHOW INDEX FROM messages` 包含 `idx_messages_history`、`idx_messages_sender`、`idx_messages_receiver`；seed 可查到 `alice`、`bob`、`mira_bot`、`dev_group` 和两条未投递离线消息。
-- Redis 验证：`redis-cli ping` 返回 `PONG`。
+- 后续本地开发口径更新：MySQL 开发镜像固定为 `mysql:8.0`，避免 Workbench 8.0 对 MySQL 8.4 弹兼容性警告；MySQL/Redis 开发密码统一为 `6`。
+- Redis 验证：`REDISCLI_AUTH=6 redis-cli ping` 返回 `PONG`。
 - `LITEIM_MYSQL_PORT=33306 LITEIM_REDIS_PORT=36379 docker compose -p liteim-step22-verify -f docker/docker-compose.yml down -v`：临时验证容器和数据卷已清理。
 - `cmake --build build`：通过。
 - `ctest --test-dir build --output-on-failure`：181/181 通过。

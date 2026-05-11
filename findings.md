@@ -8,21 +8,43 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-11 Step 22 Local Dev Dependency Alignment Findings
+
+本次在 Step 22 已完成基础上调整本地开发依赖口径，不进入 Step 23，也不实现 C++ MySQL / Redis client。
+
+已经确认并采用的设计：
+
+- 开发 Compose 的 MySQL 镜像从 `mysql:8.4` 改为 `mysql:8.0`，避免 MySQL Workbench 8.0 对 8.4 服务端弹兼容性警告。
+- 保持宿主机 MySQL 端口 `127.0.0.1:33060`，该端口映射到容器内经典 MySQL 协议 `3306`，不是 MySQL X Protocol。
+- MySQL `liteim` 用户、MySQL root 用户、Redis 认证密码统一使用本地开发密码 `6`。
+- Redis 继续不初始化业务数据，但开发容器开启 `requirepass`，后续 `RedisClient` / `RedisPool` 实现必须带密码连接。
+- `Config::defaults()` 同步到 Docker 开发端点：MySQL `127.0.0.1:33060`、Redis `127.0.0.1:63790`、密码 `6`，让后续 Step 23/28 默认连本地 Compose 环境。
+- 已用 `docker compose down -v` 重建 LiteIM 开发数据卷，避免把 MySQL 8.4 数据目录直接降级给 MySQL 8.0 使用。
+
+本次不采用/不改：
+
+- 不卸载系统 MySQL、系统 Redis、Anaconda mysql client 或其他宿主机工具。
+- 不修改 SQL schema / seed 数据内容。
+- 不接入 DAO、连接池、Redis client 或业务服务。
+
 ## 2026-05-10 Step 22 Docker Compose / MySQL Init SQL Findings
 
 本次进入 `Step 22：Docker Compose and MySQL init SQL`，只实现本地开发依赖环境和 MySQL schema，不实现 C++ MySQL/Redis 客户端、DAO、连接池或业务服务接入。
 
 已经确认并采用的设计：
 
-- 新增 `docker/docker-compose.yml`，一条 `docker compose -f docker/docker-compose.yml up -d` 启动 MySQL 8.4 和 Redis 7.2。
+- 新增 `docker/docker-compose.yml`，一条 `docker compose -f docker/docker-compose.yml up -d` 启动 MySQL 8.0 系列和 Redis 7.2。
 - 默认本地端口使用 `127.0.0.1:33060` 和 `127.0.0.1:63790`，避免占用系统常见 `3306` / `6379`。
+- 默认本地开发密码统一为 `6`：MySQL `liteim` 用户、MySQL root 用户、Redis 认证密码一致。
+- 为避免 MySQL Workbench 8.0 对 MySQL 8.4 弹出兼容性警告，开发 Compose 镜像固定为 `mysql:8.0`。
+- 宿主机 `33060` 只是映射到容器内经典 MySQL `3306` 的开发端口，不表示 MySQL X Protocol。
 - Compose 不固定 `container_name`，方便用 `-p` 启动临时验证环境，不和默认 dev project 冲突。
 - MySQL 第一次创建数据卷时按顺序执行 `scripts/init_mysql.sql` 和 `scripts/seed_test_data.sql`。
 - `init_mysql.sql` 创建 `users`、`friendships`、`chat_groups`、`group_members`、`messages`、`offline_messages`。
 - SQL 字段对齐 Step 21 DTO：id 使用 `BIGINT UNSIGNED`，时间使用毫秒 `BIGINT`，`conversation_type + conversation_id + message_id` 支撑历史消息查询。
 - `offline_messages` 通过 `(user_id, delivered, offline_message_id)` 索引支撑后续“查询某用户待投递离线消息”。
 - seed 数据固定 id，写入 `alice`、`bob`、`mira_bot`、`dev_group`、示例消息和待投递离线消息；脚本可重复执行。
-- Redis 第一版不初始化数据，后续 RedisPool / ICache 实现再定义 key。
+- Redis 第一版不初始化数据，但开发容器开启密码认证；后续 RedisPool / ICache 实现再定义 key。
 
 本次不采用/不改：
 

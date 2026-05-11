@@ -9,7 +9,7 @@ Step 21 已经定义了 `IStorage` / `ICache` 接口，但还没有真实 MySQL 
 - Docker Compose 启动 MySQL 和 Redis。
 - MySQL 初始化 LiteIM 需要的主线表。
 - seed 脚本写入本地测试数据。
-- Redis 只启动服务，不写初始化数据。
+- Redis 只启动服务并开启本地开发密码，不写初始化数据。
 
 本 Step 不实现 C++ MySQL client、Redis client、DAO、业务服务，也不让网络 I/O 线程接触阻塞存储调用。
 
@@ -19,8 +19,10 @@ Step 21 已经定义了 `IStorage` / `ICache` 接口，但还没有真实 MySQL 
 
 该文件定义两个本地开发服务：
 
-- `mysql`：MySQL 8.4，默认库名 `liteim`，本机端口 `33060`。
+- `mysql`：MySQL 8.0 系列，默认库名 `liteim`，本机端口 `33060`。
 - `redis`：Redis 7.2，本机端口 `63790`。
+
+MySQL / Redis 的默认本地开发密码统一为 `6`。MySQL root 密码也是 `6`。`33060` 是宿主机端口，映射到容器内经典 MySQL 协议端口 `3306`，不是 MySQL X Protocol。
 
 MySQL 容器第一次创建数据卷时，会按文件名顺序执行：
 
@@ -33,6 +35,7 @@ MySQL 容器第一次创建数据卷时，会按文件名顺序执行：
 
 ```bash
 LITEIM_MYSQL_PORT=33306 LITEIM_REDIS_PORT=36379 \
+LITEIM_MYSQL_PASSWORD=6 LITEIM_MYSQL_ROOT_PASSWORD=6 LITEIM_REDIS_PASSWORD=6 \
 docker compose -f docker/docker-compose.yml up -d
 ```
 
@@ -80,7 +83,7 @@ MySQL 第一次启动时自动完成：
   -> 写入 alice/bob/mira_bot/dev_group 测试数据
 ```
 
-Redis 启动后只提供空实例。后续 `RedisPool` 和 `ICache` 实现会负责在线状态、未读计数和登录失败限制 key。
+Redis 启动后只提供带密码的空实例。后续 `RedisPool` 和 `ICache` 实现会负责在线状态、未读计数和登录失败限制 key。
 
 ## 4. 验证命令
 
@@ -94,7 +97,7 @@ docker compose -f docker/docker-compose.yml ps
 
 ```bash
 docker compose -f docker/docker-compose.yml exec mysql \
-  mysql -uliteim -pliteim_dev liteim \
+  mysql -uliteim -p6 liteim \
   -e "SHOW TABLES;"
 ```
 
@@ -102,8 +105,22 @@ docker compose -f docker/docker-compose.yml exec mysql \
 
 ```bash
 docker compose -f docker/docker-compose.yml exec mysql \
-  mysql -uliteim -pliteim_dev liteim \
+  mysql -uliteim -p6 liteim \
   -e "SHOW INDEX FROM messages; SELECT user_id, username FROM users ORDER BY user_id;"
+```
+
+验证 Redis 认证：
+
+```bash
+docker compose -f docker/docker-compose.yml exec redis \
+  sh -c 'REDISCLI_AUTH=6 redis-cli ping'
+```
+
+如果本机之前已经用 `mysql:8.4` 创建过 LiteIM 开发数据卷，切换到 MySQL 8.0 时需要重建这个开发数据卷，避免把 8.4 数据目录直接降级给 8.0 使用：
+
+```bash
+docker compose -f docker/docker-compose.yml down -v
+docker compose -f docker/docker-compose.yml up -d --wait
 ```
 
 清理本地开发容器：
