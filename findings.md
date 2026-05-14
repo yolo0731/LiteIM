@@ -8,6 +8,31 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-14 Step 34 AuthService Findings
+
+本次进入 `Step 34：实现 AuthService 注册登录`，只实现注册/登录业务闭环，不推进 FriendService、ChatService、离线消息、历史消息、HeartbeatService、BotGateway 或客户端。
+
+已经确认并采用的设计：
+
+- `AuthService` 位于 `liteim_service`，依赖 `IStorage`、`ICache` 和 `OnlineService`，不直接依赖具体 DAO/cache 组件。
+- `RegisterRequest` / `LoginRequest` 通过 `AuthService::registerHandlers()` 注册到 `MessageRouter`，dispatch mode 固定为 `BusinessThread`。
+- 密码哈希使用 OpenSSL `PBKDF2-HMAC-SHA256`，注册时生成 16 字节随机 salt，MySQL 保存 hex salt 和 hex hash。
+- 注册请求读取 `Username`、`Password`，`Nickname` 可选；缺失 nickname 时默认使用 username。
+- 注册成功返回 `RegisterResponse`，body 写入 `UserId`、`Username`、`Nickname`。
+- 登录前先通过 `ICache::allowLoginAttempt()` 检查 Redis 登录失败限制。
+- 用户不存在和密码错误都返回统一的 `invalid username or password`，并记录一次登录失败，避免通过错误消息枚举用户。
+- 登录成功先清理 Redis 登录失败计数，再调用 `OnlineService::bindUser()` 写在线状态并绑定 `SessionManager`。
+- 登录成功返回 `LoginResponse`，body 写入 `UserId`、`Username`、`Nickname`、`SessionId`。
+- 当前 `Session` 不暴露 peer IP，本 Step 不改网络层公开接口；`LoginAttemptKey.remote_ip` 暂时使用 `AuthServiceOptions::default_remote_ip`。
+- `server/main.cpp` 现在启动 MySQL / Redis pool，注入 `MySqlStorage` / `RedisCache` / `OnlineService` / `AuthService`，并继续保持 `SignalWatcher::start()` 早于业务线程池启动。
+
+本次不采用/不改：
+
+- 不修改 MySQL schema，不新增协议消息类型或 TLV 字段。
+- 不实现 JWT、OAuth、短信、邮箱验证码、生产级账号安全体系或真实 peer IP 获取。
+- 不把 MySQL / Redis 阻塞调用放进 Reactor I/O 线程。
+- 不接入好友、私聊、群聊、离线消息、历史消息或 BotGateway。
+
 ## 2026-05-14 Step 33 MessageRouter Findings
 
 本次进入 `Step 33：实现 MessageRouter 异步分发框架`，只实现业务入口骨架和 `TcpServer` 运行时接入，不实现 AuthService、ChatService、好友、群聊、历史消息或 BotGateway。

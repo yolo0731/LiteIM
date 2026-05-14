@@ -1,4 +1,8 @@
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(OPENSSL REQUIRED IMPORTED_TARGET openssl)
+
 add_library(liteim_service STATIC
+    AuthService.cpp
     MessageRouter.cpp
     OnlineService.cpp
     SessionManager.cpp
@@ -17,6 +21,7 @@ target_link_libraries(liteim_service
         liteim_net
         liteim_cache
         liteim_concurrency
+        PkgConfig::OPENSSL
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

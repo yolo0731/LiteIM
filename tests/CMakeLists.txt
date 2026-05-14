@@ -42,6 +42,7 @@ add_executable(liteim_tests
     service/session_manager_test.cpp
     service/online_service_test.cpp
     service/message_router_test.cpp
+    service/auth_service_test.cpp
     timer/timer_heap_header_test.cpp
     timer/timer_heap_test.cpp
     timer/timer_manager_header_test.cpp
@@ -67,3 +68,4 @@ add_test(
     NAME LiteIMServerSignalTest.TerminatesOnSigterm
     COMMAND /bin/bash ${CMAKE_CURRENT_SOURCE_DIR}/server_signal_shutdown_test.sh $<TARGET_FILE:liteim_server>
 )
+set_tests_properties(LiteIMServerSignalTest.TerminatesOnSigterm PROPERTIES SKIP_RETURN_CODE 77)

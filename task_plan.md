@@ -31,6 +31,7 @@ The workspace documentation roles are now separated:
 
 | Phase | Status | Notes |
 | --- | --- | --- |
+| Step 34 AuthService register and login | done | Added `AuthService` with RED/GREEN tests, PBKDF2-HMAC-SHA256 password hashing, register/login handlers over `IStorage` / `ICache` / `OnlineService`, and server runtime wiring for MySQL / Redis / AuthService. Register/login run in the business thread pool through `MessageRouter`; successful login clears failure counts, writes Redis online state, and binds `SessionManager`. Full build, full CTest 279/279, diff check, and server smoke passed. |
 | Step 33 MessageRouter async dispatch framework | done | Added `MessageRouter` with RED/GREEN tests and runtime wiring. It parses request TLVs, dispatches handlers inline or through the business `ThreadPool`, returns `ErrorResponse` for invalid/unhandled paths, preserves request `seq_id`, and is wired from `server/main.cpp` through `TcpServer::setMessageCallback()`. `server/main.cpp` starts `SignalWatcher` before the business pool so worker threads inherit the blocked SIGINT/SIGTERM mask. Full build, full CTest 272/272, server smoke, and diff check passed. |
 | Step 32 SessionManager and OnlineService | done | Added `liteim_service` with `SessionManager` and `OnlineService`, using a kick-old-keep-new repeated-login policy. Memory binding uses `user_id -> weak_ptr<Session>` and `session_id -> user_id`; OnlineService writes/refreshes/clears Redis-backed online state through `ICache` while stale old-session unbinds do not delete the new Redis online key. No AuthService, MessageRouter, ChatService, or TcpServer runtime protocol wiring introduced. |
 | Step 31 route documentation alignment | done | Markdown-only route adjustment: formalized the former storage/cache adapter cleanup as Step 31, shifted the business-service phase to Step 32-41, shifted later phase ranges to Step 42-46 / Step 47-54 / Step 55, added `tutorials/step31_storage_cache_adapters.md`, and updated affected README/tutorial/planning references. No C++ behavior changed. |
@@ -227,7 +228,8 @@ Current route status:
 - Step 31 `MySqlStorage and RedisCache adapters` is complete.
 - Step 32 `SessionManager and OnlineService` is complete.
 - Step 33 `MessageRouter async dispatch framework` is complete.
-- Default next implementation step is Step 34 `AuthService register and login`.
+- Step 34 `AuthService register and login` is complete.
+- Default next implementation step is Step 35 `FriendService`.
 
 LiteIM phases:
 

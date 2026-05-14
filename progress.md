@@ -1,5 +1,32 @@
 # LiteIM Progress
 
+## 2026-05-14 Step 34 AuthService
+
+本次进入 `Step 34：AuthService 注册登录`，目标是在 Step33 `MessageRouter` 骨架上接入真实注册/登录业务，并保证 MySQL / Redis 调用只发生在 business 线程池 handler 中。
+
+TDD 过程：
+
+- RED：新增 `tests/service/auth_service_test.cpp` 并注册到 `tests/CMakeLists.txt` 后，`cmake --build build --target liteim_tests -j2` 按预期失败于缺少 `liteim/service/AuthService.hpp`。
+- GREEN：新增 `include/liteim/service/AuthService.hpp`、`src/service/AuthService.cpp`，更新 `src/service/CMakeLists.txt` 链接 OpenSSL，更新 `server/main.cpp` 注入 MySQL / Redis / OnlineService / AuthService。
+- 首次 `ctest --test-dir build -R "AuthService" --output-on-failure` 有 6/7 通过，唯一失败是集成测试生成的 username 超过 `users.username VARCHAR(64)`；修正测试用户名长度后 AuthService 7/7 通过。
+
+已完成代码：
+
+- `AuthServiceOptions` 提供登录失败阈值、失败窗口 TTL 和当前默认 remote_ip。
+- `AuthService::registerHandlers()` 将 `RegisterRequest` / `LoginRequest` 注册为 `BusinessThread` handler。
+- 注册流程解析 `Username` / `Password` / 可选 `Nickname`，生成 salt，使用 `PBKDF2-HMAC-SHA256` 生成密码 hash，调用 `IStorage::createUser()`，返回 `RegisterResponse`。
+- 登录流程先检查 Redis 登录失败限制，再查 MySQL 用户、验证密码、失败时记录失败次数、成功时清除失败计数并调用 `OnlineService::bindUser()`。
+- `server/main.cpp` 现在启动 `MySqlPool`、`RedisPool`、`MySqlStorage`、`RedisCache`、`SessionManager`、`OnlineService` 和 `AuthService`，并把注册/登录 handler 接到 `MessageRouter`。
+
+当前验证：
+
+- `ctest --test-dir build -R "AuthService" --output-on-failure`：7/7 通过。
+- `ctest --test-dir build -R "AuthService|MessageRouter|Service|Session|TcpServer|LiteIMServerSignal" --output-on-failure`：57/57 通过。
+- `cmake --build build -j2`：通过。
+- `ctest --test-dir build --output-on-failure`：279/279 通过。
+- `git diff --check`：通过。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，server 启动 MySQL / Redis pool 后监听 `0.0.0.0:9000`，收到 SIGTERM 后通过 signalfd 退出。
+
 ## 2026-05-14 Step 33 MessageRouter
 
 本次进入 `Step 33：MessageRouter 异步分发框架`，目标是在不实现 AuthService / ChatService 的前提下，把网络层收到的 Packet 接到 service 层路由骨架。

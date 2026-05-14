@@ -23,6 +23,9 @@ for _ in $(seq 1 50); do
     fi
     if ! kill -0 "${pid}" 2>/dev/null; then
         cat "${log_file}"
+        if grep -q "Failed to start MySQL pool\\|Failed to start Redis pool" "${log_file}"; then
+            exit 77
+        fi
         wait "${pid}"
         exit 1
     fi
