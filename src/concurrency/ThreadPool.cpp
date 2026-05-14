@@ -15,6 +15,7 @@ class CurrentThreadPoolGuard {
 public:
     explicit CurrentThreadPoolGuard(ThreadPool* pool) noexcept : previous_(current_thread_pool) {
         current_thread_pool = pool;
+        // 当前线程属于这个 ThreadPool 对象
     }
 
     ~CurrentThreadPoolGuard() noexcept {
