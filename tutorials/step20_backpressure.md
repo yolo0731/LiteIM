@@ -1,5 +1,15 @@
 # Step 20：完善慢客户端回压保护
 
+## 0. 本 Step 结论
+
+- 目标：如果某个客户端一直不读服务端发给它的数据。
+- 前置依赖：依赖 Step 0-19 已建立的工程、协议或运行时基础。
+- 主要交付：`完善慢客户端回压保护` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：不实现 暂停读。
+
+## 1. 为什么需要这个 Step
+
 一句话就是：
 如果某个客户端一直不读服务端发给它的数据，
 服务端的输出缓冲区不能无限变大；
@@ -10,7 +20,6 @@
 服务端一直发送数据
 客户端读得很慢 / 卡住 / 不读
 网络发送缓冲区写不进去
-
 
 本 Step 的目标是把已有的 `Session` 输出缓冲区 4MB 保护，整理成一个明确、可配置、可测试的慢客户端回压策略。
 
@@ -39,37 +48,61 @@ pending output + incoming encoded packet > high water mark
 
 它不做复杂限流，也不暂停读。
 
-## 1. 本 Step 修改文件
+### 为什么出站写不算活跃
 
-```text
-include/liteim/base/Config.hpp
-src/base/Config.cpp
-include/liteim/net/Session.hpp
-src/net/Session.cpp
-include/liteim/net/TcpServer.hpp
-src/net/TcpServer.cpp
-server/main.cpp
-tests/base/config_test.cpp
-tests/net/session_header_test.cpp
-tests/net/session_test.cpp
-tests/net/tcp_server_header_test.cpp
-tests/net/tcp_server_test.cpp
-tutorials/step20_backpressure.md
-```
+Step 20 接着之前的 P0 语义修复：`last_active_time` 只表示客户端入站完整 Packet 活跃。
 
-同时同步：
+服务端给客户端写数据不能刷新活跃时间。否则 Bot 回复、系统通知、群聊 push 等出站流量会把沉默客户端误判成活跃连接，削弱 heartbeat timeout。
 
-```text
-README.md
-tutorials/step02_base.md
-tutorials/step14_session.md
-task_plan.md
-findings.md
-progress.md
-PROJECT_MEMORY.md
-```
+所以 Step 20 的两条语义是分开的：
 
-## Config.hpp / Session.hpp / TcpServer.hpp 回压接口说明
+- 入站完整 Packet：刷新 `last_active_time`。
+- 出站 pending output：只参与高水位回压，不刷新 `last_active_time`。
+
+## 2. 本 Step 边界
+
+### 本 Step 做
+
+- 聚焦 `完善慢客户端回压保护` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
+
+### 本 Step 不做
+
+- 不实现 暂停读。
+- 不实现 低水位恢复。
+- 不实现 消息优先级丢弃。
+- 不实现 群聊广播优化。
+- 不实现 复杂 per-user / per-message backpressure 策略。
+- 不实现 `Session::input_buffer_` 简化。
+- 不实现 `Session` 状态机重构。
+
+## 3. 文件变化
+
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `include/liteim/base/Config.hpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/base/Config.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `include/liteim/net/Session.hpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/net/Session.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `include/liteim/net/TcpServer.hpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/net/TcpServer.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `server/main.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/base/config_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/net/session_header_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/net/session_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/net/tcp_server_header_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/net/tcp_server_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tutorials/step20_backpressure.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `README.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tutorials/step02_base.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tutorials/step14_session.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `task_plan.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `findings.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `progress.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `PROJECT_MEMORY.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+
+## 4. 核心接口与契约
 
 `Config.hpp` 的回压字段：
 
@@ -107,7 +140,7 @@ PROJECT_MEMORY.md
 - TcpServer 只保存阈值并在创建连接时传递，不跨线程直接改已有 Session 内部 Buffer。
 - 慢客户端关闭走 `Session::closeInLoop()`，再由 close callback 清理 `TcpServer::sessions_`。
 
-## 慢客户端回压的作用场景和运行流程
+## 5. 运行流程
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -130,14 +163,14 @@ Config
 ### 3. 整体运行链路
 
 1. server 启动时读取 `Config::session_output_high_water_mark`。
-2. `server/main.cpp` 调用 [TcpServer::setSessionOutputHighWaterMark()](../src/net/TcpServer.cpp#L51)。
-3. 新连接进入 `TcpServer::createSessionInLoop()` 后，server 在 I/O loop 中调用 [Session::setOutputHighWaterMark()](../src/net/Session.cpp#L78)。
+2. `server/main.cpp` 调用 [TcpServer::setSessionOutputHighWaterMark()](../src/net/TcpServer.cpp)。
+3. 新连接进入 `TcpServer::createSessionInLoop()` 后，server 在 I/O loop 中调用 [Session::setOutputHighWaterMark()](../src/net/Session.cpp)。
 4. 业务或 echo 调用 `Session::sendPacket()`。
-5. [sendPacket()](../src/net/Session.cpp#L92) 先编码 Packet，再投递到 owner loop。
-6. [sendEncodedInLoop()](../src/net/Session.cpp#L152) 在 append 前读取 `output_buffer_.readableBytes()`。
+5. [sendPacket()](../src/net/Session.cpp) 先编码 Packet，再投递到 owner loop。
+6. [sendEncodedInLoop()](../src/net/Session.cpp) 在 append 前读取 `output_buffer_.readableBytes()`。
 7. 如果 `encoded.size() > high_water`，或 `pending > high_water - encoded.size()`，记录 warning 并 `closeInLoop()`。
 8. 如果未超限，append 到 output buffer 并开启写事件。
-9. [handleWrite()](../src/net/Session.cpp#L227) 正常写出后 retrieve 字节，pending 降低。
+9. [handleWrite()](../src/net/Session.cpp) 正常写出后 retrieve 字节，pending 降低。
 10. `closeInLoop()` 触发 close callback，`TcpServer::removeSession()` 删除表项。
 
 ### 4. 自身内部运行流程
@@ -154,7 +187,7 @@ Config
 
 核心函数流程：
 
-- [Config::loadFromFile()](../src/base/Config.cpp#L101)：解析 `server.output_high_water_mark_bytes`，拒绝 0。
+- [Config::loadFromFile()](../src/base/Config.cpp)：解析 `server.output_high_water_mark_bytes`，拒绝 0。
 - `TcpServer::setSessionOutputHighWaterMark()`：要求 base loop 线程、start 前调用、阈值大于 0。
 - `TcpServer::createSessionInLoop()`：创建 Session 后立即把阈值设置进去。
 - `Session::setOutputHighWaterMark()`：要求 owner loop 线程，拒绝 0。
@@ -185,7 +218,9 @@ pending + incoming 超过 limit 时记录 warning 并关闭连接
 
 假设 Bob 的 `session_id=43` 一直不读 socket，服务端连续给他推送离线消息。当前 pending output 已有 `4194200` 字节，再追加一条 `PRIVATE_MESSAGE_PUSH message_id=5001` 的 encoded Packet 需要 200 字节，就会超过默认 `4194304` 字节高水位。`Session` 记录 pending/incoming/limit 后关闭慢连接；这个出站压力不会刷新 `last_active_time`。
 
-## 2. Session 高水位语义
+## 6. 关键实现点
+
+### Session 高水位语义
 
 `Session` 保留默认 4MB：
 
@@ -219,18 +254,7 @@ pending_bytes > output_high_water_mark_ - encoded.size()
 
 这里故意在 append 前检查，避免先把超限数据放进 buffer 再清理。
 
-## 3. 为什么出站写不算活跃
-
-Step 20 接着之前的 P0 语义修复：`last_active_time` 只表示客户端入站完整 Packet 活跃。
-
-服务端给客户端写数据不能刷新活跃时间。否则 Bot 回复、系统通知、群聊 push 等出站流量会把沉默客户端误判成活跃连接，削弱 heartbeat timeout。
-
-所以 Step 20 的两条语义是分开的：
-
-- 入站完整 Packet：刷新 `last_active_time`。
-- 出站 pending output：只参与高水位回压，不刷新 `last_active_time`。
-
-## 4. TcpServer 如何传递配置
+### TcpServer 如何传递配置
 
 `TcpServer` 新增启动前配置接口：
 
@@ -257,7 +281,7 @@ base loop accept
 
 这样每条连接都继承同一个 server 级默认阈值。后续如果需要按用户、业务类型或连接类型设置不同阈值，可以在这个边界继续扩展。
 
-## 5. Config 配置键
+### Config 配置键
 
 `Config` 新增字段：
 
@@ -279,21 +303,13 @@ server.output_high_water_mark_bytes = 4194304
 server.setSessionOutputHighWaterMark(config.session_output_high_water_mark);
 ```
 
-## 6. 本 Step 不做什么
-
-本 Step 不实现：
-
-- 暂停读。
-- 低水位恢复。
-- 消息优先级丢弃。
-- 群聊广播优化。
-- 复杂 per-user / per-message backpressure 策略。
-- `Session::input_buffer_` 简化。
-- `Session` 状态机重构。
-
-这些会改变更多连接状态和业务语义，应该后续单独做。其中 `Session::input_buffer_` 简化和 `SessionState` 状态收敛已经在后续独立 cleanup 中完成。
-
 ## 7. 测试设计
+
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `完善慢客户端回压保护` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 新增或更新的重点测试：
 
@@ -340,7 +356,13 @@ timeout 1s ./build/server/liteim_server || test $? -eq 124
 git diff --check
 ```
 
-## 9. 面试时怎么讲
+## 9. 面试表达
+
+### 一句话
+
+LiteIM 的 Session 是单连接 owner，输出路径在 owner I/O loop 中执行。
+
+### 展开说
 
 可以这样讲：
 
@@ -353,7 +375,12 @@ git diff --check
 - 服务端出站写不刷新 `last_active_time`。
 - 第一版只做高水位硬关闭，复杂恢复策略后续再做。
 
-## 面试常见追问
+### 容易被追问
+
+- 为什么超过高水位直接关闭连接？
+- 为什么出站写不能刷新 heartbeat 活跃时间？
+
+## 10. 面试常见追问
 
 ### Q1：为什么超过高水位直接关闭连接？
 

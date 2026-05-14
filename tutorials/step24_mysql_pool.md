@@ -1,5 +1,15 @@
 # Step 24：MySqlPool 和 ConnectionGuard
 
+## 0. 本 Step 结论
+
+- 目标：Step 24 的目标是在 Step 23 的单连接封装之上，实现固定大小 MySQL 连接池和 RAII 借还对象。
+- 前置依赖：依赖 Step 0-23 已建立的工程、协议或运行时基础。
+- 主要交付：`MySqlPool 和 ConnectionGuard` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：不实现 DAO。
+
+## 1. 为什么需要这个 Step
+
 Step 24 的目标是在 Step 23 的单连接封装之上，实现固定大小 MySQL 连接池和 RAII 借还对象。
 
 到 Step 23 为止，LiteIM 已经能用一个 `MySqlConnection` 执行 prepared statement。但后续业务线程会并发处理多个请求，不能每个请求都新建连接，也不能让调用方手动记住 release。Step 24 解决的问题是：
@@ -10,7 +20,7 @@ Step 24 的目标是在 Step 23 的单连接封装之上，实现固定大小 My
 
 答案是 `MySqlPool + ConnectionGuard`。
 
-## 1. 概念
+### 概念
 
 连接池的核心职责是：
 
@@ -32,31 +42,39 @@ MySqlPool::acquire(...)
     -> connection returns to pool
 ```
 
-本 Step 不实现 DAO，不引入后台保活线程，不做动态扩缩容。
+## 2. 本 Step 边界
 
-## 2. 本 Step 新增 / 修改文件
+### 本 Step 做
 
-新增：
+- 聚焦 `MySqlPool 和 ConnectionGuard` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
 
-```text
-include/liteim/storage/MySqlPool.hpp
-src/storage/MySqlPool.cpp
-tests/storage/mysql_pool_test.cpp
-tutorials/step24_mysql_pool.md
-```
+### 本 Step 不做
 
-同时更新：
+- 不实现 DAO。
+- 不实现 连接最大寿命。
+- 不实现 后台保活线程。
+- 不实现 动态扩缩容。
+- 不实现 prepared statement 缓存。
+- 不实现 I/O 线程 MySQL 调用。
 
-```text
-src/storage/CMakeLists.txt
-tests/CMakeLists.txt
-README.md
-task_plan.md
-findings.md
-progress.md
-```
+## 3. 文件变化
 
-## 3. MySqlPool.hpp 接口说明
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `include/liteim/storage/MySqlPool.hpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/storage/MySqlPool.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/storage/mysql_pool_test.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tutorials/step24_mysql_pool.md` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/storage/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `README.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `task_plan.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `findings.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `progress.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+
+## 4. 核心接口与契约
 
 ### `ConnectionGuard`
 
@@ -183,7 +201,7 @@ public:
 
 它是 Step 24 最关键的 private 结构。
 
-## MySqlPool / ConnectionGuard 的作用场景和运行流程
+## 5. 运行流程
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -278,20 +296,19 @@ else if ping() failed:
 
 如果连接池大小是 2，ChatService 可以同时借出两个 `ConnectionGuard`：一个保存 Alice 到 Bob 的 `message_id=5001` 相关消息，另一个查询 `user_id=1001` 的好友列表。第三个业务任务会在 `acquire(timeout)` 等待；guard 析构或 `reset()` 后连接归还池中，避免线程忘记 release 导致连接永久耗尽。
 
-## 后续实现 / 关键设计说明
+## 6. 关键实现点
 
-本 Step 不做：
+- 保持模块职责单一。
+- 失败时返回清晰错误，不吞掉异常状态。
+- 不跨越本 Step 边界提前实现后续业务。
 
-- DAO。
-- 连接最大寿命。
-- 后台保活线程。
-- 动态扩缩容。
-- prepared statement 缓存。
-- I/O 线程 MySQL 调用。
+## 7. 测试设计
 
-这些都不是第一版必要能力。固定池 + RAII 借还已经能支撑后续 DAO 和业务线程池。
-
-## 测试设计
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `MySqlPool 和 ConnectionGuard` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 测试覆盖：
 
@@ -305,7 +322,7 @@ else if ping() failed:
 - pool close 后 acquire 失败。
 - 借出的连接被手动 close 后，归还再借出时能重连。
 
-## 验证命令
+## 8. 验证命令
 
 ```bash
 cmake --build build
@@ -315,13 +332,24 @@ ctest --test-dir build --output-on-failure
 git diff --check
 ```
 
-## 面试时怎么讲
+## 9. 面试表达
+
+### 一句话
+
+Step 24 在 MySQL 单连接封装之上实现固定大小连接池。
+
+### 展开说
 
 可以这样说：
 
 > Step 24 在 MySQL 单连接封装之上实现固定大小连接池。`MySqlPool` 启动时创建 N 条连接，内部用 mutex、condition_variable 和 idle 队列管理可借连接。业务线程调用 `acquire(timeout, guard)`，拿不到连接会超时返回，拿到连接前会 ping 并在失效时重连。`ConnectionGuard` 是 move-only RAII 对象，析构时自动归还连接；如果 pool 已关闭，归还时直接关闭连接，避免访问悬空 pool。
 
-## 面试常见追问
+### 容易被追问
+
+- ConnectionGuard 解决了什么问题？
+- 为什么 acquire 要有 timeout？
+
+## 10. 面试常见追问
 
 ### Q1：ConnectionGuard 解决了什么问题？
 

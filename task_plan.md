@@ -31,6 +31,9 @@ The workspace documentation roles are now separated:
 
 | Phase | Status | Notes |
 | --- | --- | --- |
+| Step 36 ChatService private chat | done | Added `ChatService` with RED/GREEN tests, `PrivateMessageRequest` business-thread handler, sender identity from `OnlineService`, receiver existence check, server-generated private conversation id, MySQL message/offline save through `IStorage`, in-process online `PrivateMessagePush`, offline Redis unread +1, sender `PrivateMessageResponse`, server runtime registration, README/tutorial/planning docs, full build, full CTest 291/291, diff check, Markdown scans, and server smoke. No group chat, offline pull, history query, cross-node routing, reliable ACK, friend-policy enforcement, or BotGateway. |
+| Markdown audit and stale-doc cleanup | done | Checked current-facing Markdown files and tutorial template rules. No current-facing Markdown file needed deletion. Fixed duplicated `本 Step 不实现` wording in Step 34/35 tutorials, renamed the old `Current Decision` process block to `Historical Route Snapshot`, and kept useful process/debug history instead of deleting it. |
+| Step tutorial Markdown compact lecture rewrite | done | Markdown-only pass rewrote `tutorials/step00_reset.md` through `tutorials/step35_friend_service.md` to the fixed 0-10 lecture template: conclusion, why, boundary, file table, core contract, runtime flow, key implementation points, test-risk coverage, verification commands, interview expression, and final interview follow-up. Synced tutorial constraints in `/home/yolo/jianli/PROJECT_MEMORY.md`, `AGENTS.md`, and `CLAUDE.md`. No C++/SQL/CMake/test behavior changes intended. Markdown structure scans and `git diff --check` passed. |
 | Step 35 FriendService | done | Added `FriendService` with RED/GREEN tests, `TlvType::OnlineStatus`, business-thread handlers for `AddFriendRequest` / `ListFriendsRequest`, MySQL-backed friendship writes, duplicate-friend `AlreadyExists`, Redis-backed online-state response fields, server runtime registration, README/tutorial/planning docs, full build, full CTest 285/285, diff check, and server smoke. No friend approval, blacklist, remark name, private chat, group chat, offline messages, history, heartbeat service, or BotGateway. |
 | Step 34 AuthService register and login | done | Added `AuthService` with RED/GREEN tests, PBKDF2-HMAC-SHA256 password hashing, register/login handlers over `IStorage` / `ICache` / `OnlineService`, and server runtime wiring for MySQL / Redis / AuthService. Register/login run in the business thread pool through `MessageRouter`; successful login clears failure counts, writes Redis online state, and binds `SessionManager`. Full build, full CTest 279/279, diff check, and server smoke passed. |
 | Step 33 MessageRouter async dispatch framework | done | Added `MessageRouter` with RED/GREEN tests and runtime wiring. It parses request TLVs, dispatches handlers inline or through the business `ThreadPool`, returns `ErrorResponse` for invalid/unhandled paths, preserves request `seq_id`, and is wired from `server/main.cpp` through `TcpServer::setMessageCallback()`. `server/main.cpp` starts `SignalWatcher` before the business pool so worker threads inherit the blocked SIGINT/SIGTERM mask. Full build, full CTest 272/272, server smoke, and diff check passed. |
@@ -204,11 +207,11 @@ The workspace documentation roles are now separated:
 | Step 19 verification | done | Configure/build, targeted signal tests, server SIGTERM smoke, full CTest 171/171, diff check, and stale-route scans passed. |
 | Step 19 commit | done | Commit message: `feat(server): add signalfd graceful shutdown`. |
 
-## Current Decision
+## Historical Route Snapshot
 
-Use `/home/yolo/jianli/PROJECT_MEMORY.md` as the source of truth for overall design, long-term route, and architecture constraints. Use this file plus `findings.md` and `progress.md` for active LiteIM progress.
+This section is historical process memory from the route-planning phase. The authoritative current progress is the `Current Phase` table near the top of this file plus `findings.md` and `progress.md`; the authoritative long-term route remains `/home/yolo/jianli/PROJECT_MEMORY.md`.
 
-Current route status:
+Route status at the time this snapshot was last refreshed:
 
 - Step 18 `TimerManager + timerfd heartbeat timeout` is complete.
 - Step 18.5 `muduo-style lifecycle ownership hardening` is complete.
@@ -231,7 +234,8 @@ Current route status:
 - Step 33 `MessageRouter async dispatch framework` is complete.
 - Step 34 `AuthService register and login` is complete.
 - Step 35 `FriendService` is complete.
-- Default next implementation step is Step 36 `ChatService private chat`.
+- Step 36 `ChatService private chat` is complete.
+- Default next implementation step is Step 37 `OfflineMessageService`.
 
 LiteIM phases:
 
@@ -265,7 +269,7 @@ LiteIM phases:
 - Do not use WeChat logo, name, icons, or assets in the Qt client.
 - Qt is a demo layer; service logic stays in the server.
 
-## Step 0 Kept Files
+## Historical Step 0 Kept Files
 
 - `.gitignore`
 - `LICENSE`
@@ -274,9 +278,6 @@ LiteIM phases:
 - `task_plan.md`
 - `findings.md`
 - `progress.md`
-- `docs/architecture.md`
-- `docs/project_layout.md`
-- `tutorials/README.md`
 - `tutorials/step00_reset.md`
 
 Step 0 intentionally does not keep empty future directories or `.gitkeep` files.

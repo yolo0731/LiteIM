@@ -1,5 +1,15 @@
 # Step 17：实现业务 ThreadPool
 
+## 0. 本 Step 结论
+
+- 目标：本 Step 的目标是新增 liteim_concurrency::ThreadPool，让后续登录、消息、历史查询、MySQL 和 Redis 操作有一个独立的业务执行位置。
+- 前置依赖：依赖 Step 0-16 已建立的工程、协议或运行时基础。
+- 主要交付：`实现业务 ThreadPool` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：不实现 `future` 返回值。
+
+## 1. 为什么需要这个 Step
+
 本 Step 的目标是新增 `liteim_concurrency::ThreadPool`，让后续登录、消息、历史查询、MySQL 和 Redis 操作有一个独立的业务执行位置。
 
 到 Step 16 为止，网络层已经能完成：
@@ -21,7 +31,7 @@ Step 17 只解决一个问题：
 
 答案是业务线程池。
 
-## 1. 为什么需要业务 ThreadPool
+### 为什么需要业务 ThreadPool
 
 Reactor I/O 线程应该做轻量工作：
 
@@ -52,30 +62,45 @@ business worker
 
 业务线程不能直接改 `Session`，因为 `Session` 属于某个 I/O loop。跨线程响应仍然要回到 `EventLoop::queueInLoop()` 或 `Session::sendPacket()`。
 
-## 2. 本 Step 新增文件
+## 2. 本 Step 边界
 
-```text
-include/liteim/concurrency/ThreadPool.hpp
-src/concurrency/CMakeLists.txt
-src/concurrency/ThreadPool.cpp
-tests/concurrency/thread_pool_header_test.cpp
-tests/concurrency/thread_pool_test.cpp
-tutorials/step17_thread_pool.md
-```
+### 本 Step 做
 
-同时更新：
+- 聚焦 `实现业务 ThreadPool` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
 
-```text
-src/CMakeLists.txt
-tests/CMakeLists.txt
-README.md
-task_plan.md
-findings.md
-progress.md
-PROJECT_MEMORY.md
-```
+### 本 Step 不做
 
-## 3. ThreadPool.hpp 接口说明
+- 不实现 `future` 返回值。
+- 不实现 任务优先级。
+- 不实现 动态扩缩容。
+- 不实现 work stealing。
+- 不实现 定时任务。
+- 不实现 MySQL / Redis 接入。
+- 不实现 MessageRouter。
+- 不实现 登录、注册、聊天业务。
+- 不实现 直接操作 `Session`。
+
+## 3. 文件变化
+
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `include/liteim/concurrency/ThreadPool.hpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/concurrency/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/concurrency/ThreadPool.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/concurrency/thread_pool_header_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/concurrency/thread_pool_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tutorials/step17_thread_pool.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `README.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `task_plan.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `findings.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `progress.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `PROJECT_MEMORY.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+
+## 4. 核心接口与契约
 
 ### `Task`
 
@@ -185,7 +210,7 @@ private helper：
 
 - `workerLoop()` 是每个 worker 的主循环。它等待任务，取出队首任务，在 catch 边界内执行，任务异常不会杀死线程池。
 
-## ThreadPool 的作用场景和运行流程
+## 5. 运行流程
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -207,13 +232,13 @@ Session MessageCallback / TcpServer business callback
 ### 3. 整体运行链路
 
 1. server 或 service 创建固定 worker 数的 `ThreadPool`。
-2. 启动期调用 [ThreadPool::start()](../src/concurrency/ThreadPool.cpp#L40)。
-3. I/O loop 收到业务 Packet 后调用 [submit()](../src/concurrency/ThreadPool.cpp#L79)。
+2. 启动期调用 [ThreadPool::start()](../src/concurrency/ThreadPool.cpp)。
+3. I/O loop 收到业务 Packet 后调用 [submit()](../src/concurrency/ThreadPool.cpp)。
 4. `submit()` 把任务放入队列并 `notify_one()`。
-5. worker 在 [workerLoop()](../src/concurrency/ThreadPool.cpp#L146) 中等待 condition variable。
+5. worker 在 [workerLoop()](../src/concurrency/ThreadPool.cpp) 中等待 condition variable。
 6. worker 取出任务，在锁外执行阻塞业务逻辑。
 7. 任务完成后通过 `Session::sendPacket()` 把响应安全投递回 owner loop。
-8. 停止时，[stop()](../src/concurrency/ThreadPool.cpp#L96) 停止接收新任务，唤醒 worker，等待队列排空并 join。
+8. 停止时，[stop()](../src/concurrency/ThreadPool.cpp) 停止接收新任务，唤醒 worker，等待队列排空并 join。
 
 ### 4. 自身内部运行流程
 
@@ -261,7 +286,9 @@ stop 后队列清空，worker 退出
 
 后续 ChatService 收到 Alice 发给 Bob 的消息后，会把阻塞 MySQL 操作投递给 business `ThreadPool`：任务保存 `sender_id=1001`、`receiver_id=1002`、`conversation_id=10011002`、`message_text=hello bob`。保存完成后再用 `queueInLoop()` 把响应投回对应 I/O loop，避免 Reactor 线程卡在数据库调用上。
 
-## 4. ThreadPool.cpp 实现思路
+## 6. 关键实现点
+
+### ThreadPool.cpp 实现思路
 
 核心数据结构是：
 
@@ -311,23 +338,13 @@ workerLoop()
 
 所以当前实现会捕获任务异常，保证 worker 继续处理后续任务。后续业务层应该把业务失败转换成 `Status` 或错误响应 Packet，而不是依赖异常穿透线程边界。
 
-## 5. 本 Step 不做什么
+## 7. 测试设计
 
-本 Step 不实现：
-
-- `future` 返回值。
-- 任务优先级。
-- 动态扩缩容。
-- work stealing。
-- 定时任务。
-- MySQL / Redis 接入。
-- MessageRouter。
-- 登录、注册、聊天业务。
-- 直接操作 `Session`。
-
-这些都属于后续 Step。
-
-## 6. 测试设计
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `实现业务 ThreadPool` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 新增测试文件：
 
@@ -375,7 +392,21 @@ ctest --test-dir build --output-on-failure -R "ThreadPool|ConcurrencyInterfaceTe
 ctest --test-dir build --output-on-failure
 ```
 
-## 7. 面试时怎么讲
+## 8. 验证命令
+
+```bash
+cmake --build build
+ctest --test-dir build --output-on-failure -R "ThreadPool|ConcurrencyInterfaceTest.ThreadPool"
+ctest --test-dir build --output-on-failure
+```
+
+## 9. 面试表达
+
+### 一句话
+
+LiteIM 的网络层采用 oneloopperthread Reactor。
+
+### 展开说
 
 可以这样讲：
 
@@ -389,24 +420,32 @@ ctest --test-dir build --output-on-failure
 - 队列用 `mutex + condition_variable`，简单直接，足够支撑后续业务服务接入。
 - 任务异常被 worker 捕获，避免单个业务任务杀死工作线程。
 
-## 8. 面试常见追问
+### 容易被追问
 
-**为什么不用 `std::async`？**
+- 为什么不用 `std::async`？
+- 为什么 `submit()` 不返回 `future`？
+- `pendingTaskCount()` 为什么不统计正在执行的任务？
+- 业务线程能直接调用 `Session::sendPacket()` 吗？
+- stop 时为什么不丢弃队列？
+
+## 10. 面试常见追问
+
+### 为什么不用 `std::async`？
 
 `std::async` 的调度策略和线程复用不适合做长期服务端业务池。IM 服务端需要固定数量 worker、明确停止语义和队列长度诊断。
 
-**为什么 `submit()` 不返回 `future`？**
+### 为什么 `submit()` 不返回 `future`？
 
 因为 I/O 线程不应该等待业务结果。业务完成后应该异步把响应投递回连接所属 loop，而不是让调用方阻塞等待。
 
-**`pendingTaskCount()` 为什么不统计正在执行的任务？**
+### `pendingTaskCount()` 为什么不统计正在执行的任务？
 
 它表达的是队列积压量，用来观察业务线程池是否被提交压力打满。正在执行的任务已经离开队列，不属于 pending。
 
-**业务线程能直接调用 `Session::sendPacket()` 吗？**
+### 业务线程能直接调用 `Session::sendPacket()` 吗？
 
 可以调用 `Session::sendPacket()` 这个跨线程安全入口，因为它内部会把真实写操作投递回所属 I/O loop。但业务线程不能直接改 `Session` 内部状态或操作 fd。
 
-**stop 时为什么不丢弃队列？**
+### stop 时为什么不丢弃队列？
 
 第一版选择优雅退出，避免已经接收的业务任务被静默丢掉。后续如果需要快速关停，可以单独设计 cancel / deadline 语义。

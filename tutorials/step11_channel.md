@@ -1,5 +1,15 @@
 # Step 11：实现 Channel
 
+## 0. 本 Step 结论
+
+- 目标：Channel 是 Reactor 中的 fd 事件分发器。
+- 前置依赖：依赖 Step 0-10 已建立的工程、协议或运行时基础。
+- 主要交付：`实现 Channel` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：不提前实现后续 Step 的业务能力
+
+## 1. 为什么需要这个 Step
+
 `Channel` 是 Reactor 中的 fd 事件分发器。Step 10 的 `Epoller` 已经能等待 Linux epoll 事件，并把本轮实际发生的事件写回 `Channel::setRevents()`；Step 11 要补上下一段链路：根据 `revents` 调用 read/write/close/error 回调。
 
 ```text
@@ -10,7 +20,7 @@ epoll_wait()
     -> readCallback / writeCallback / closeCallback / errorCallback
 ```
 
-## 1. 为什么需要 Channel
+### 为什么需要 Channel
 
 如果 `Epoller` 直接处理业务回调，它就会同时负责系统调用和连接逻辑，边界会变乱。`Channel` 把一个 fd 的事件状态和回调入口集中起来：
 
@@ -20,22 +30,50 @@ epoll_wait()
 
 这样 `Epoller` 只负责 epoll 系统调用，`Channel` 只负责事件分发，后续 `Session` 只需要把自己的读写函数绑定给 `Channel`。
 
-## 2. 本 Step 新增和修改的文件
+### close 和 error 为什么优先处理
 
-```text
-src/net/Channel.cpp
-src/net/EventLoop.cpp
-tests/net/channel_test.cpp
-tutorials/step11_channel.md
+如果只有 `EPOLLHUP`，说明 fd 已经挂起，而且没有可读数据需要处理。此时直接调用 close callback，然后返回：
+
+```cpp
+if ((active_events & EPOLLHUP) != 0 && (active_events & EPOLLIN) == 0) {
+    if (close_callback) {
+        close_callback();
+    }
+    return;
+}
 ```
 
-`Channel.cpp` 从 Step 10 的状态函数扩展为真正的事件分发器。
+如果发生 `EPOLLERR`，说明 fd 存在错误。Step 17 后的 review hardening 把这里改成：先调用 error callback，但不直接 `return`。如果本轮同时带着 `EPOLLIN` / `EPOLLPRI` / `EPOLLRDHUP`，后面的 read callback 仍会继续执行。原因是错误事件和可读事件可能同时出现，socket 缓冲里仍有数据需要由 `Session::handleRead()` 读完后再关闭。
 
-`EventLoop.cpp` 在本 Step 只实现最小桥接：`Channel` 调用 `owner_loop_->updateChannel(this)`，`EventLoop` 再交给 `Epoller`。它还不实现 `loop()` 阻塞循环，也不实现 `eventfd` 任务投递，这些属于 Step 12。
+`EPOLLRDHUP` 归到 read callback，是因为它表示对端关闭了写方向。后续 `Session::handleRead()` 会读到 `0` 或读到剩余数据后判断连接关闭，这比在 `Channel` 里直接关闭更符合职责边界。
 
-`channel_test.cpp` 使用 GoogleTest 验证回调分发和关注事件开关。
+## 2. 本 Step 边界
 
-## Channel.hpp 接口说明
+### 本 Step 做
+
+- 聚焦 `实现 Channel` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
+
+### 本 Step 不做
+
+- 不提前实现后续 Step 的业务能力
+- 不改变已经定义好的模块边界
+- 不把阻塞 I/O 放进 Reactor I/O 线程
+
+## 3. 文件变化
+
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `src/net/Channel.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/net/EventLoop.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/net/channel_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tutorials/step11_channel.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `Channel.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `EventLoop.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `channel_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+
+## 4. 核心接口与契约
 
 `Channel.hpp` 定义 fd 事件状态和回调分发。
 
@@ -80,7 +118,7 @@ tutorials/step11_channel.md
 - `tied_` / `tie_` 支撑连接对象生命周期保护。
 - 四个 callback 是上层对象绑定的事件入口。
 
-## Channel 的作用场景和运行流程
+## 5. 运行流程
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -105,12 +143,12 @@ fd owner
 
 1. fd owner 构造 Channel 并传入 owner loop 和 fd。
 2. fd owner 设置读、写、关闭、错误回调。
-3. 如果回调期间 owner 可能被释放，调用 [tie()](../src/net/Channel.cpp#L86) 绑定弱生命周期保护。
-4. fd owner 调用 [enableReading()](../src/net/Channel.cpp#L41) 或 [enableWriting()](../src/net/Channel.cpp#L51)。
-5. Channel 更新 `events_` 后调用 [update()](../src/net/Channel.cpp#L128)。
+3. 如果回调期间 owner 可能被释放，调用 [tie()](../src/net/Channel.cpp) 绑定弱生命周期保护。
+4. fd owner 调用 [enableReading()](../src/net/Channel.cpp) 或 [enableWriting()](../src/net/Channel.cpp)。
+5. Channel 更新 `events_` 后调用 [update()](../src/net/Channel.cpp)。
 6. EventLoop / Epoller 把事件注册到内核。
 7. epoll 返回后，Epoller 调用 `setRevents()` 写入本轮实际事件。
-8. EventLoop 调用 [handleEvent()](../src/net/Channel.cpp#L91) 分发回调。
+8. EventLoop 调用 [handleEvent()](../src/net/Channel.cpp) 分发回调。
 
 ### 4. 自身内部运行流程
 
@@ -157,7 +195,9 @@ tie_ 尝试提升为 shared_ptr，保护 owner 存活
 
 Bob 的连接 `session_id=42` 绑定 fd=57。fd=57 同一轮事件带着 `EPOLLIN | EPOLLERR` 返回时，Channel 会先触发 error callback 记录 socket 错误，再继续处理 read callback，避免吞掉已经到达的完整 Packet。`Channel` 本身不 close fd，fd 生命周期仍由 `Session` 的 `UniqueFd` 负责。
 
-## 3. Channel 的职责
+## 6. 关键实现点
+
+### Channel 的职责
 
 `Channel` 不拥有 fd。它只保存 fd 值和事件状态：
 
@@ -185,7 +225,7 @@ kWriteEvent = EPOLLOUT
 | `events_` | 希望 epoll 监听的事件 | `enableReading()` / `enableWriting()` 等函数 |
 | `revents_` | epoll 本轮实际返回的事件 | `Epoller::poll()` |
 
-## 4. enable / disable 做了什么
+### enable / disable 做了什么
 
 以 `enableReading()` 为例：
 
@@ -218,7 +258,7 @@ Channel::enableReading()
 
 这里 `owner_loop_ == nullptr` 时不会更新 epoll。这是为了让纯单元测试和 `EpollerTest` 可以直接构造一个不绑定 `EventLoop` 的 `Channel`，再手动调用 `Epoller::updateChannel()`。
 
-## 5. handleEvent 的分发规则
+### handleEvent 的分发规则
 
 `handleEvent()` 根据 `revents_` 调用不同回调：
 
@@ -241,46 +281,13 @@ Step 13 review hardening 后，`Channel::tie()` 已经用 `weak_ptr` 管理 owne
 
 这个优化带来一个明确契约：`Channel` 不会用局部 `std::function` 副本保护未 `tie()` 的回调。未 `tie()` 的轻量 `Channel` 只能用于 `Acceptor::listen_channel_`、`EventLoop::wakeup_channel_` 这类 owner 生命周期明确的场景；callback 内部不得直接或间接析构当前 `Channel`，也不得重置正在执行的 callback。只要 callback 可能释放 owner，就必须先调用 `tie()`。
 
-## 6. close 和 error 为什么优先处理
+## 7. 测试设计
 
-如果只有 `EPOLLHUP`，说明 fd 已经挂起，而且没有可读数据需要处理。此时直接调用 close callback，然后返回：
-
-```cpp
-if ((active_events & EPOLLHUP) != 0 && (active_events & EPOLLIN) == 0) {
-    if (close_callback) {
-        close_callback();
-    }
-    return;
-}
-```
-
-如果发生 `EPOLLERR`，说明 fd 存在错误。Step 17 后的 review hardening 把这里改成：先调用 error callback，但不直接 `return`。如果本轮同时带着 `EPOLLIN` / `EPOLLPRI` / `EPOLLRDHUP`，后面的 read callback 仍会继续执行。原因是错误事件和可读事件可能同时出现，socket 缓冲里仍有数据需要由 `Session::handleRead()` 读完后再关闭。
-
-`EPOLLRDHUP` 归到 read callback，是因为它表示对端关闭了写方向。后续 `Session::handleRead()` 会读到 `0` 或读到剩余数据后判断连接关闭，这比在 `Channel` 里直接关闭更符合职责边界。
-
-## 7. EventLoop.cpp 在本 Step 的边界
-
-本 Step 新增了 `src/net/EventLoop.cpp`，但它不是完整 EventLoop。
-
-当前只实现：
-
-- 构造 `Epoller`。
-- `quit()` 设置退出标记。
-- `updateChannel()` 调用 `Epoller::updateChannel()`。
-- `removeChannel()` 调用 `Epoller::removeChannel()`。
-- `isInLoopThread()` 检查当前线程是否是 loop 所属线程。
-- `assertInLoopThread()` 在跨线程误用时抛出 `std::logic_error`。
-
-当前不实现：
-
-- `EventLoop::loop()` 阻塞循环。
-- `eventfd` 唤醒。
-- `runInLoop()` / `queueInLoop()`。
-- 跨线程任务队列。
-
-这些会在 Step 12 完整展开。
-
-## 8. 测试设计
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `实现 Channel` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 本 Step 新增：
 
@@ -319,8 +326,6 @@ undefined reference to `liteim::Channel::handleEvent()`
 
 这说明测试确实覆盖了当前缺失行为。实现 `handleEvent()` 后，`ChannelTest` 通过。
 
-## 9. 如何运行测试
-
 运行全部验证：
 
 ```bash
@@ -336,9 +341,22 @@ ctest --test-dir build --output-on-failure
 ctest --test-dir build -R ChannelTest --output-on-failure
 ```
 
-当前 Step 11 初次完成时 CTest 通过 88 个测试，其中 7 个是新增的 `ChannelTest`。Step 13 review hardening 后又补充了 `tie()` 和 callback no-copy 回归测试。
+## 8. 验证命令
 
-## 10. 面试时怎么讲
+```bash
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build --output-on-failure
+ctest --test-dir build -R ChannelTest --output-on-failure
+```
+
+## 9. 面试表达
+
+### 一句话
+
+我把 Reactor 中的 fd 事件抽象成 Channel。
+
+### 展开说
 
 可以这样讲：
 
@@ -350,28 +368,37 @@ ctest --test-dir build -R ChannelTest --output-on-failure
 - `Channel` 不解析业务协议。
 - `Channel` 不直接调用 epoll 系统调用。
 
-## 11. 面试常见追问
+### 容易被追问
 
-**为什么要区分 `events` 和 `revents`？**
+- 为什么要区分 `events` 和 `revents`？
+- 为什么 `Channel` 不直接调用 `epoll_ctl()`？
+- 为什么 `EPOLLRDHUP` 走 read callback？
+- 为什么现在不再拷贝 callback 到局部变量？
+- 不拷贝 callback 会不会有风险？
+- Step 11 为什么新增了 `EventLoop.cpp`，但不实现 `loop()`？
+
+## 10. 面试常见追问
+
+### 为什么要区分 `events` 和 `revents`？
 
 `events` 是我想监听什么，`revents` 是 epoll 实际告诉我发生了什么。比如我监听读事件，但本轮可能返回错误事件；两者不能混用。
 
-**为什么 `Channel` 不直接调用 `epoll_ctl()`？**
+### 为什么 `Channel` 不直接调用 `epoll_ctl()`？
 
 因为 `Channel` 是 fd 事件代理，不是系统调用封装层。直接调用 `epoll_ctl()` 会和 `Epoller` 职责重叠，也会绕过 `EventLoop` 的线程归属管理。
 
-**为什么 `EPOLLRDHUP` 走 read callback？**
+### 为什么 `EPOLLRDHUP` 走 read callback？
 
 因为对端半关闭时，socket 里可能还有剩余数据。让 read callback 处理，可以由后续 `Session::handleRead()` 统一读到 `0` 或读完剩余数据后关闭连接。
 
-**为什么现在不再拷贝 callback 到局部变量？**
+### 为什么现在不再拷贝 callback 到局部变量？
 
 当前实现只拷贝 `revents_`。owner 生命周期由 `Channel::tie()` 的 `weak_ptr` / `shared_ptr` 保护，callback 直接调用成员，避免每次 epoll 事件都复制四个 `std::function`。
 
-**不拷贝 callback 会不会有风险？**
+### 不拷贝 callback 会不会有风险？
 
 有边界要求。已 `tie()` 的连接类 owner 会在 `handleEvent()` 期间被局部 `shared_ptr` 保住；未 `tie()` 的 `Channel` 必须保证 callback 不会销毁当前 `Channel`，也不会重置正在执行的 callback。后续 `Session` / `TcpConnection` 必须使用 `tie()`。
 
-**Step 11 为什么新增了 `EventLoop.cpp`，但不实现 `loop()`？**
+### Step 11 为什么新增了 `EventLoop.cpp`，但不实现 `loop()`？
 
 因为 `Channel::update()` 已经需要通过 `EventLoop` 更新 epoll 关注事件，所以本 Step 需要最小桥接。但阻塞事件循环、活跃 `Channel` 遍历、跨线程任务投递和 `eventfd` 唤醒是 Step 12 的范围。

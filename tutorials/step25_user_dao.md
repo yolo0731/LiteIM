@@ -1,5 +1,15 @@
 # Step 25：UserDao 和 AuthDao
 
+## 0. 本 Step 结论
+
+- 目标：Step 25 的目标是在 MySQL wrapper 和连接池之上实现 users 表 DAO。
+- 前置依赖：依赖 Step 0-24 已建立的工程、协议或运行时基础。
+- 主要交付：`UserDao 和 AuthDao` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：不提前实现后续 Step 的业务能力
+
+## 1. 为什么需要这个 Step
+
 Step 25 的目标是在 MySQL wrapper 和连接池之上实现 users 表 DAO。
 
 到 Step 24 为止，LiteIM 已经能从业务线程安全借出 MySQL 连接，但还没有任何业务表访问代码。Step 25 解决的问题是：
@@ -10,7 +20,7 @@ Step 25 的目标是在 MySQL wrapper 和连接池之上实现 users 表 DAO。
 
 答案是先实现 `UserDao` 和 `AuthDao`，只做数据访问，不做业务判断。
 
-## 1. 概念
+### 概念
 
 DAO 是 Data Access Object。它的职责是把数据库表操作封装成 C++ 方法：
 
@@ -37,37 +47,42 @@ Step 25 还新增了两个重要错误语义：
 - 用户名重复：`ErrorCode::AlreadyExists`。
 - 用户不存在：`ErrorCode::NotFound`。
 
-## 2. 本 Step 新增 / 修改文件
+## 2. 本 Step 边界
 
-新增：
+### 本 Step 做
 
-```text
-include/liteim/storage/UserDao.hpp
-include/liteim/storage/AuthDao.hpp
-src/storage/UserDao.cpp
-src/storage/AuthDao.cpp
-tests/storage/user_dao_test.cpp
-tutorials/step25_user_dao.md
-```
+- 聚焦 `UserDao 和 AuthDao` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
 
-同时更新：
+### 本 Step 不做
 
-```text
-include/liteim/base/ErrorCode.hpp
-src/base/ErrorCode.cpp
-include/liteim/storage/MySqlConnection.hpp
-src/storage/MySqlConnection.cpp
-src/storage/CMakeLists.txt
-tests/CMakeLists.txt
-README.md
-task_plan.md
-findings.md
-progress.md
-```
+- 不提前实现后续 Step 的业务能力
+- 不改变已经定义好的模块边界
+- 不把阻塞 I/O 放进 Reactor I/O 线程
 
-`PreparedStatement::lastErrorNumber()` 是本 Step 为 DAO 错误转换补的能力。
+## 3. 文件变化
 
-## 3. UserDao.hpp 接口说明
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `include/liteim/storage/UserDao.hpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `include/liteim/storage/AuthDao.hpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/storage/UserDao.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/storage/AuthDao.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/storage/user_dao_test.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tutorials/step25_user_dao.md` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `include/liteim/base/ErrorCode.hpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/base/ErrorCode.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `include/liteim/storage/MySqlConnection.hpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/storage/MySqlConnection.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/storage/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `README.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `task_plan.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `findings.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `progress.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+
+## 4. 核心接口与契约
 
 ```cpp
 class UserDao {
@@ -180,8 +195,6 @@ Status findUserById(std::uint64_t user_id, UserRecord& user);
 
 这些 helper 不暴露在头文件里，因为它们只是 users 表 DAO 的内部解析逻辑。
 
-## 4. AuthDao.hpp 接口说明
-
 ```cpp
 class AuthDao {
 public:
@@ -216,26 +229,7 @@ Status usernameExists(const std::string& username, bool& exists);
 
 `UserDao` 面向完整用户记录，`AuthDao` 面向认证流程的小查询。第一版只放 `usernameExists()`，后续 AuthService 需要更多认证专用查询时再扩展。
 
-## 5. 相关接口补充说明
-
-### `ErrorCode::AlreadyExists`
-
-Step 25 新增 `AlreadyExists`，用于表达唯一约束冲突。用户名重复不是普通 `IoError`，上层 AuthService 需要把它转换成“用户名已存在”的业务响应。
-
-### `PreparedStatement::lastErrorNumber()`
-
-`lastErrorNumber()` 返回 `mysql_stmt_errno()`。
-
-`UserDao::createUser()` 在 insert 失败后检查：
-
-```text
-1062 -> AlreadyExists
-其他 -> 保留原 MySQL 错误
-```
-
-这样 DAO 不需要解析错误字符串。
-
-## UserDao / AuthDao 的作用场景和运行流程
+## 5. 运行流程
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -323,20 +317,34 @@ exists = false
 
 注册接口未来收到 `username=charlie` 时，AuthService 先用 `AuthDao::usernameExists()` 判断唯一性，再调用 `UserDao::createUser()` 写入 `users`。登录 `alice` 时，`findUserByUsername("alice", user)` 返回 `user_id=1001`、`nickname=Alice`、`password_hash=dev_hash_alice`；好友列表等公开场景则不应把 hash/salt 继续传出去。
 
-## 后续实现 / 关键设计说明
+## 6. 关键实现点
 
-Step 25 只覆盖 users 表。它不实现：
+### 相关接口补充说明
 
-- MessageDao。
-- FriendDao。
-- GroupDao。
-- AuthService。
-- Redis 登录失败限制。
-- 登录成功后的在线状态。
+### `ErrorCode::AlreadyExists`
 
-这样可以先把用户表访问、唯一约束错误和基础查询语义测试稳定，再进入消息和关系表。
+Step 25 新增 `AlreadyExists`，用于表达唯一约束冲突。用户名重复不是普通 `IoError`，上层 AuthService 需要把它转换成“用户名已存在”的业务响应。
 
-## 测试设计
+### `PreparedStatement::lastErrorNumber()`
+
+`lastErrorNumber()` 返回 `mysql_stmt_errno()`。
+
+`UserDao::createUser()` 在 insert 失败后检查：
+
+```text
+1062 -> AlreadyExists
+其他 -> 保留原 MySQL 错误
+```
+
+这样 DAO 不需要解析错误字符串。
+
+## 7. 测试设计
+
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `UserDao 和 AuthDao` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 测试覆盖：
 
@@ -350,7 +358,7 @@ Step 25 只覆盖 users 表。它不实现：
 
 测试使用 `step25_` 前缀用户，并在 SetUp/TearDown 清理，避免污染 seed 用户。
 
-## 验证命令
+## 8. 验证命令
 
 ```bash
 cmake --build build
@@ -360,13 +368,24 @@ ctest --test-dir build --output-on-failure
 git diff --check
 ```
 
-## 面试时怎么讲
+## 9. 面试表达
+
+### 一句话
+
+Step 25 在 MySQL 连接池之上实现 users 表 DAO。
+
+### 展开说
 
 可以这样说：
 
 > Step 25 在 MySQL 连接池之上实现 users 表 DAO。`UserDao` 负责创建用户和按 username/id 查询，`AuthDao` 当前只负责 username 是否存在。DAO 只做数据访问，不做密码 hash 或登录判断。用户名唯一冲突通过 `mysql_stmt_errno() == 1062` 转成 `ErrorCode::AlreadyExists`，不存在用户返回 `NotFound`。所有 DAO 方法临时从 `MySqlPool` 借连接，用 prepared statement 执行 SQL，方法返回时 RAII guard 自动归还连接。
 
-## 面试常见追问
+### 容易被追问
+
+- 为什么用户名重复要转成 AlreadyExists？
+- 为什么 find 不存在返回 NotFound？
+
+## 10. 面试常见追问
 
 ### Q1：为什么用户名重复要转成 AlreadyExists？
 

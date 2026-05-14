@@ -1,4 +1,14 @@
-# Step 14: Session
+# Step 14：Session
+
+## 0. 本 Step 结论
+
+- 目标：本 Step 开始把前面的网络积木串到一个真实连接上。
+- 前置依赖：依赖 Step 0-13 已建立的工程、协议或运行时基础。
+- 主要交付：`Session` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：不实现 `TcpServer`。
+
+## 1. 为什么需要这个 Step
 
 本 Step 开始把前面的网络积木串到一个真实连接上。
 
@@ -12,7 +22,7 @@ connected fd
         -> output Buffer -> write()
 ```
 
-## 1. 为什么需要 Session
+### 为什么需要 Session
 
 TCP 连接不是一次函数调用，而是一段持续存在的生命周期：
 
@@ -25,23 +35,38 @@ TCP 连接不是一次函数调用，而是一段持续存在的生命周期：
 
 所以 `Session` 是“一个连接的 owner”。它不是业务服务，不做登录、聊天、MySQL 或 Redis。
 
-## 2. 新增文件
+## 2. 本 Step 边界
 
-```text
-include/liteim/net/Session.hpp
-src/net/Session.cpp
-tests/net/session_header_test.cpp
-tests/net/session_test.cpp
-tutorials/step14_session.md
-```
+### 本 Step 做
 
-同时更新：
+- 聚焦 `Session` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
 
-- `src/net/CMakeLists.txt`：把 `Session.cpp` 加入 `liteim_net`，并让 `liteim_net` 链接 `liteim_protocol`。
-- `src/CMakeLists.txt`：构建顺序改成 `base -> protocol -> net`，因为 `Session` 需要 `Packet` / `FrameDecoder`。
-- `tests/CMakeLists.txt`：加入 Session 测试。
+### 本 Step 不做
 
-## Session.hpp 接口说明
+- 不实现 `TcpServer`。
+- 不实现 `EventLoopThread` / `EventLoopThreadPool`。
+- 不实现 session 表。
+- 不实现 登录、聊天、业务路由。
+- 不实现 MySQL / Redis。
+- 不实现 心跳超时。
+- 不实现 输出缓冲区高水位关闭策略。
+
+## 3. 文件变化
+
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `include/liteim/net/Session.hpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/net/Session.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/net/session_header_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/net/session_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tutorials/step14_session.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/net/CMakeLists.txt` | 修改 | 把 `Session.cpp` 加入 `liteim_net`，并让 `liteim_net` 链接 `liteim_protocol` |
+| `src/CMakeLists.txt` | 修改 | 构建顺序改成 `base -> protocol -> net`，因为 `Session` 需要 `Packet` / `FrameDecoder` |
+| `tests/CMakeLists.txt` | 修改 | 加入 Session 测试 |
+
+## 4. 核心接口与契约
 
 `Session.hpp` 定义单个已连接 TCP fd 的 owner。
 
@@ -95,7 +120,7 @@ tutorials/step14_session.md
 - `closeInLoop()` 移除 Channel、关闭 fd、清空输出缓冲并触发 close callback。
 - `updateLastActiveTime()` 只在完整入站 Packet 后刷新。
 
-## Session 的作用场景和运行流程
+## 5. 运行流程
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -127,17 +152,17 @@ business thread or I/O thread
 
 ### 3. 整体运行链路
 
-1. `TcpServer` 把 accepted `UniqueFd` move 给 [Session 构造函数](../src/net/Session.cpp#L24)。
+1. `TcpServer` 把 accepted `UniqueFd` move 给 [Session 构造函数](../src/net/Session.cpp)。
 2. `Session` 兜底设置 fd 非阻塞，创建连接 `Channel`。
-3. [start()](../src/net/Session.cpp#L87) 捕获 `shared_from_this()`，把 [startInLoop()](../src/net/Session.cpp#L114) 放到 owner loop。
+3. [start()](../src/net/Session.cpp) 捕获 `shared_from_this()`，把 [startInLoop()](../src/net/Session.cpp) 放到 owner loop。
 4. `startInLoop()` 设置 Channel 回调、`tie()` 生命周期保护并开启读事件。
-5. fd 可读时，[handleRead()](../src/net/Session.cpp#L181) 循环 read 到 `EAGAIN`。
+5. fd 可读时，[handleRead()](../src/net/Session.cpp) 循环 read 到 `EAGAIN`。
 6. `handleRead()` 调用 `FrameDecoder::feed()` 得到完整 packets。
 7. 每个完整入站 Packet 刷新 `last_active_time_ms_` 并调用 message callback。
-8. 发送时，[sendPacket()](../src/net/Session.cpp#L92) 先调用 `encodePacket()`，再根据线程决定立即执行或排队。
-9. [sendEncodedInLoop()](../src/net/Session.cpp#L152) 检查高水位、append 输出 Buffer、开启写事件。
-10. fd 可写时，[handleWrite()](../src/net/Session.cpp#L227) 尽量 write 并 retrieve 已写字节。
-11. 关闭时，[closeInLoop()](../src/net/Session.cpp#L263) 移除 Channel、释放 fd、清输出 Buffer、通知 close callback。
+8. 发送时，[sendPacket()](../src/net/Session.cpp) 先调用 `encodePacket()`，再根据线程决定立即执行或排队。
+9. [sendEncodedInLoop()](../src/net/Session.cpp) 检查高水位、append 输出 Buffer、开启写事件。
+10. fd 可写时，[handleWrite()](../src/net/Session.cpp) 尽量 write 并 retrieve 已写字节。
+11. 关闭时，[closeInLoop()](../src/net/Session.cpp) 移除 Channel、释放 fd、清输出 Buffer、通知 close callback。
 
 ### 4. 自身内部运行流程
 
@@ -219,7 +244,9 @@ closeInLoop() 关闭慢连接
 
 Alice 的连接是 `session_id=42`，fd=57。她发送 `HEARTBEAT_REQUEST seq_id=7` 或私聊请求时，`Session::handleRead()` 把 TCP 字节喂给 `FrameDecoder`；只有完整、合法 Packet 产出后才刷新 `last_active_time`。服务端给 Bob 推送 `message_id=5001` 只会增加 output buffer 或触发写事件，不会替 Alice 刷新活跃时间。
 
-## 3. Session 的职责
+## 6. 关键实现点
+
+### Session 的职责
 
 `Session` 持有：
 
@@ -244,7 +271,7 @@ Alice 的连接是 `session_id=42`，fd=57。她发送 `HEARTBEAT_REQUEST seq_id
 - `Buffer` 不解析协议。
 - `Session` 把这些组件组合成一个连接生命周期。
 
-## 4. 生命周期模型
+### 生命周期模型
 
 `Session` 继承 `std::enable_shared_from_this<Session>`。调用方必须用 `std::shared_ptr<Session>` 管理它，然后再调用 `start()`。
 
@@ -262,7 +289,7 @@ channel_->enableReading();
 
 `pendingOutputBytes()` 也属于连接内部状态查询，只能在 owner loop 线程调用。它会先执行 `loop_->assertInLoopThread()`，避免测试或业务线程直接跨线程读取 `output_buffer_`。
 
-## 5. 读路径
+### 读路径
 
 读路径是：
 
@@ -287,7 +314,7 @@ EPOLLIN
 
 粘包时，`FrameDecoder` 会一次输出多个 `Packet`，`Session` 按顺序逐个触发 callback。
 
-## 6. 写路径
+### 写路径
 
 发送入口是 `sendPacket()`：
 
@@ -321,7 +348,7 @@ EPOLLOUT
 
 Step 17 后的 review hardening 已补上第一版高水位保护；Step 20 把它收敛成可配置策略：`sendEncodedInLoop()` 在 append 前检查 `output_buffer_.readableBytes() + encoded.size()`，超过 `output_high_water_mark_` 时记录日志并 `closeInLoop()`。默认值仍是 4MB，对应 `kSessionDefaultOutputHighWaterMark`。
 
-## 7. 关闭路径
+### 关闭路径
 
 `close()` 会回到所属 loop 执行 `closeInLoop()`：
 
@@ -333,26 +360,18 @@ close callback
 defer Channel destruction
 ```
 
-注意：`Channel` 对象不能在 `Channel::handleEvent()` 正在执行时被析构。  
+注意：`Channel` 对象不能在 `Channel::handleEvent()` 正在执行时被析构。
 因此 `Session` 在关闭时先从 `Epoller` 删除 channel 并关闭 fd，但把 `channel_.reset()` 延迟到当前事件回调栈帧之后执行。
 
 这个细节对应 Step 13 hardening 里的 callback 契约：callback 不能在执行中直接销毁正在运行的 `Channel`。
 
-## 8. 本 Step 不做什么
+## 7. 测试设计
 
-本 Step 不实现：
-
-- `TcpServer`。
-- `EventLoopThread` / `EventLoopThreadPool`。
-- session 表。
-- 登录、聊天、业务路由。
-- MySQL / Redis。
-- 心跳超时。
-- 输出缓冲区高水位关闭策略。
-
-其中输出缓冲区高水位关闭策略已在 Step 17 后 review hardening 中补齐基础版本，并在 Step 20 扩展为可配置阈值；heartbeat timeout 已在 Step 18 通过 `timerfd` / `TimerManager` 接入；业务路由和更细的限流策略仍属于后续 Step。
-
-## 9. 测试
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `Session` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 新增测试：
 
@@ -393,7 +412,21 @@ ctest --test-dir build --output-on-failure -R "Session"
 ctest --test-dir build --output-on-failure
 ```
 
-## 10. 面试时怎么讲
+## 8. 验证命令
+
+```bash
+cmake --build build
+ctest --test-dir build --output-on-failure -R "Session"
+ctest --test-dir build --output-on-failure
+```
+
+## 9. 面试表达
+
+### 一句话
+
+我把 Session 作为单连接 owner。
+
+### 展开说
 
 可以这样说：
 
@@ -407,18 +440,25 @@ ctest --test-dir build --output-on-failure
 
 > 发送路径不会无限追加 output buffer。每次 append 前先检查当前待发送字节加本次编码包是否超过配置的输出高水位，默认是 4MB；高于上限就记录日志并关闭连接。这是第一版高水位保护，简单直接，能防止慢客户端或异常网络把服务端内存耗尽。
 
-## 11. 面试常见追问
-**为什么 `sendPacket()` 要支持跨线程？**  
+### 容易被追问
+
+- 为什么 `sendPacket()` 要支持跨线程？
+- 为什么有 output buffer？
+- 为什么关闭时不立刻析构 `Channel`？
+- `FrameDecoder` 和 `Session` 的边界是什么？
+
+## 10. 面试常见追问
+
+### 为什么 `sendPacket()` 要支持跨线程？
 后续业务线程完成 MySQL / Redis 操作后，需要给客户端回包。业务线程不能直接写 socket，必须把发送任务投递回连接所属 I/O loop。
 
-**为什么有 output buffer？**  
+### 为什么有 output buffer？
 非阻塞 socket 可能一次写不完。如果阻塞等待，会卡住整个 I/O 线程；如果直接丢弃，会丢消息。所以剩余字节要留在 output buffer，等下一次可写事件继续发送。
 
-**为什么关闭时不立刻析构 `Channel`？**  
+### 为什么关闭时不立刻析构 `Channel`？
 因为关闭可能发生在 `Channel::handleEvent()` 调用的 read/write callback 里。此时当前 `Channel` 的成员函数还没返回，立刻析构它会造成未定义行为。先从 epoll 删除并关闭 fd，再延迟释放对象更安全。
 
-**`FrameDecoder` 和 `Session` 的边界是什么？**  
+### `FrameDecoder` 和 `Session` 的边界是什么？
 `FrameDecoder` 只负责“字节流到 Packet”的解析，不读 socket、不管理连接生命周期。`Session` 负责 socket I/O 和连接关闭，并把读到的字节交给 decoder。
 
-**为什么 Step 14 当时不做心跳和完整高水位配置？**
 Step 14 先把连接读写生命周期打通。心跳依赖 `timerfd` / 定时器管理，仍然留到后续 Step；高水位保护先在 Step 17 后 review hardening 中补齐为默认 4MB 超限关闭，再在 Step 20 扩展为可配置阈值、超限日志和 TcpServer 级测试。

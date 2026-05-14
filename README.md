@@ -80,7 +80,7 @@ Important boundaries:
 - `liteim/timer`: `TimerHeap` and `TimerManager`, linked into the network layer because `TimerManager` depends on `EventLoop` and `Channel`.
 - `liteim_storage`: storage DTOs, the `IStorage` interface, `MySqlConnection`, `PreparedStatement`, `MySqlQueryResult`, `MySqlPool`, `ConnectionGuard`, `UserDao`, `AuthDao`, `MessageDao`, `OfflineMessageDao`, `FriendDao`, `GroupDao`, and `MySqlStorage` for MySQL-backed users, public friend profiles, groups, messages, offline messages, and history.
 - `liteim_cache`: cache DTOs, the `ICache` interface, `RedisClient`, `RedisPool`, `RedisConnectionGuard`, `OnlineStatusCache`, `UnreadCounter`, `LoginRateLimiter`, and `RedisCache` for Redis-backed online sessions, unread counters, and login failure limiting.
-- `liteim_service`: `SessionManager`, `OnlineService`, `MessageRouter`, `AuthService`, and `FriendService`. `SessionManager` / `OnlineService` provide in-process user/session binding plus Redis-backed online-state synchronization. `MessageRouter` parses request TLVs, dispatches handlers inline or through the business `ThreadPool`, and sends responses back through `Session::sendPacket()`. `AuthService` handles register/login with MySQL users, Redis login-failure limiting, PBKDF2-HMAC-SHA256 password hashing, and login-time session binding. `FriendService` handles add-friend and friend-list requests with MySQL friendships plus Redis-backed online-status fields. Repeated login uses a kick-old-keep-new policy.
+- `liteim_service`: `SessionManager`, `OnlineService`, `MessageRouter`, `AuthService`, `FriendService`, and `ChatService`. `SessionManager` / `OnlineService` provide in-process user/session binding plus Redis-backed online-state synchronization. `MessageRouter` parses request TLVs, dispatches handlers inline or through the business `ThreadPool`, and sends responses back through `Session::sendPacket()`. `AuthService` handles register/login with MySQL users, Redis login-failure limiting, PBKDF2-HMAC-SHA256 password hashing, and login-time session binding. `FriendService` handles add-friend and friend-list requests with MySQL friendships plus Redis-backed online-status fields. `ChatService` handles private-message requests by validating the logged-in sender, saving the message through `IStorage`, pushing to an in-process online receiver, or recording offline delivery plus unread count for an offline receiver. Repeated login uses a kick-old-keep-new policy.
 
 ## Build And Test
 
@@ -105,9 +105,9 @@ Run the server executable:
 ./build/server/liteim_server
 ```
 
-The server starts a real `EventLoop + TcpServer` on the configured host and port, starts MySQL / Redis pools, starts the business `ThreadPool`, and wires incoming packets into `MessageRouter`. In the current Step 35 runtime, heartbeat requests get lightweight heartbeat responses; register/login requests are handled by `AuthService`; add-friend and friend-list requests are handled by `FriendService`; and unknown or unsupported request types get `ErrorResponse`. Business handlers run in the business pool. The server handles `Ctrl-C` / `SIGTERM` through `signalfd`, stops `TcpServer` in the base loop thread, stops the business pool, closes MySQL / Redis pools, and exits cleanly.
+The server starts a real `EventLoop + TcpServer` on the configured host and port, starts MySQL / Redis pools, starts the business `ThreadPool`, and wires incoming packets into `MessageRouter`. In the current Step 36 runtime, heartbeat requests get lightweight heartbeat responses; register/login requests are handled by `AuthService`; add-friend and friend-list requests are handled by `FriendService`; private-message requests are handled by `ChatService`; and unknown or unsupported request types get `ErrorResponse`. Business handlers run in the business pool. The server handles `Ctrl-C` / `SIGTERM` through `signalfd`, stops `TcpServer` in the base loop thread, stops the business pool, closes MySQL / Redis pools, and exits cleanly.
 
-Because Step 35 runtime starts real MySQL / Redis pools, start local dependencies before a bounded server smoke check:
+Because Step 36 runtime starts real MySQL / Redis pools, start local dependencies before a bounded server smoke check:
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d --wait
@@ -128,7 +128,7 @@ server.output_high_water_mark_bytes = 4194304
 
 ## Local MySQL And Redis
 
-Step 22 adds the local development database environment for storage/cache work. Step 23-27 use the MySQL side for storage tests, Step 28 adds a blocking hiredis-based Redis client/pool, Step 29 adds Redis online-status cache tests, and Step 30 adds Redis unread-counter and login-limiter tests. Step 31 adds `MySqlStorage : IStorage`, `RedisCache : ICache`, unsigned MySQL binding for `BIGINT UNSIGNED`, public friend-profile DTOs, and a single MySQL transaction for message + offline-message writes. Step 32 adds `SessionManager` and `OnlineService`; it uses `RedisCache` to write, refresh, and clear online status. Step 33 adds `MessageRouter` and connects `TcpServer` runtime packets to the service layer without calling MySQL or Redis from Reactor I/O threads. Step 34 adds `AuthService` and registers `RegisterRequest` / `LoginRequest` handlers on the business thread pool. Step 35 adds `FriendService`, registers `AddFriendRequest` / `ListFriendsRequest`, and returns friend online state through `TlvType::OnlineStatus`.
+Step 22 adds the local development database environment for storage/cache work. Step 23-27 use the MySQL side for storage tests, Step 28 adds a blocking hiredis-based Redis client/pool, Step 29 adds Redis online-status cache tests, and Step 30 adds Redis unread-counter and login-limiter tests. Step 31 adds `MySqlStorage : IStorage`, `RedisCache : ICache`, unsigned MySQL binding for `BIGINT UNSIGNED`, public friend-profile DTOs, and a single MySQL transaction for message + offline-message writes. Step 32 adds `SessionManager` and `OnlineService`; it uses `RedisCache` to write, refresh, and clear online status. Step 33 adds `MessageRouter` and connects `TcpServer` runtime packets to the service layer without calling MySQL or Redis from Reactor I/O threads. Step 34 adds `AuthService` and registers `RegisterRequest` / `LoginRequest` handlers on the business thread pool. Step 35 adds `FriendService`, registers `AddFriendRequest` / `ListFriendsRequest`, and returns friend online state through `TlvType::OnlineStatus`. Step 36 adds `ChatService`, registers `PrivateMessageRequest`, saves private messages through `IStorage`, pushes online private messages through `Session`, and records offline delivery plus unread count for offline receivers.
 
 Start MySQL and Redis:
 
@@ -192,7 +192,7 @@ The Step 23-27 MySQL integration tests, Step 31 `MySqlStorage` tests, Step 28-32
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d --wait
-ctest --test-dir build -R "MySql|UserDao|MessageDao|FriendGroupDao|MySqlStorage|Redis|OnlineStatusCache|UnreadCounter|LoginRateLimiter|RedisCache|SessionManager|OnlineService|AuthService|FriendService" --output-on-failure
+ctest --test-dir build -R "MySql|UserDao|MessageDao|FriendGroupDao|MySqlStorage|Redis|OnlineStatusCache|UnreadCounter|LoginRateLimiter|RedisCache|SessionManager|OnlineService|AuthService|FriendService|ChatService" --output-on-failure
 ```
 
 Useful repository checks:

@@ -1,5 +1,15 @@
 # Step 32：SessionManager 和 OnlineService
 
+## 0. 本 Step 结论
+
+- 目标：Step 32 的目标是进入业务层第一步：把“哪个用户绑定到哪个 TCP Session”放进当前进程内存，并把在线状态同步到 Redis。
+- 前置依赖：依赖 Step 0-31 已建立的工程、协议或运行时基础。
+- 主要交付：`SessionManager 和 OnlineService` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：不提前实现后续 Step 的业务能力
+
+## 1. 为什么需要这个 Step
+
 Step 32 的目标是进入业务层第一步：把“哪个用户绑定到哪个 TCP Session”放进当前进程内存，并把在线状态同步到 Redis。
 
 这一 Step 不做注册、密码校验、消息路由或聊天业务。它只解决后续 AuthService 登录成功之后必须马上处理的状态问题：
@@ -10,7 +20,7 @@ session_id -> user_id
 user_id -> Redis online:user:<user_id>
 ```
 
-## 1. 概念
+### 概念
 
 网络层里的 `TcpServer` 只知道 session id，不知道这个连接属于哪个登录用户。存储层和缓存层已经有了 MySQL / Redis 能力，但还没有把“登录态”和“连接对象”关联起来。
 
@@ -33,34 +43,41 @@ Step 32 增加两个类：
 - 不实现 ChatService，所以不投递私聊/群聊消息。
 - 不接入 `TcpServer::setMessageCallback()`，避免提前把协议 runtime 和业务 service 混在一起。
 
-## 2. 本 Step 新增 / 修改文件
+## 2. 本 Step 边界
 
-新增：
+### 本 Step 做
 
-```text
-include/liteim/service/SessionManager.hpp
-src/service/SessionManager.cpp
-include/liteim/service/OnlineService.hpp
-src/service/OnlineService.cpp
-src/service/CMakeLists.txt
-tests/service/session_manager_test.cpp
-tests/service/online_service_test.cpp
-tutorials/step32_session_manager_online_service.md
-```
+- 聚焦 `SessionManager 和 OnlineService` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
 
-同时更新：
+### 本 Step 不做
 
-```text
-src/CMakeLists.txt
-tests/CMakeLists.txt
-README.md
-task_plan.md
-findings.md
-progress.md
-/home/yolo/jianli/PROJECT_MEMORY.md
-```
+- 不提前实现后续 Step 的业务能力
+- 不改变已经定义好的模块边界
+- 不把阻塞 I/O 放进 Reactor I/O 线程
 
-## 3. hpp 接口说明
+## 3. 文件变化
+
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `include/liteim/service/SessionManager.hpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/service/SessionManager.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `include/liteim/service/OnlineService.hpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/service/OnlineService.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/service/CMakeLists.txt` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/service/session_manager_test.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/service/online_service_test.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tutorials/step32_session_manager_online_service.md` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `README.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `task_plan.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `findings.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `progress.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `/home/yolo/jianli/PROJECT_MEMORY.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+
+## 4. 核心接口与契约
 
 ### SessionManager.hpp
 
@@ -256,7 +273,7 @@ OnlineService::refreshUserOnline(user_id, session_id)
 
 旧 session 的心跳不能刷新新登录 session 的在线 TTL。
 
-## 4. 作用场景和运行流程
+## 5. 运行流程
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -289,6 +306,17 @@ AuthService / HeartbeatService / Session close callback
 `SessionManager` 只处理内存表，不调用 Redis。
 
 `OnlineService` 负责把内存表和 Redis 在线状态组合起来。
+
+SessionManager
+    只负责本进程内存关系
+    不知道 Redis
+
+OnlineService
+    负责协调 SessionManager + ICache
+    间接使用 Redis
+
+RedisCache / OnlineStatusCache
+    真正负责 Redis 读写
 
 ### 3. SessionManager 内部运行流程
 
@@ -397,7 +425,19 @@ OnlineService::unbindUser(1002, 42)
 - `OnlineService` 会调用阻塞的 `ICache` 实现，真实运行时应放在 business 线程，不放在 Reactor I/O 线程。
 - `Session::close()` 自己会投递到 owner loop，所以 service 不直接操作 fd。
 
-## 5. 测试
+## 6. 关键实现点
+
+- 保持模块职责单一。
+- 失败时返回清晰错误，不吞掉异常状态。
+- 不跨越本 Step 边界提前实现后续业务。
+
+## 7. 测试设计
+
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `SessionManager 和 OnlineService` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 新增测试：
 
@@ -429,7 +469,32 @@ cmake --build build --target liteim_tests -j2
 ctest --test-dir build -R "SessionManagerTest|OnlineServiceTest|OnlineServiceRedisIntegrationTest" --output-on-failure
 ```
 
-## 6. 面试常见追问
+## 8. 验证命令
+
+```bash
+cmake --build build --target liteim_tests -j2
+ctest --test-dir build -R "SessionManagerTest|OnlineServiceTest|OnlineServiceRedisIntegrationTest" --output-on-failure
+```
+
+## 9. 面试表达
+
+### 一句话
+
+本 Step 的核心是把 `SessionManager 和 OnlineService` 做成边界清楚、可测试、可继续扩展的一层。
+
+### 展开说
+
+围绕为什么需要 `SessionManager 和 OnlineService`、它依赖哪些前置 Step、它暴露什么接口、失败时怎么返回、线程和生命周期边界在哪里展开。
+
+### 容易被追问
+
+- 为什么 `SessionManager` 用 weak_ptr，而不是 shared_ptr？
+- 重复登录为什么选择踢旧保新？
+- 为什么旧 session close 不能直接 setUserOffline？
+- 为什么关闭旧 session 要在锁外做？
+- Redis 在线状态和内存 SessionManager 分别解决什么？
+
+## 10. 面试常见追问
 
 ### Q1：为什么 `SessionManager` 用 weak_ptr，而不是 shared_ptr？
 

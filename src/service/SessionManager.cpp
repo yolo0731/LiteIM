@@ -21,6 +21,7 @@ Status SessionManager::bindUser(std::uint64_t user_id, const Session::Ptr& sessi
 
     Session::Ptr old_session;
     {
+        // 因为users_和sessions_可能会被多个线程访问，所以需要加锁保护
         std::lock_guard<std::mutex> lock(mutex_);
 
         const auto session_it = sessions_.find(session_id);
@@ -36,7 +37,7 @@ Status SessionManager::bindUser(std::uint64_t user_id, const Session::Ptr& sessi
                 sessions_[session_id] = user_id;
                 return Status::ok();
             }
-
+            //从旧绑定里拿出旧的 Session 对象，如果它还活着，就临时转成 shared_ptr 保存到 old_session,这里是weak_ptr<Session>.lock()转化为shared_ptr<Session>
             old_session = user_it->second.session.lock();
             sessions_.erase(user_it->second.session_id);
         }
@@ -44,7 +45,7 @@ Status SessionManager::bindUser(std::uint64_t user_id, const Session::Ptr& sessi
         users_[user_id] = UserBinding{session_id, session};
         sessions_[session_id] = user_id;
     }
-
+    // 如果重复登录，关闭旧的连接。
     if (old_session != nullptr && old_session != session && !old_session->closed()) {
         old_session->close();
     }

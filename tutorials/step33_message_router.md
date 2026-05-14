@@ -1,10 +1,20 @@
 # Step 33：MessageRouter 异步分发框架
 
+## 0. 本 Step 结论
+
+- 目标：Step 33 的目标是给业务层补一个统一入口：Session 收到完整 Packet 后，不再直接 echo，而是交给 MessageRouter 按 msg_type 分发。
+- 前置依赖：依赖 Step 0-32 已建立的工程、协议或运行时基础。
+- 主要交付：`MessageRouter 异步分发框架` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：不提前实现后续 Step 的业务能力
+
+## 1. 为什么需要这个 Step
+
 Step 33 的目标是给业务层补一个统一入口：`Session` 收到完整 `Packet` 后，不再直接 echo，而是交给 `MessageRouter` 按 `msg_type` 分发。
 
 这一 Step 只实现“路由框架”，不实现真实注册登录和聊天业务。AuthService 从 Step 34 开始，ChatService 私聊从 Step 36 开始。
 
-## 1. 概念
+### 概念
 
 网络层已经能做到：
 
@@ -49,34 +59,40 @@ HeartbeatRequest -> HeartbeatResponse
 - 不在业务线程直接操作 fd、`Channel` 或 `Buffer`。
 - 不让 `TcpServer` 持有 Router，避免 `net` 模块依赖 `service` 模块。
 
-## 2. 本 Step 新增 / 修改文件
+## 2. 本 Step 边界
 
-新增：
+### 本 Step 做
 
-```text
-include/liteim/service/MessageRouter.hpp
-src/service/MessageRouter.cpp
-tests/service/message_router_test.cpp
-tutorials/step33_message_router.md
-```
+- 聚焦 `MessageRouter 异步分发框架` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
 
-修改：
+### 本 Step 不做
 
-```text
-src/service/CMakeLists.txt
-server/CMakeLists.txt
-server/main.cpp
-tests/CMakeLists.txt
-README.md
-task_plan.md
-findings.md
-progress.md
-/home/yolo/jianli/PROJECT_MEMORY.md
-```
+- 不提前实现后续 Step 的业务能力
+- 不改变已经定义好的模块边界
+- 不把阻塞 I/O 放进 Reactor I/O 线程
 
-`PROJECT_MEMORY.md` 本次只修正 PersonaAgent 依赖段的旧 Step 编号漂移：注册登录是 Step 34，不是 Step 33。
+## 3. 文件变化
 
-## 3. hpp 接口说明
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `include/liteim/service/MessageRouter.hpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/service/MessageRouter.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/service/message_router_test.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tutorials/step33_message_router.md` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/service/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `server/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `server/main.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `README.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `task_plan.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `findings.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `progress.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `/home/yolo/jianli/PROJECT_MEMORY.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `PROJECT_MEMORY.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+
+## 4. 核心接口与契约
 
 ### MessageRouter.hpp
 
@@ -252,7 +268,7 @@ std::unordered_map<std::uint16_t, HandlerEntry> handlers_;
 - `sendError()`：统一把 `Status` 编成 `ErrorResponse`，body 写入 `TlvType::ErrorCode` 和 `TlvType::ErrorMessage`。
 - `sendResponse()`：统一设置 packet magic/version/flags/seq_id，并通过 `Session::sendPacket()` 回写。
 
-## 4. 作用场景和运行流程
+## 5. 运行流程
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -415,7 +431,19 @@ HeartbeatRequest(seq_id=8)
 - 成功响应和错误响应都通过 `Session::sendPacket()` 回到 owner loop。
 - Router 不读写 fd，不调用 `pendingOutputBytes()`，不操作 `Channel`，不访问 `Buffer`。
 
-## 5. 测试
+## 6. 关键实现点
+
+- 保持模块职责单一。
+- 失败时返回清晰错误，不吞掉异常状态。
+- 不跨越本 Step 边界提前实现后续业务。
+
+## 7. 测试设计
+
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `MessageRouter 异步分发框架` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 新增 `tests/service/message_router_test.cpp`，覆盖 8 个行为：
 
@@ -457,28 +485,58 @@ git diff --check
 timeout 1s ./build/server/liteim_server || test $? -eq 124
 ```
 
-## 6. 面试常见追问
+## 8. 验证命令
 
-**为什么不让 TcpServer 直接 switch msg_type？**
+```bash
+cmake --build build --target liteim_tests -j2
+ctest --test-dir build -R "MessageRouter" --output-on-failure
+ctest --test-dir build -R "MessageRouter|Service|Session|TcpServer" --output-on-failure
+ctest --test-dir build --output-on-failure
+git diff --check
+timeout 1s ./build/server/liteim_server || test $? -eq 124
+```
+
+## 9. 面试表达
+
+### 一句话
+
+本 Step 的核心是把 `MessageRouter 异步分发框架` 做成边界清楚、可测试、可继续扩展的一层。
+
+### 展开说
+
+围绕为什么需要 `MessageRouter 异步分发框架`、它依赖哪些前置 Step、它暴露什么接口、失败时怎么返回、线程和生命周期边界在哪里展开。
+
+### 容易被追问
+
+- 为什么不让 TcpServer 直接 switch msg_type？
+- 为什么 handler 分 Inline 和 BusinessThread？
+- 业务线程为什么还能调用 `session->sendPacket()`？
+- 为什么异步任务捕获 weak_ptr？
+- 为什么 Router 要覆盖响应 seq_id？
+- 为什么 HeartbeatRequest 现在不刷新 Redis？
+
+## 10. 面试常见追问
+
+### 为什么不让 TcpServer 直接 switch msg_type？
 
 因为 `TcpServer` 是网络层对象。它负责连接和 I/O，不应该依赖 AuthService、ChatService、MySQL、Redis 等业务模块。把分发放到 `MessageRouter`，可以保持 `net -> service` 的依赖方向只出现在 executable wiring，而不是写进网络库。
 
-**为什么 handler 分 Inline 和 BusinessThread？**
+### 为什么 handler 分 Inline 和 BusinessThread？
 
 不是所有请求都值得切线程。心跳这种轻量请求可以 inline 返回；登录、历史消息、私聊落库这类可能阻塞的请求必须进业务线程池，避免卡住 I/O loop。
 
-**业务线程为什么还能调用 `session->sendPacket()`？**
+### 业务线程为什么还能调用 `session->sendPacket()`？
 
 `sendPacket()` 是 `Session` 暴露的跨线程安全发送入口。它会把实际写缓冲操作投递回 Session owner loop。业务线程不能直接操作 fd、`Channel` 或 `Buffer`。
 
-**为什么异步任务捕获 weak_ptr？**
+### 为什么异步任务捕获 weak_ptr？
 
 如果捕获 `shared_ptr`，一个很慢的业务任务可能把已经断开的 session 额外延长。捕获 `weak_ptr` 后，任务开始时和发送前都要重新确认 session 存活，关闭后就直接丢弃响应。
 
-**为什么 Router 要覆盖响应 seq_id？**
+### 为什么 Router 要覆盖响应 seq_id？
 
 `seq_id` 是客户端匹配请求和响应的关键字段。handler 可以专注业务 body，不应该有机会误填 seq 导致客户端匹配错响应。
 
-**为什么 HeartbeatRequest 现在不刷新 Redis？**
+### 为什么 HeartbeatRequest 现在不刷新 Redis？
 
 Step33 只做路由框架。完整心跳语义需要结合登录态和 Redis 在线 TTL，放在 Step 40 的 HeartbeatService 里实现，避免本 Step 偷跑后续业务。

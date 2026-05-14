@@ -20,6 +20,7 @@ public:
 
     ~CurrentThreadPoolGuard() noexcept {
         current_thread_pool = previous_;
+        //支持嵌套恢复，当前线程恢复之前的 ThreadPool 对象（如果有的话），没有就恢复为 nullptr
     }
 
     CurrentThreadPoolGuard(const CurrentThreadPoolGuard&) = delete;
@@ -146,6 +147,7 @@ bool ThreadPool::started() const noexcept {
 }
 
 void ThreadPool::workerLoop() noexcept {
+    // guard是一个 RAII 标记对象，用于记录当前线程属于哪个线程池，方便 stop() 判断是否是工作线程自己调用，避免自己 join 自己
     CurrentThreadPoolGuard guard(this);
     while (true) {
         Task task;

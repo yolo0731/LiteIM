@@ -22,7 +22,7 @@ Status OnlineService::bindUser(std::uint64_t user_id, const Session::Ptr& sessio
     if (!validation_status.isOk()) {
         return validation_status;
     }
-
+    // 一个连接只能绑定一个用户
     std::uint64_t already_bound_user = 0;
     const auto bound_status = sessions_.getUserBySession(session->id(), already_bound_user);
     if (bound_status.isOk() && already_bound_user != user_id) {
@@ -32,17 +32,19 @@ Status OnlineService::bindUser(std::uint64_t user_id, const Session::Ptr& sessio
         return bound_status;
     }
 
+    // 构建在线状态信息，写入 Redis
     OnlineSession online_session;
     online_session.user_id = user_id;
     online_session.session_id = session->id();
     online_session.server_id = server_id_;
     online_session.last_active_time_ms = session->lastActiveTimeMilliseconds();
 
+    // 新登录会覆盖旧 Redis 状态,因为一个key只能对应一个value
     const auto cache_status = cache_.setUserOnline(online_session, online_ttl_);
     if (!cache_status.isOk()) {
         return cache_status;
     }
-
+    // 再写内存绑定表
     const auto bind_status = sessions_.bindUser(user_id, session);
     if (!bind_status.isOk()) {
         (void)cache_.setUserOffline(user_id);
@@ -60,6 +62,7 @@ Status OnlineService::unbindUser(std::uint64_t user_id, std::uint64_t session_id
     if (!removed) {
         return Status::ok();
     }
+    // 只有确实解绑了才去更新 Redis 在线状态
     return cache_.setUserOffline(user_id);
 }
 
@@ -72,10 +75,11 @@ Status OnlineService::refreshUserOnline(std::uint64_t user_id, std::uint64_t ses
     if (bound_user_id != user_id) {
         return Status::error(ErrorCode::NotFound, "session is not bound to this user");
     }
-
+    // 刷新 Redis 在线状态的过期时间
     return cache_.refreshUserOnline(user_id, online_ttl_);
 }
 
+// 不涉及redis操作，直接从内存绑定表查询
 Status OnlineService::getSessionByUser(std::uint64_t user_id, Session::Ptr& session) {
     return sessions_.getSessionByUser(user_id, session);
 }

@@ -1,5 +1,15 @@
 # Step 27：FriendDao 和 GroupDao
 
+## 0. 本 Step 结论
+
+- 目标：Step 27 的目标是在 MySQL 存储层补齐好友关系和群组成员 DAO。
+- 前置依赖：依赖 Step 0-26 已建立的工程、协议或运行时基础。
+- 主要交付：`FriendDao 和 GroupDao` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：不提前实现后续 Step 的业务能力
+
+## 1. 为什么需要这个 Step
+
 Step 27 的目标是在 MySQL 存储层补齐好友关系和群组成员 DAO。
 
 到 Step 26 为止，LiteIM 已经能访问用户表、保存消息和管理离线消息，但联系人和群聊还缺少关系数据访问。Step 27 解决的问题是：
@@ -10,7 +20,7 @@ Step 27 的目标是在 MySQL 存储层补齐好友关系和群组成员 DAO。
 
 答案是实现 `FriendDao` 和 `GroupDao`。
 
-## 1. 概念
+### 概念
 
 好友和群组属于 IM 的关系层数据。
 
@@ -40,31 +50,38 @@ group_members(group_id, user_id)
 
 Step 27 只做 DAO，不接入 ChatService，也不做 Redis 缓存。
 
-## 2. 本 Step 新增 / 修改文件
+## 2. 本 Step 边界
 
-新增：
+### 本 Step 做
 
-```text
-include/liteim/storage/FriendDao.hpp
-include/liteim/storage/GroupDao.hpp
-src/storage/FriendDao.cpp
-src/storage/GroupDao.cpp
-tests/storage/friend_group_dao_test.cpp
-tutorials/step27_friend_group_dao.md
-```
+- 聚焦 `FriendDao 和 GroupDao` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
 
-同时更新：
+### 本 Step 不做
 
-```text
-src/storage/CMakeLists.txt
-tests/CMakeLists.txt
-README.md
-task_plan.md
-findings.md
-progress.md
-```
+- 不提前实现后续 Step 的业务能力
+- 不改变已经定义好的模块边界
+- 不把阻塞 I/O 放进 Reactor I/O 线程
 
-## 3. FriendDao.hpp 接口说明
+## 3. 文件变化
+
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `include/liteim/storage/FriendDao.hpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `include/liteim/storage/GroupDao.hpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/storage/FriendDao.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/storage/GroupDao.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/storage/friend_group_dao_test.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tutorials/step27_friend_group_dao.md` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/storage/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `README.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `task_plan.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `findings.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `progress.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+
+## 4. 核心接口与契约
 
 ```cpp
 class FriendDao {
@@ -146,8 +163,6 @@ SQL 语义：
 - `bindUserId()`：校验后绑定参数。
 - `rowToUserProfileRecord()`：把 join 后的 users 行转换成公开资料 DTO。
 - `rollbackSilently()`：事务失败时尽力回滚。
-
-## 4. GroupDao.hpp 接口说明
 
 ```cpp
 class GroupDao {
@@ -272,7 +287,7 @@ Status findGroupById(std::uint64_t group_id, GroupRecord& group);
 - `insertGroupMember()`：建群和加成员共用的幂等插入。
 - `rollbackSilently()`：事务失败时回滚。
 
-## FriendDao / GroupDao 的作用场景和运行流程
+## 5. 运行流程
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -359,21 +374,19 @@ validate group_id
 
 seed 数据里 Alice (`user_id=1001`) 和 Bob (`user_id=1002`) 是好友，`FriendDao::getFriends(1001)` 返回 Bob 的公开资料而不是 password hash。群 `group_id=2001` 的 owner 是 Alice，成员有 `1001`、`1002`、`9001`；`GroupDao::removeGroupMember(2001, 1001)` 会拒绝移除 owner，避免群仍指向 owner_id 但成员表缺失 owner。
 
-## 后续实现 / 关键设计说明
+## 6. 关键实现点
 
-Step 27 仍然只是存储层。
+- 保持模块职责单一。
+- 失败时返回清晰错误，不吞掉异常状态。
+- 不跨越本 Step 边界提前实现后续业务。
 
-它不实现：
+## 7. 测试设计
 
-- FriendService / GroupService。
-- 群消息发送扩散。
-- Redis 群成员缓存。
-- 群管理员和审批流程。
-- 网络 runtime 接入。
-
-这些都留到业务 service 层做组合。
-
-## 测试设计
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `FriendDao 和 GroupDao` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 测试覆盖：
 
@@ -387,7 +400,7 @@ Step 27 仍然只是存储层。
 
 测试用例在 MySQL 中创建独立用户和群，避免依赖 seed 数据的可变状态。
 
-## 验证命令
+## 8. 验证命令
 
 ```bash
 cmake --build build
@@ -397,13 +410,24 @@ ctest --test-dir build --output-on-failure
 git diff --check
 ```
 
-## 面试时怎么讲
+## 9. 面试表达
+
+### 一句话
+
+Step 27 实现好友和群组 DAO。
+
+### 展开说
 
 可以这样说：
 
 > Step 27 实现好友和群组 DAO。好友关系第一版用 friendships 表的两行表达双向关系，`addFriendship()` 在一个事务里插入两个方向，并用 `ON DUPLICATE KEY UPDATE` 做幂等 no-op。`getFriends()` 返回公开 `UserProfileRecord`，不把密码 hash 或 salt 带出 DAO。群组用 `chat_groups.owner_id` 表达群主，用 `group_members` 表达成员；建群时在一个事务里插入群资料和 owner 成员，移除成员前会查询 owner，拒绝把群主从成员表删除。DAO 只做数据访问，不做好友审批、群权限系统或网络通知。
 
-## 面试常见追问
+### 容易被追问
+
+- 为什么好友关系写双向两行？
+- 为什么不能移除群 owner？
+
+## 10. 面试常见追问
 
 ### Q1：为什么好友关系写双向两行？
 

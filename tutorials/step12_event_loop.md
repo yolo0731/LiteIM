@@ -1,5 +1,15 @@
 # Step 12：实现 EventLoop + eventfd 任务投递
 
+## 0. 本 Step 结论
+
+- 目标：EventLoop 是 Reactor 的调度层。
+- 前置依赖：依赖 Step 0-11 已建立的工程、协议或运行时基础。
+- 主要交付：`实现 EventLoop + eventfd 任务投递` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：不提前实现后续 Step 的业务能力
+
+## 1. 为什么需要这个 Step
+
 `EventLoop` 是 Reactor 的调度层。Step 10 已经有 `Epoller`，Step 11 已经有 `Channel::handleEvent()`，Step 12 把它们串成真正能运行的事件循环：
 
 ```text
@@ -11,7 +21,7 @@ EventLoop::loop()
 
 同时，本 Step 从一开始加入 `eventfd`，让其他线程可以通过 `queueInLoop()` 唤醒阻塞在 `epoll_wait()` 的 I/O 线程。
 
-## 1. 为什么需要 EventLoop
+### 为什么需要 EventLoop
 
 `Epoller` 只封装 Linux epoll 系统调用，`Channel` 只保存 fd 事件和回调。它们都不应该负责“循环调度”。
 
@@ -26,23 +36,57 @@ EventLoop::loop()
 
 后续每个 I/O 线程都会拥有一个自己的 `EventLoop`，这就是 one-loop-per-thread 的基础。
 
-## 2. 本 Step 修改的文件
+### 为什么需要 eventfd
 
-```text
-include/liteim/net/EventLoop.hpp
-src/net/EventLoop.cpp
-tests/net/event_loop_header_test.cpp
-tests/net/event_loop_test.cpp
-tutorials/step12_event_loop.md
+假设 I/O 线程阻塞在：
+
+```cpp
+epoll_wait(...)
 ```
 
-`EventLoop.hpp` 新增 `Functor`、`runInLoop()` 和 `queueInLoop()`，并补充内部任务队列、mutex、wakeup fd 和 wakeup channel。
+这时业务线程想让它执行一个任务，比如后续发送响应。如果只把任务放进 vector，I/O 线程不会马上知道，因为它还在睡眠。
 
-`EventLoop.cpp` 实现阻塞事件循环、eventfd 唤醒、任务队列执行和线程归属检查。
+`eventfd` 的作用就是给这个 loop 一个内部唤醒 fd：
 
-`event_loop_test.cpp` 用真实线程、真实 pipe fd 和真实 eventfd wakeup 路径验证行为。
+```text
+queueInLoop()
+    -> pending_tasks_.push_back(task)
+    -> eventfd_write(wakeup_fd_, 1)
+    -> epoll_wait 返回
+    -> wakeup channel read callback
+    -> doPendingTasks()
+```
 
-## EventLoop.hpp 接口说明
+这样跨线程任务不会一直等到下一个网络事件才执行。
+
+## 2. 本 Step 边界
+
+### 本 Step 做
+
+- 聚焦 `实现 EventLoop + eventfd 任务投递` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
+
+### 本 Step 不做
+
+- 不提前实现后续 Step 的业务能力
+- 不改变已经定义好的模块边界
+- 不把阻塞 I/O 放进 Reactor I/O 线程
+
+## 3. 文件变化
+
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `include/liteim/net/EventLoop.hpp` | 修改 | 补齐 loop、quit、runInLoop、queueInLoop 和 Channel 管理接口 |
+| `src/net/EventLoop.cpp` | 修改 | 实现 epoll dispatch、eventfd wakeup 和 pending task 执行 |
+| `src/net/CMakeLists.txt` | 修改 | 把 EventLoop 实现加入 `liteim_net` |
+| `tests/net/event_loop_header_test.cpp` | 新增/更新 | 固定 EventLoop header 自包含和 API |
+| `tests/net/event_loop_test.cpp` | 新增 | 覆盖任务投递、fd 事件和多任务执行 |
+| `README.md` | 更新 | 记录 EventLoop 和 eventfd 任务队列 |
+| `tutorials/step12_event_loop.md` | 新增 | 讲解 Reactor loop 与跨线程唤醒 |
+| `task_plan.md / findings.md / progress.md` | 更新 | 记录 Step 12 过程和验证结果 |
+
+## 4. 核心接口与契约
 
 `EventLoop.hpp` 是 one-loop-per-thread Reactor 的调度接口。
 
@@ -84,7 +128,7 @@ Channel 管理：
 - `calling_pending_tasks_` 用于判断同线程执行 pending task 时是否还需要唤醒。
 - `wakeup()` 写 eventfd，`handleWakeup()` 读 eventfd，`doPendingTasks()` 执行任务队列。
 
-## EventLoop 的作用场景和运行流程
+## 5. 运行流程
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -110,13 +154,13 @@ other thread
 
 ### 3. 整体运行链路
 
-1. [EventLoop 构造函数](../src/net/EventLoop.cpp#L52) 记录当前线程 id，创建 Epoller、eventfd 和 wakeup Channel。
-2. [loop()](../src/net/EventLoop.cpp#L68) 只能在 owner 线程调用。
+1. [EventLoop 构造函数](../src/net/EventLoop.cpp) 记录当前线程 id，创建 Epoller、eventfd 和 wakeup Channel。
+2. [loop()](../src/net/EventLoop.cpp) 只能在 owner 线程调用。
 3. 每轮先执行启动前或上一轮留下的 pending tasks。
 4. 如果没有退出请求，就阻塞在 `Epoller::poll(-1)`。
 5. fd 活跃后逐个调用 `Channel::handleEvent()`。
 6. 再执行一轮 pending tasks，处理回调期间排进来的任务。
-7. [quit()](../src/net/EventLoop.cpp#L103) 设置退出标记；跨线程 quit 会唤醒 eventfd。
+7. [quit()](../src/net/EventLoop.cpp) 设置退出标记；跨线程 quit 会唤醒 eventfd。
 8. 退出由 `quit_` 控制；上层 Reactor 对象不要依赖 stopped 查询做跨线程清理。
 
 ### 4. 自身内部运行流程
@@ -134,12 +178,12 @@ other thread
 
 核心函数流程：
 
-- [loop()](../src/net/EventLoop.cpp#L68)：主循环，处理任务、poll fd、分发 Channel、检查退出。
-- [runInLoop()](../src/net/EventLoop.cpp#L110)：同线程立即执行，跨线程转成 `queueInLoop()`。
-- [queueInLoop()](../src/net/EventLoop.cpp#L123)：任务入队，必要时唤醒 eventfd。
-- [wakeup()](../src/net/EventLoop.cpp#L169)：向 eventfd 写 1，让阻塞中的 epoll 返回。
-- [handleWakeup()](../src/net/EventLoop.cpp#L185)：读掉 eventfd 计数，避免 fd 一直可读。
-- [doPendingTasks()](../src/net/EventLoop.cpp#L199)：swap 出任务队列，在锁外执行并隔离异常。
+- [loop()](../src/net/EventLoop.cpp)：主循环，处理任务、poll fd、分发 Channel、检查退出。
+- [runInLoop()](../src/net/EventLoop.cpp)：同线程立即执行，跨线程转成 `queueInLoop()`。
+- [queueInLoop()](../src/net/EventLoop.cpp)：任务入队，必要时唤醒 eventfd。
+- [wakeup()](../src/net/EventLoop.cpp)：向 eventfd 写 1，让阻塞中的 epoll 返回。
+- [handleWakeup()](../src/net/EventLoop.cpp)：读掉 eventfd 计数，避免 fd 一直可读。
+- [doPendingTasks()](../src/net/EventLoop.cpp)：swap 出任务队列，在锁外执行并隔离异常。
 
 `queueInLoop(task)` 可以理解成“把跨线程任务放进队列，并用 eventfd 叫醒 loop”：
 
@@ -177,7 +221,25 @@ Epoller::poll() 等待 fd 事件或 eventfd 唤醒
 
 ChatService 在业务线程保存 `message_id=5001` 后，不能直接写 Bob 的 fd。它只持有 `weak_ptr<Session>`，然后通过 Bob 所属 I/O loop 的 `queueInLoop()` 投递发送任务；eventfd 唤醒那个 EventLoop，最终在 owner thread 内调用 `Session::sendPacket()`，把 `PRIVATE_MESSAGE_PUSH seq_id=7` 放入 output buffer。
 
-## 3. EventLoop 的核心接口
+## 6. 关键实现点
+
+### 本 Step 修改的文件
+
+```text
+include/liteim/net/EventLoop.hpp
+src/net/EventLoop.cpp
+tests/net/event_loop_header_test.cpp
+tests/net/event_loop_test.cpp
+tutorials/step12_event_loop.md
+```
+
+`EventLoop.hpp` 新增 `Functor`、`runInLoop()` 和 `queueInLoop()`，并补充内部任务队列、mutex、wakeup fd 和 wakeup channel。
+
+`EventLoop.cpp` 实现阻塞事件循环、eventfd 唤醒、任务队列执行和线程归属检查。
+
+`event_loop_test.cpp` 用真实线程、真实 pipe fd 和真实 eventfd wakeup 路径验证行为。
+
+### EventLoop 的核心接口
 
 ```cpp
 using Functor = std::function<void()>;
@@ -203,7 +265,7 @@ void assertInLoopThread() const;
 - `isInLoopThread()`：判断当前调用是否发生在 loop 所属线程。
 - `assertInLoopThread()`：跨线程误用时抛出异常，尽早暴露问题。
 
-## 4. loop() 怎么运行
+### loop() 怎么运行
 
 `loop()` 的主流程是：
 
@@ -225,30 +287,7 @@ Step 13 hardening round 2 后，`loop()` 用 RAII guard 管理 `looping_` 状态
 
 后续网络层 cleanup 删除了 `isStopped()` 这个 public API。`EventLoop` 只负责运行、退出和任务投递；`Acceptor`、`TcpServer`、`TimerManager`、`SignalWatcher` 这类 Reactor-owned 对象用 owner-loop-only stop/close 契约保证生命周期，不再通过查询 loop stopped 状态在非 owner 线程做 fallback 清理。
 
-## 5. 为什么需要 eventfd
-
-假设 I/O 线程阻塞在：
-
-```cpp
-epoll_wait(...)
-```
-
-这时业务线程想让它执行一个任务，比如后续发送响应。如果只把任务放进 vector，I/O 线程不会马上知道，因为它还在睡眠。
-
-`eventfd` 的作用就是给这个 loop 一个内部唤醒 fd：
-
-```text
-queueInLoop()
-    -> pending_tasks_.push_back(task)
-    -> eventfd_write(wakeup_fd_, 1)
-    -> epoll_wait 返回
-    -> wakeup channel read callback
-    -> doPendingTasks()
-```
-
-这样跨线程任务不会一直等到下一个网络事件才执行。
-
-## 6. runInLoop 和 queueInLoop 的区别
+### runInLoop 和 queueInLoop 的区别
 
 `runInLoop()` 更像“如果能立即执行就立即执行”：
 
@@ -263,25 +302,7 @@ queueInLoop()
 
 本实现中，如果 `queueInLoop()` 被其他线程调用，或者当前 loop 正在执行 pending tasks，就会调用 `wakeup()`。
 
-## 7. 线程边界
-
-`EventLoop` 在构造时记录：
-
-```cpp
-thread_id_(std::this_thread::get_id())
-```
-
-这表示这个 loop 属于构造它的线程。
-
-后续要求：
-
-- fd 事件回调在所属 loop 线程执行。
-- `updateChannel()` 和 `removeChannel()` 必须在所属 loop 线程调用。
-- 其他线程不能直接改连接状态，只能通过 `queueInLoop()` 投递任务。
-
-这为后续 `Session` / `TcpConnection` 的线程安全打基础。
-
-## 8. wakeup channel
+### wakeup channel
 
 `EventLoop` 内部创建一个 `eventfd`：
 
@@ -300,7 +321,13 @@ wakeup_channel_->enableReading();
 
 `wakeup_fd_` 使用 `UniqueFd` 持有，保证 `EventLoop` 构造或注册 wakeup channel 过程中出现异常时，已经创建出来的 eventfd 也有明确关闭责任。
 
-## 9. 测试设计
+## 7. 测试设计
+
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `实现 EventLoop + eventfd 任务投递` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 本 Step 新增：
 
@@ -332,8 +359,6 @@ queueInLoop is not a member of EventLoop
 
 这说明测试确实覆盖了 Step 12 缺失接口。
 
-## 10. 如何运行测试
-
 运行全部验证：
 
 ```bash
@@ -349,9 +374,22 @@ ctest --test-dir build --output-on-failure
 ctest --test-dir build -R EventLoop --output-on-failure
 ```
 
-Step 12 初次完成时 CTest 通过 92 个测试，其中 4 个是新增的 `EventLoopTest`。后续 hardening 保留了回调异常隔离和“预先 quit 时仍执行已排队任务”的测试；本次 cleanup 删除了 `isStopped()` 相关 API 和测试，生命周期清理统一由 owner-loop-only 契约约束。
+## 8. 验证命令
 
-## 11. 面试时怎么讲
+```bash
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build --output-on-failure
+ctest --test-dir build -R EventLoop --output-on-failure
+```
+
+## 9. 面试表达
+
+### 一句话
+
+我把 EventLoop 作为 Reactor 的调度层：它持有 Epoller，在 loop() 中阻塞等待 fd 事件，拿到活跃 Channel 后调用 handleEvent()。
+
+### 展开说
 
 可以这样讲：
 
@@ -363,24 +401,32 @@ Step 12 初次完成时 CTest 通过 92 个测试，其中 4 个是新增的 `Ev
 - `EventLoop` 不执行 MySQL / Redis 阻塞业务。
 - 跨线程连接操作必须通过 `queueInLoop()` 或 `runInLoop()` 回到所属 I/O 线程。
 
-## 12. 面试常见追问
+### 容易被追问
 
-**为什么不用 pipe 唤醒，而用 eventfd？**
+- 为什么不用 pipe 唤醒，而用 eventfd？
+- 为什么 `queueInLoop()` 需要 mutex？
+- 为什么 `runInLoop()` 在所属线程直接执行？
+- 为什么 `queueInLoop()` 有时当前线程也要 wakeup？
+- 为什么 `updateChannel()` 要检查线程？
+
+## 10. 面试常见追问
+
+### 为什么不用 pipe 唤醒，而用 eventfd？
 
 `eventfd` 专门用于事件通知，接口简单，只需要读写一个计数器；它比 pipe 更轻量，也更适合线程间 wakeup。
 
-**为什么 `queueInLoop()` 需要 mutex？**
+### 为什么 `queueInLoop()` 需要 mutex？
 
 因为它可能被业务线程、其他 I/O 线程或当前 loop 线程调用。任务队列是共享数据，必须保护。
 
-**为什么 `runInLoop()` 在所属线程直接执行？**
+### 为什么 `runInLoop()` 在所属线程直接执行？
 
 如果已经在正确的 I/O 线程，就不需要排队和 wakeup，直接执行更简单，也避免不必要的延迟。
 
-**为什么 `queueInLoop()` 有时当前线程也要 wakeup？**
+### 为什么 `queueInLoop()` 有时当前线程也要 wakeup？
 
 如果当前 loop 正在执行 pending tasks，任务里又追加了新任务，新任务会进入下一轮队列。写 eventfd 可以防止 loop 执行完当前批任务后直接阻塞，导致新任务无人处理。
 
-**为什么 `updateChannel()` 要检查线程？**
+### 为什么 `updateChannel()` 要检查线程？
 
 one-loop-per-thread 要求 fd 关注事件只能在所属 loop 线程修改。跨线程直接改 epoll 注册会破坏连接线程归属，后续容易出现竞态。

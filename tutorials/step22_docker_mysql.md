@@ -1,5 +1,15 @@
 # Step 22：Docker Compose 和 MySQL 初始化 SQL
 
+## 0. 本 Step 结论
+
+- 目标：Step 22 的目标是把本地 MySQL / Redis 开发环境固定下来，并创建 LiteIM 后续 DAO 会使用的 MySQL schema。
+- 前置依赖：依赖 Step 0-21 已建立的工程、协议或运行时基础。
+- 主要交付：`Docker Compose 和 MySQL 初始化 SQL` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：不提前实现后续 Step 的业务能力
+
+## 1. 为什么需要这个 Step
+
 Step 22 的目标是把本地 MySQL / Redis 开发环境固定下来，并创建 LiteIM 后续 DAO 会使用的 MySQL schema。
 
 到 Step 21 为止，LiteIM 已经有 `IStorage` 和 `ICache` 接口，但还没有真实数据库。Step 22 解决的问题是：
@@ -10,7 +20,7 @@ Step 22 的目标是把本地 MySQL / Redis 开发环境固定下来，并创建
 
 答案是用 Docker Compose 启动本地 MySQL 8.0 和 Redis 7.2，并用 SQL 脚本初始化数据库。
 
-## 1. 概念
+### 概念
 
 这一 Step 不是 C++ 功能实现，而是本地依赖契约。
 
@@ -31,31 +41,36 @@ database: liteim
 
 Redis 第一版只启动空实例并开启密码认证，不提前写业务 key。在线状态、未读计数和登录失败限制留给 Step 29 / Step 30。
 
-## 2. 本 Step 新增 / 修改文件
+## 2. 本 Step 边界
 
-新增：
+### 本 Step 做
 
-```text
-docker/docker-compose.yml
-scripts/init_mysql.sql
-scripts/seed_test_data.sql
-tutorials/step22_docker_mysql.md
-```
+- 聚焦 `Docker Compose 和 MySQL 初始化 SQL` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
 
-同时更新：
+### 本 Step 不做
 
-```text
-README.md
-include/liteim/base/Config.hpp
-src/base/Config.cpp
-task_plan.md
-findings.md
-progress.md
-```
+- 不提前实现后续 Step 的业务能力
+- 不改变已经定义好的模块边界
+- 不把阻塞 I/O 放进 Reactor I/O 线程
 
-`Config::defaults()` 后续默认指向本地 Compose 端点，这样 MySQL / Redis 集成测试不需要每次手写连接参数。
+## 3. 文件变化
 
-## 3. Docker Compose / SQL 脚本契约说明
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `docker/docker-compose.yml` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `scripts/init_mysql.sql` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `scripts/seed_test_data.sql` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tutorials/step22_docker_mysql.md` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `README.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `include/liteim/base/Config.hpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/base/Config.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `task_plan.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `findings.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `progress.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+
+## 4. 核心接口与契约
 
 Step 22 没有新增 C++ `.hpp`。这里的“接口说明”对应 Compose 和 SQL 脚本对后续 C++ 代码提供的运行契约。
 
@@ -195,7 +210,7 @@ Redis 在 Step 22 只保证服务可连接和认证可用。它不创建：
 
 原因是 Redis key 的格式要等 `RedisClient`、`OnlineStatusCache`、`UnreadCounter`、`LoginRateLimiter` 实现时再固定。
 
-## Docker Compose / SQL 脚本的作用场景和运行流程
+## 5. 运行流程
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -264,19 +279,19 @@ SQL 脚本自身按依赖顺序执行：
 
 初始化脚本会写入真实开发数据：`users` 里有 `user_id=1001` 的 `alice`、`user_id=1002` 的 `bob`、`user_id=9001` 的 `mira_bot`；`messages` 里有 `message_id=5001`、`conversation_type=1`、`conversation_id=10011002`、文本 `hello bob`。历史分页依赖 `idx_messages_history(conversation_type, conversation_id, message_id)`，离线拉取依赖 `offline_messages(user_id=1002, message_id=5001, delivered=0)`。
 
-## 后续实现 / 关键设计说明
+## 6. 关键实现点
 
-Step 22 的 schema 是后续 DAO 的真实契约。后续如果 DAO 查询字段、索引或唯一约束变化，需要同步修改：
+- 保持模块职责单一。
+- 失败时返回清晰错误，不吞掉异常状态。
+- 不跨越本 Step 边界提前实现后续业务。
 
-- SQL schema。
-- seed 数据。
-- DAO 代码。
-- 集成测试。
-- 本教程对应说明。
+## 7. 测试设计
 
-当前 Redis 只保证本地服务可用。Redis key 设计从 Step 29 开始落地，Step 30 继续补未读计数和登录失败限制。
-
-## 测试设计
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `Docker Compose 和 MySQL 初始化 SQL` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 本 Step 的验证重点是外部依赖能真实启动，而不是 mock：
 
@@ -287,33 +302,35 @@ Step 22 的 schema 是后续 DAO 的真实契约。后续如果 DAO 查询字段
 - Redis 认证后 `PING` 成功。
 - `Config::defaults()` 的端口、用户、密码和 Compose 默认一致。
 
-## 验证命令
+## 8. 验证命令
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d
 docker compose -f docker/docker-compose.yml ps
-mysql -h 127.0.0.1 -P 33060 -uliteim -p6 liteim -e "SHOW TABLES;"
-mysql -h 127.0.0.1 -P 33060 -uliteim -p6 liteim -e "SELECT user_id, username FROM users ORDER BY user_id;"
-REDISCLI_AUTH=6 redis-cli -h 127.0.0.1 -p 63790 ping
 cmake --build build
 ctest --test-dir build --output-on-failure
 git diff --check
-```
-
-如果要重建干净数据卷：
-
-```bash
 docker compose -f docker/docker-compose.yml down -v
-docker compose -f docker/docker-compose.yml up -d
 ```
 
-## 面试时怎么讲
+## 9. 面试表达
+
+### 一句话
+
+Step 22 先把本地 MySQL / Redis 环境和 schema 固定下来。
+
+### 展开说
 
 可以这样说：
 
 > Step 22 先把本地 MySQL / Redis 环境和 schema 固定下来。MySQL 用 Docker Compose 启动 8.0 系列，宿主机端口是 33060，Redis 端口是 63790，两者默认密码都是 6。MySQL 初始化脚本创建用户、好友、群、消息和离线消息表，并准备索引和 seed 数据；Redis 第一版只启动空实例和认证。这样后续 C++ MySQL wrapper、DAO 和 Redis cache 都有稳定的真实依赖可以集成测试。
 
-## 面试常见追问
+### 容易被追问
+
+- 为什么 MySQL 是主线依赖？
+- 为什么 seed 里放 `mira_bot`？
+
+## 10. 面试常见追问
 
 ### Q1：为什么 MySQL 是主线依赖？
 

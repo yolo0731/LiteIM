@@ -1,6 +1,16 @@
-# Step 2: Config / Logger / ErrorCode 基础模块
+# Step 2：Config / Logger / ErrorCode 基础模块
 
-## 1. 本 Step 解决什么问题
+## 0. 本 Step 结论
+
+- 目标：本 Step 解决什么问题。
+- 前置依赖：依赖 Step 0-1 已建立的工程、协议或运行时基础。
+- 主要交付：`Config / Logger / ErrorCode 基础模块` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：不提前实现后续 Step 的业务能力
+
+## 1. 为什么需要这个 Step
+
+### 本 Step 解决什么问题
 
 Step 1 只有最小 CMake、server target 和 GoogleTest 链路。Step 2 开始引入第一个真正可复用的 C++ 模块：`liteim_base`。
 
@@ -24,43 +34,39 @@ Timestamp   -> 统一时间戳表示
 
 本 Step 仍然不实现 socket、epoll、TLV 协议、MySQL 连接池、Redis 连接池或 Qt 客户端。
 
-## 2. 本 Step 新增文件
+## 2. 本 Step 边界
 
-```text
-include/liteim/base/
-├── Config.hpp
-├── ErrorCode.hpp
-├── Logger.hpp
-├── Status.hpp
-└── Timestamp.hpp
+### 本 Step 做
 
-src/
-├── CMakeLists.txt
-└── base/
-    ├── CMakeLists.txt
-    ├── Config.cpp
-    ├── ErrorCode.cpp
-    ├── Logger.cpp
-    ├── Status.cpp
-    └── Timestamp.cpp
+- 聚焦 `Config / Logger / ErrorCode 基础模块` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
 
-tests/base/
-├── config_test.cpp
-├── error_code_test.cpp
-├── logger_test.cpp
-└── timestamp_test.cpp
-```
+### 本 Step 不做
 
-头文件放到 `include/liteim/base/`，实现放到 `src/base/`。这样后续代码统一使用项目限定 include：
+- 不提前实现后续 Step 的业务能力
+- 不改变已经定义好的模块边界
+- 不把阻塞 I/O 放进 Reactor I/O 线程
 
-```cpp
-#include "liteim/base/Config.hpp"
-#include "liteim/base/Logger.hpp"
-```
+## 3. 文件变化
 
-不要把头文件放回旧路线里的 `server/net` 或 `server/protocol`。
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `include/liteim/base/Config.hpp` | 新增 | 定义服务端、MySQL、Redis 和客户端默认配置结构 |
+| `include/liteim/base/ErrorCode.hpp` | 新增 | 定义统一错误码和可读字符串 |
+| `include/liteim/base/Status.hpp` | 新增 | 定义统一成功/失败返回对象 |
+| `include/liteim/base/Logger.hpp` | 新增 | 封装 spdlog 初始化和日志级别解析 |
+| `include/liteim/base/Timestamp.hpp` | 新增 | 提供毫秒时间戳和 UTC 字符串工具 |
+| `src/base/*.cpp` | 新增 | 实现 base 模块各组件 |
+| `src/base/CMakeLists.txt` | 新增 | 构建 `liteim_base` 并链接 spdlog |
+| `src/CMakeLists.txt` | 新增 | 把 `base` 子目录接入工程 |
+| `server/main.cpp` | 修改 | 使用默认配置初始化日志 |
+| `tests/base/*.cpp` | 新增 | 覆盖 Config、ErrorCode、Status、Logger、Timestamp |
+| `README.md` | 更新 | 记录 base 模块和构建方式 |
+| `tutorials/step02_base.md` | 新增 | 讲解基础模块契约 |
+| `task_plan.md / findings.md / progress.md` | 更新 | 记录 Step 2 过程和验证结果 |
 
-## 3. CMake 结构
+## 4. 核心接口与契约
 
 根 `CMakeLists.txt` 新增了 `spdlog`：
 
@@ -99,8 +105,6 @@ add_library(liteim_base
 - `liteim_server` 和 `liteim_tests` 都链接 `liteim_base`。
 
 这说明 `base` 是公共库，不是 server 入口文件里的临时工具函数。
-
-## Config.hpp / ErrorCode.hpp / Status.hpp / Logger.hpp / Timestamp.hpp 接口说明
 
 `Config.hpp` 定义配置数据的结构边界：
 
@@ -150,7 +154,7 @@ add_library(liteim_base
 - `toIso8601String()` 返回 UTC 可读字符串。
 - 关键成员变量 `time_point_` 是值语义，没有外部资源所有权。
 
-## Base 基础模块的作用场景和运行流程
+## 5. 运行流程
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -172,10 +176,10 @@ server/main.cpp
 
 ### 3. 整体运行链路
 
-1. 进程启动时先拿到默认配置；当前入口在 [server/main.cpp](../server/main.cpp#L11)。
-2. 如果后续启用配置文件，调用 [Config::loadFromFile()](../src/base/Config.cpp#L56) 覆盖默认值。
-3. 用 [parseLogLevel()](../src/base/Logger.cpp#L48) 把字符串级别转成枚举。
-4. 调用 [Logger::init()](../src/base/Logger.cpp#L70) 初始化进程级 logger。
+1. 进程启动时先拿到默认配置；当前入口在 [server/main.cpp](../server/main.cpp)。
+2. 如果后续启用配置文件，调用 [Config::loadFromFile()](../src/base/Config.cpp) 覆盖默认值。
+3. 用 [parseLogLevel()](../src/base/Logger.cpp) 把字符串级别转成枚举。
+4. 调用 [Logger::init()](../src/base/Logger.cpp) 初始化进程级 logger。
 5. `TcpServer` 读取配置中的 host、port、I/O 线程数和输出高水位。
 6. 后续任意模块失败时返回 `Status::error()`，上层根据错误语义决定处理方式。
 
@@ -193,12 +197,12 @@ server/main.cpp
 
 核心函数流程：
 
-- [Config::defaults()](../src/base/Config.cpp#L52)：直接返回默认构造的配置快照。
-- [Config::loadFromFile()](../src/base/Config.cpp#L56)：逐行读取、去注释、trim、按 `key=value` 拆分，再按 key 写入字段。
-- [parseLogLevel()](../src/base/Logger.cpp#L48)：把 `debug`、`warn`、`error` 等字符串映射为 `LogLevel`，未知值回落到 info。
-- [Logger::init()](../src/base/Logger.cpp#L70)：加锁创建或复用 spdlog logger，并设置当前级别。
-- [Status::ok() / Status::error()](../src/base/Status.cpp#L8)：构造成功或失败返回值，不抛异常。
-- [Timestamp::now()](../src/base/Timestamp.cpp#L15)：取当前 system clock，用于对外可理解的时间点。
+- [Config::defaults()](../src/base/Config.cpp)：直接返回默认构造的配置快照。
+- [Config::loadFromFile()](../src/base/Config.cpp)：逐行读取、去注释、trim、按 `key=value` 拆分，再按 key 写入字段。
+- [parseLogLevel()](../src/base/Logger.cpp)：把 `debug`、`warn`、`error` 等字符串映射为 `LogLevel`，未知值回落到 info。
+- [Logger::init()](../src/base/Logger.cpp)：加锁创建或复用 spdlog logger，并设置当前级别。
+- [Status::ok() / Status::error()](../src/base/Status.cpp)：构造成功或失败返回值，不抛异常。
+- [Timestamp::now()](../src/base/Timestamp.cpp)：取当前 system clock，用于对外可理解的时间点。
 
 `Config::loadFromFile()` 可以按这条流程理解：
 
@@ -222,7 +226,9 @@ server/main.cpp
 
 本地服务启动时会读取类似 `server.host=0.0.0.0`、`server.port=9000`、`server.io_threads=4`、`server.output_high_water_mark_bytes=4194304` 的配置。业务层保存 `user_id=1001` 给 `user_id=1002` 的消息失败时，不抛裸异常，而是返回 `Status::error(...)`；日志中记录模块、错误码和时间戳，方便定位 `conversation_id=10011002` 这条链路的问题。
 
-## 4. Config 设计
+## 6. 关键实现点
+
+### Config 设计
 
 `Config` 当前保存这些配置：
 
@@ -292,7 +298,7 @@ qt.server_port = 10087
 
 本 Step 不引入 YAML / JSON / TOML，是为了让项目先保持可读、可测、可手写。等配置项明显复杂之后，再考虑更成熟的配置格式。
 
-## 5. ErrorCode 和 Status
+### ErrorCode 和 Status
 
 `ErrorCode` 是统一错误码：
 
@@ -335,7 +341,7 @@ public:
 - Step 2 的接口还很少，`Status` 足够表达无返回值函数的成败。
 - 后续 DAO、协议解析、Redis 调用如果需要返回数据，可以再引入 `Result<T>`，不急着过度设计。
 
-## 6. Logger 设计
+### Logger 设计
 
 `Logger` 当前封装 `spdlog`：
 
@@ -404,7 +410,7 @@ Logger::get()
 
 本 Step 不做自研异步日志。因为当前还没有 I/O 线程和业务线程池，先把统一日志入口接好更重要。等高性能主线走到线程模型和压测阶段，可以再根据实际需要升级成异步日志策略。
 
-## 7. Timestamp 设计
+### Timestamp 设计
 
 `Timestamp` 封装 `std::chrono::system_clock::time_point`：
 
@@ -432,7 +438,7 @@ public:
 
 后续消息表、历史消息分页、日志字段、压测统计都需要时间字段，所以 Step 2 先放一个确定性的时间工具。
 
-## 8. server/main.cpp 的变化
+### server/main.cpp 的变化
 
 Step 1 的 server 只是打印普通文本。Step 2 改成：
 
@@ -459,7 +465,13 @@ int main() {
 
 真实监听 socket 会在后续网络 Step 中实现。
 
-## 9. 测试说明
+## 7. 测试设计
+
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `Config / Logger / ErrorCode 基础模块` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 本 Step 新增 4 个测试文件，加上 Step 1 的 smoke test，一共 15 个 CTest 用例。
 
@@ -536,36 +548,21 @@ TEST(TimestampTest, Iso8601StringUsesUtcFormat)
 - 当前时间戳大于 0。
 - Unix epoch 时间点格式化为 `1970-01-01T00:00:00Z`。
 
-## 10. 如何验证
-
-在 `LiteIM/` 目录下运行：
+## 8. 验证命令
 
 ```bash
 cmake -S . -B build
 cmake --build build
-./build/server/liteim_server
 ctest --test-dir build --output-on-failure
 ```
 
-server 预期输出类似：
+## 9. 面试表达
 
-```text
-[2026-05-05 16:08:57.973] [info] LiteIM server scaffold is running on 0.0.0.0:9000
-```
+### 一句话
 
-CTest 预期：
+我没有一开始就写聊天业务，而是先抽出一个 base 模块，统一处理配置、日志、错误码、状态返回和时间戳。
 
-```text
-100% tests passed, 0 tests failed out of 15
-```
-
-测试通过说明：
-
-- `liteim_base` 可以被 server 和 tests 正常链接。
-- GoogleTest / CTest 链路继续有效。
-- 配置、日志、错误码、状态和时间戳的基础行为可验证。
-
-## 11. 面试时怎么讲
+### 展开说
 
 可以这样讲：
 
@@ -579,7 +576,15 @@ CTest 预期：
 - `spdlog` 是成熟日志库，当前先统一入口，异步日志不在 Step 2 过度实现。
 - 每个基础能力都有 GoogleTest 覆盖，后续重构更稳。
 
-## 12. 面试常见追问
+### 容易被追问
+
+- 为什么不直接用异常处理配置错误？
+- 为什么不直接使用 JSON / YAML / TOML？
+- 为什么 `Logger` 要封装 `spdlog`？
+- 为什么 `Timestamp` 用 UTC？
+- 当前 `Logger` 是异步的吗？
+
+## 10. 面试常见追问
 
 ### 为什么不直接用异常处理配置错误？
 

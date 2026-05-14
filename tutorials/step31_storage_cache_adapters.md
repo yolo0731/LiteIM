@@ -1,10 +1,20 @@
 # Step 31：MySqlStorage 和 RedisCache 聚合适配层
 
+## 0. 本 Step 结论
+
+- 目标：Step 31 的目标是把 Step 21 定义的 IStorage / ICache 抽象接口，连接到 Step 2330 已经实现好的 MySQL DAO 和 Redis cache 组件。
+- 前置依赖：依赖 Step 0-30 已建立的工程、协议或运行时基础。
+- 主要交付：`MySqlStorage 和 RedisCache 聚合适配层` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：不提前实现后续 Step 的业务能力
+
+## 1. 为什么需要这个 Step
+
 Step 31 的目标是把 Step 21 定义的 `IStorage` / `ICache` 抽象接口，连接到 Step 23-30 已经实现好的 MySQL DAO 和 Redis cache 组件。
 
 这一层不是新的数据库表，也不是新的业务 service。它的作用是做“统一入口”：Step 32 之后的 OnlineService、AuthService、ChatService、HistoryService 只依赖 `IStorage` / `ICache`，不需要知道底层有多少 DAO、Redis key 或连接池对象。
 
-## 1. 概念
+### 概念
 
 Step 21 只定义接口，Step 23-30 逐个实现具体能力：
 
@@ -25,39 +35,46 @@ Step 21 只定义接口，Step 23-30 逐个实现具体能力：
 - Redis 未读数不参与 MySQL 事务；业务层要在 MySQL commit 成功后再递增 Redis。
 - 这一 Step 不实现 `SessionManager`、`OnlineService`、AuthService、ChatService，也不把 MySQL / Redis 接入 Reactor I/O 线程。
 
-## 2. 本 Step 新增 / 修改文件
+## 2. 本 Step 边界
 
-新增：
+### 本 Step 做
 
-```text
-include/liteim/storage/MySqlStorage.hpp
-src/storage/MySqlStorage.cpp
-include/liteim/cache/RedisCache.hpp
-src/cache/RedisCache.cpp
-tests/storage/mysql_storage_integration_test.cpp
-tests/cache/redis_cache_integration_test.cpp
-tutorials/step31_storage_cache_adapters.md
-```
+- 聚焦 `MySqlStorage 和 RedisCache 聚合适配层` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
 
-同时更新：
+### 本 Step 不做
 
-```text
-include/liteim/storage/IStorage.hpp
-include/liteim/storage/StorageTypes.hpp
-include/liteim/storage/FriendDao.hpp
-src/storage/FriendDao.cpp
-include/liteim/storage/MySqlConnection.hpp
-src/storage/MySqlConnection.cpp
-src/storage/CMakeLists.txt
-src/cache/CMakeLists.txt
-tests/CMakeLists.txt
-README.md
-task_plan.md
-findings.md
-progress.md
-```
+- 不提前实现后续 Step 的业务能力
+- 不改变已经定义好的模块边界
+- 不把阻塞 I/O 放进 Reactor I/O 线程
 
-## 3. hpp 接口说明
+## 3. 文件变化
+
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `include/liteim/storage/MySqlStorage.hpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/storage/MySqlStorage.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `include/liteim/cache/RedisCache.hpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/cache/RedisCache.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/storage/mysql_storage_integration_test.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/cache/redis_cache_integration_test.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tutorials/step31_storage_cache_adapters.md` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `include/liteim/storage/IStorage.hpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `include/liteim/storage/StorageTypes.hpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `include/liteim/storage/FriendDao.hpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/storage/FriendDao.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `include/liteim/storage/MySqlConnection.hpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/storage/MySqlConnection.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/storage/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/cache/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `README.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `task_plan.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `findings.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `progress.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+
+## 4. 核心接口与契约
 
 ### MySqlStorage.hpp
 
@@ -162,7 +179,7 @@ private:
 
 `RedisCache` 本身不拼 Redis 命令，只负责把 `ICache` 接口转发到对应组件。
 
-## 4. 作用场景和运行流程
+## 5. 运行流程
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -293,7 +310,19 @@ cache.getOnlineSession(1002, session);
 
 读取 `online:user:1002`，再通过 Step 32 的 `SessionManager` 找到当前进程里的连接。
 
-## 测试设计
+## 6. 关键实现点
+
+- 保持模块职责单一。
+- 失败时返回清晰错误，不吞掉异常状态。
+- 不跨越本 Step 边界提前实现后续业务。
+
+## 7. 测试设计
+
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `MySqlStorage 和 RedisCache 聚合适配层` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 Step 31 的测试重点是证明真实适配层可以替代 fake 接口：
 
@@ -305,7 +334,7 @@ Step 31 的测试重点是证明真实适配层可以替代 fake 接口：
 
 这些测试依赖本地 Docker MySQL / Redis。如果服务不可用，当前集成测试按项目策略跳过或给出明确依赖提示，不影响纯单元测试。
 
-## 验证命令
+## 8. 验证命令
 
 ```bash
 cmake --build build
@@ -315,13 +344,28 @@ ctest --test-dir build --output-on-failure
 git diff --check
 ```
 
-## 面试时怎么讲
+## 9. 面试表达
+
+### 一句话
+
+Step 31 是存储和缓存层的收束。
+
+### 展开说
 
 可以这样说：
 
 > Step 31 是存储和缓存层的收束。Step 21 先定义 `IStorage` / `ICache`，Step 23-30 分别实现 MySQL DAO 和 Redis cache 组件，Step 31 再用 `MySqlStorage` / `RedisCache` 把具体组件聚合成统一接口。这样后续业务层只依赖接口，测试时可以注入 fake，真实运行时注入 MySQL / Redis 实现。`MySqlStorage::saveMessageWithOfflineRecipients()` 额外提供一个事务边界，保证消息行和离线投递行一起成功或一起回滚。
 
-## 面试常见追问
+### 容易被追问
+
+- 为什么不让 ChatService 直接用 MessageDao / OfflineMessageDao？
+- MySqlStorage 是不是 ORM？
+- 为什么 Redis 未读数不放进 MySQL 事务？
+- 如果 MySQL commit 成功，但 Redis 未读递增失败怎么办？
+- 为什么好友列表改成 UserProfileRecord？
+- RedisCache 里面为什么只是转发？
+
+## 10. 面试常见追问
 
 ### Q1：为什么不让 ChatService 直接用 MessageDao / OfflineMessageDao？
 

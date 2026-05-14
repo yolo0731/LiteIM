@@ -1,5 +1,15 @@
 # Step 18：实现 TimerManager + timerfd 心跳超时
 
+## 0. 本 Step 结论
+
+- 目标：本 Step 的目标是让服务端能主动清理长时间不活跃的连接。
+- 前置依赖：依赖 Step 0-17 已建立的工程、协议或运行时基础。
+- 主要交付：`实现 TimerManager + timerfd 心跳超时` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：不实现 协议层 `HeartbeatRequest` / `HeartbeatResponse`。
+
+## 1. 为什么需要这个 Step
+
 本 Step 的目标是让服务端能主动清理长时间不活跃的连接。
 
 到 Step 17 为止，LiteIM 已经有：
@@ -20,7 +30,7 @@ TcpServer
 
 答案是用 Linux `timerfd` 把定时事件也纳入 Reactor。
 
-## 1. 为什么用 timerfd
+### 为什么用 timerfd
 
 普通定时器回调通常会引入额外线程或信号处理，这会让连接生命周期变复杂。
 
@@ -40,41 +50,54 @@ timerfd readable
   -> run expired callbacks
 ```
 
-## 2. 本 Step 新增文件
+## 2. 本 Step 边界
 
-```text
-include/liteim/timer/TimerHeap.hpp
-include/liteim/timer/TimerManager.hpp
-src/timer/CMakeLists.txt
-src/timer/TimerHeap.cpp
-src/timer/TimerManager.cpp
-tests/timer/timer_heap_header_test.cpp
-tests/timer/timer_heap_test.cpp
-tests/timer/timer_manager_header_test.cpp
-tests/timer/timer_manager_test.cpp
-tutorials/step18_timer_manager.md
-```
+### 本 Step 做
 
-同时更新：
+- 聚焦 `实现 TimerManager + timerfd 心跳超时` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
 
-```text
-include/liteim/net/TcpServer.hpp
-src/net/TcpServer.cpp
-src/net/Session.cpp
-src/CMakeLists.txt
-tests/CMakeLists.txt
-tests/net/tcp_server_header_test.cpp
-tests/net/tcp_server_test.cpp
-README.md
-task_plan.md
-findings.md
-progress.md
-PROJECT_MEMORY.md
-```
+### 本 Step 不做
 
-`TimerManager` 依赖 `EventLoop` 和 `Channel`，所以当前源码放在 `src/timer/`，但通过 `src/timer/CMakeLists.txt` 编进 `liteim_net`。这样不会为了一个 timer target 和 net target 制造循环依赖。
+- 不实现 协议层 `HeartbeatRequest` / `HeartbeatResponse`。
+- 不实现 `HeartbeatService`。
+- 不实现 登录态续期。
+- 不实现 Redis 在线状态 TTL。
+- 不实现 Redis 未读计数。
+- 不实现 客户端重连。
+- 不实现 signalfd 优雅退出。
+- 不实现 MySQL / Redis 接入。
 
-## 3. TimerHeap.hpp 接口说明
+## 3. 文件变化
+
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `include/liteim/timer/TimerHeap.hpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `include/liteim/timer/TimerManager.hpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/timer/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/timer/TimerHeap.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/timer/TimerManager.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/timer/timer_heap_header_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/timer/timer_heap_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/timer/timer_manager_header_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/timer/timer_manager_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tutorials/step18_timer_manager.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `include/liteim/net/TcpServer.hpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/net/TcpServer.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/net/Session.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/net/tcp_server_header_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/net/tcp_server_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `README.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `task_plan.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `findings.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `progress.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `PROJECT_MEMORY.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/timer/` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+
+## 4. 核心接口与契约
 
 ### `TimerId`
 
@@ -167,93 +190,6 @@ std::int64_t nextExpirationMilliseconds();
 
 当前接口没有重复 timer，`add()` 创建的都是 one-shot timer：触发一次后从 `timers_` 删除，不会自动重排下一次。
 
-## TimerHeap 的作用场景和运行流程
-
-### 1. 在 LiteIM 里的具体使用场景
-
-`TimerHeap` 是 `TimerManager` 内部保存 one-shot 定时任务的数据结构。当前最真实场景是 heartbeat 超时检测：`TcpServer` 通过 `TimerManager::runAfter()` 续排一次性 callback，callback 扫描 idle sessions，关闭超时连接后再调用 `scheduleHeartbeatCheck()` 排下一轮。
-
-### 2. 上下层调用连接
-
-```text
-TcpServer
-    -> TimerManager
-    -> TimerHeap
-    -> callback(closeIdleSessions + scheduleHeartbeatCheck)
-    -> Session::close()
-```
-
-`TimerHeap` 的上游是 `TimerManager::runAfter()` / `cancel()` / `handleRead()`，下游只是 callback。它不关心 `Session`、`timerfd`、`EventLoop` 或 heartbeat 业务，业务全部在 callback 里。
-
-### 3. 整体运行链路
-
-1. `TcpServer::scheduleHeartbeatCheck()` 调用 `TimerManager::runAfter(interval, callback)`。
-2. `TimerManager` 把 delay 转成绝对 `expiration_ms`。
-3. [TimerHeap::add()](../src/timer/TimerHeap.cpp#L14) 生成递增 `TimerId`，同时写入 `heap_` 和 `timers_`。
-4. timerfd tick 到来后，`TimerManager::handleRead()` 调用 [popExpired(now_ms)](../src/timer/TimerHeap.cpp#L25)。
-5. `popExpired()` 先清理堆顶 stale entry，再按过期时间取出所有到期 timer。
-6. 每个到期 timer 从 `timers_` 删除后同步执行 callback。
-7. heartbeat callback 执行 `closeIdleSessions()`，随后再次 `scheduleHeartbeatCheck()`，形成 one-shot 续排。
-
-### 4. 自身内部运行流程
-
-整体可以看成 5 步：添加 timer、取消 timer、查询最近到期、弹出过期 timer、惰性删除 stale 堆顶。
-
-核心成员职责：
-
-- `heap_` 负责排序，快速找到最近过期 timer；它只保存 `{expiration_ms, timer_id}`。
-- `timers_` 负责判断 timer 是否仍有效，并保存真正要执行的 callback。
-- `next_timer_id_` 负责生成递增 id。
-- `Compare` 让 `std::priority_queue` 表现成小根堆，过期时间更早的节点排在前面。
-
-核心函数流程：
-
-- [add()](../src/timer/TimerHeap.cpp#L14)：分配 id，把 `{expiration_ms, callback}` 放入 `timers_`，把 `{expiration_ms, id}` 放入 `heap_`。
-- [cancel()](../src/timer/TimerHeap.cpp#L21)：只从 `timers_` 删除 id，不扫描 `heap_`。
-- [nextExpirationMilliseconds()](../src/timer/TimerHeap.cpp#L51)：先 `removeStaleTopEntries()`，再返回有效堆顶；没有有效 timer 返回 `-1`。
-- [popExpired(now_ms)](../src/timer/TimerHeap.cpp#L25)：循环清理 stale top，弹出所有 `expiration_ms <= now_ms` 的有效 timer，move callback 后执行。
-- [removeStaleTopEntries()](../src/timer/TimerHeap.cpp#L72)：如果堆顶 id 不在 `timers_`，或 map 中过期时间和堆节点不一致，就弹掉堆顶。
-
-`add(expiration_ms, callback)` 可以理解成两份索引同时登记：
-
-```text
-新的 one-shot timer
-    ↓
-分配递增 TimerId
-    ↓
-timers_ 保存 expiration_ms 和 callback
-    ↓
-heap_ 保存 expiration_ms 和 TimerId 用于排序
-    ↓
-TimerId 返回给上层用于 cancel()
-```
-
-`cancel(timer_id)` 只删除 `timers_` 里的有效记录，`heap_` 里旧节点先留下；后续 `removeStaleTopEntries()` 会在堆顶遇到它时惰性清理。
-
-`popExpired(now_ms)` 可以理解成：
-
-```text
-timerfd tick 后传入当前 steady now
-    ↓
-清理 stale 堆顶
-    ↓
-检查最近有效 timer 是否已经到期
-    ↓
-到期 timer 从 heap_ 和 timers_ 中移除
-    ↓
-取出 callback 并同步执行
-    ↓
-继续处理本轮已经到期的下一个 timer
-```
-
-这个结构让 `cancel()` 不需要扫描 `priority_queue` 中间节点，代价是堆顶可能暂时有 stale entry，但它会在下一次查询或弹出时被清掉。
-
-### 5. 该项目代码在实际应用中的具体数据例子
-
-TimerHeap 里可以同时有多个定时任务：`timer_id=1` 代表每 5 秒扫描 session 快照，`timer_id=2` 代表未来某个统计任务。若当前时间是 `1700000000000ms`，session 42 的 `last_active_time=1699999910000ms`，超过 90 秒 idle 阈值，扫描回调会关闭它；session 43 刚收到完整 Packet，则继续保留。
-
-## 4. TimerManager.hpp 接口说明
-
 ### 构造函数
 
 ```cpp
@@ -296,8 +232,6 @@ void stop() noexcept;
 
 停止 timerfd，移除 `Channel`，清空 pending timer。
 
-如果 `stop()` 正好在 timer 回调期间被调用，不会立即销毁正在执行的 `Channel` 对象，而是先移除 epoll 注册、关闭 fd，等当前回调栈自然返回后再由对象析构或后续 cleanup 释放资源。
-
 `TimerManager` 当前定位是 heartbeat tick timer：用固定 tick 驱动过期任务扫描。它不是完整 muduo `TimerQueue`；后续如果要做通用定时器，再用 `TimerHeap::nextExpirationMilliseconds()` 把 timerfd 动态 rearm 到最近过期点。
 
 ### `runAfter()`
@@ -336,7 +270,90 @@ private helper：
 - `handleRead()` 读 timerfd 计数，然后执行过期 timer。
 - `steadyNowMilliseconds()` 用 `steady_clock` 返回单调时间毫秒，避免系统时间调整影响 timer 到期判断。
 
-## TimerManager 的作用场景和运行流程
+## 5. 运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+`TimerHeap` 是 `TimerManager` 内部保存 one-shot 定时任务的数据结构。当前最真实场景是 heartbeat 超时检测：`TcpServer` 通过 `TimerManager::runAfter()` 续排一次性 callback，callback 扫描 idle sessions，关闭超时连接后再调用 `scheduleHeartbeatCheck()` 排下一轮。
+
+### 2. 上下层调用连接
+
+```text
+TcpServer
+    -> TimerManager
+    -> TimerHeap
+    -> callback(closeIdleSessions + scheduleHeartbeatCheck)
+    -> Session::close()
+```
+
+`TimerHeap` 的上游是 `TimerManager::runAfter()` / `cancel()` / `handleRead()`，下游只是 callback。它不关心 `Session`、`timerfd`、`EventLoop` 或 heartbeat 业务，业务全部在 callback 里。
+
+### 3. 整体运行链路
+
+1. `TcpServer::scheduleHeartbeatCheck()` 调用 `TimerManager::runAfter(interval, callback)`。
+2. `TimerManager` 把 delay 转成绝对 `expiration_ms`。
+3. [TimerHeap::add()](../src/timer/TimerHeap.cpp) 生成递增 `TimerId`，同时写入 `heap_` 和 `timers_`。
+4. timerfd tick 到来后，`TimerManager::handleRead()` 调用 [popExpired(now_ms)](../src/timer/TimerHeap.cpp)。
+5. `popExpired()` 先清理堆顶 stale entry，再按过期时间取出所有到期 timer。
+6. 每个到期 timer 从 `timers_` 删除后同步执行 callback。
+7. heartbeat callback 执行 `closeIdleSessions()`，随后再次 `scheduleHeartbeatCheck()`，形成 one-shot 续排。
+
+### 4. 自身内部运行流程
+
+整体可以看成 5 步：添加 timer、取消 timer、查询最近到期、弹出过期 timer、惰性删除 stale 堆顶。
+
+核心成员职责：
+
+- `heap_` 负责排序，快速找到最近过期 timer；它只保存 `{expiration_ms, timer_id}`。
+- `timers_` 负责判断 timer 是否仍有效，并保存真正要执行的 callback。
+- `next_timer_id_` 负责生成递增 id。
+- `Compare` 让 `std::priority_queue` 表现成小根堆，过期时间更早的节点排在前面。
+
+核心函数流程：
+
+- [add()](../src/timer/TimerHeap.cpp)：分配 id，把 `{expiration_ms, callback}` 放入 `timers_`，把 `{expiration_ms, id}` 放入 `heap_`。
+- [cancel()](../src/timer/TimerHeap.cpp)：只从 `timers_` 删除 id，不扫描 `heap_`。
+- [nextExpirationMilliseconds()](../src/timer/TimerHeap.cpp)：先 `removeStaleTopEntries()`，再返回有效堆顶；没有有效 timer 返回 `-1`。
+- [popExpired(now_ms)](../src/timer/TimerHeap.cpp)：循环清理 stale top，弹出所有 `expiration_ms <= now_ms` 的有效 timer，move callback 后执行。
+- [removeStaleTopEntries()](../src/timer/TimerHeap.cpp)：如果堆顶 id 不在 `timers_`，或 map 中过期时间和堆节点不一致，就弹掉堆顶。
+
+`add(expiration_ms, callback)` 可以理解成两份索引同时登记：
+
+```text
+新的 one-shot timer
+    ↓
+分配递增 TimerId
+    ↓
+timers_ 保存 expiration_ms 和 callback
+    ↓
+heap_ 保存 expiration_ms 和 TimerId 用于排序
+    ↓
+TimerId 返回给上层用于 cancel()
+```
+
+`cancel(timer_id)` 只删除 `timers_` 里的有效记录，`heap_` 里旧节点先留下；后续 `removeStaleTopEntries()` 会在堆顶遇到它时惰性清理。
+
+`popExpired(now_ms)` 可以理解成：
+
+```text
+timerfd tick 后传入当前 steady now
+    ↓
+清理 stale 堆顶
+    ↓
+检查最近有效 timer 是否已经到期
+    ↓
+到期 timer 从 heap_ 和 timers_ 中移除
+    ↓
+取出 callback 并同步执行
+    ↓
+继续处理本轮已经到期的下一个 timer
+```
+
+这个结构让 `cancel()` 不需要扫描 `priority_queue` 中间节点，代价是堆顶可能暂时有 stale entry，但它会在下一次查询或弹出时被清掉。
+
+### 5. 该项目代码在实际应用中的具体数据例子
+
+TimerHeap 里可以同时有多个定时任务：`timer_id=1` 代表每 5 秒扫描 session 快照，`timer_id=2` 代表未来某个统计任务。若当前时间是 `1700000000000ms`，session 42 的 `last_active_time=1699999910000ms`，超过 90 秒 idle 阈值，扫描回调会关闭它；session 43 刚收到完整 Packet，则继续保留。
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -361,15 +378,15 @@ TcpServer::startHeartbeatTimer()
 ### 3. 整体运行链路
 
 1. `TcpServer::startHeartbeatTimer()` 在 base loop 创建 `TimerManager`。
-2. [TimerManager::start()](../src/timer/TimerManager.cpp#L50) 检查必须在 owner loop 线程调用。
-3. [startInLoop()](../src/timer/TimerManager.cpp#L89) 创建 `timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC)`。
+2. [TimerManager::start()](../src/timer/TimerManager.cpp) 检查必须在 owner loop 线程调用。
+3. [startInLoop()](../src/timer/TimerManager.cpp) 创建 `timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC)`。
 4. `startInLoop()` 用 `timerfd_settime()` 设置固定 tick interval。
 5. `startInLoop()` 创建 timer Channel，设置 read callback 并启用读事件。
-6. `TcpServer` 调用 [runAfter()](../src/timer/TimerManager.cpp#L70) 把 heartbeat callback 放进 `TimerHeap`。
-7. timerfd 可读后，EventLoop 调用 [handleRead()](../src/timer/TimerManager.cpp#L149)。
+6. `TcpServer` 调用 [runAfter()](../src/timer/TimerManager.cpp) 把 heartbeat callback 放进 `TimerHeap`。
+7. timerfd 可读后，EventLoop 调用 [handleRead()](../src/timer/TimerManager.cpp)。
 8. `handleRead()` 读掉 timerfd expirations，然后调用 `timers_.popExpired(steadyNowMilliseconds())`。
 9. callback 扫描 idle sessions，关闭超时连接，并由 `TcpServer` 续排下一次检查。
-10. [stop()](../src/timer/TimerManager.cpp#L58) 在 owner loop 停止 timer、移除 Channel、关闭 fd、清空 timers。
+10. [stop()](../src/timer/TimerManager.cpp) 在 owner loop 停止 timer、移除 Channel、关闭 fd、清空 timers。
 
 ### 4. 自身内部运行流程
 
@@ -420,7 +437,9 @@ scheduleHeartbeatCheck() 再注册下一次检查
 
 `TimerManager` 通过 timerfd 驱动固定 tick。比如 base loop 每 5 秒收到一次 timerfd 读事件后，执行 `TimerHeap::popExpired(now)`，触发 heartbeat 扫描回调：读取 `session_id=42`、`last_active_time=1699999910000ms`，发现 idle 超时后调用 `Session::close()`；真正 fd 清理仍回到 session 所属 I/O loop。
 
-## 5. TcpServer 如何接入 heartbeat timeout
+## 6. 关键实现点
+
+### TcpServer 如何接入 heartbeat timeout
 
 当前选择把 `TimerManager` 注册在 base `EventLoop`，不是每个 I/O loop 各建一个 timer。
 
@@ -458,7 +477,7 @@ tcp_server.setHeartbeatOptions(20ms, 60ms);
 
 把等待时间缩短。
 
-## 6. Session 活跃时间
+### Session 活跃时间
 
 `Session` 已经维护：
 
@@ -476,22 +495,13 @@ std::int64_t lastActiveTimeMilliseconds() const noexcept;
 
 也就是说，只有协议层成功解出的客户端入站完整包会续期。单纯发一点半包字节不会一直保活连接，服务端主动 push / echo / 系统通知等出站写也不会刷新活跃时间。
 
-## 7. 本 Step 不做什么
+## 7. 测试设计
 
-本 Step 不实现：
-
-- 协议层 `HeartbeatRequest` / `HeartbeatResponse`。
-- `HeartbeatService`。
-- 登录态续期。
-- Redis 在线状态 TTL。
-- Redis 未读计数。
-- 客户端重连。
-- signalfd 优雅退出。
-- MySQL / Redis 接入。
-
-这些都属于后续 Step。
-
-## 8. 测试设计
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `实现 TimerManager + timerfd 心跳超时` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 新增测试文件：
 
@@ -538,8 +548,6 @@ TEST(TcpServerTest, ActiveSessionSurvivesHeartbeatTimeout)
 - 未到期 timer 不会被提前触发。
 - idle session 会被 `TcpServer` 的 heartbeat timeout 关闭。
 
-## 9. 如何运行测试
-
 定向测试：
 
 ```bash
@@ -555,9 +563,25 @@ timeout 1s ./build/server/liteim_server || test $? -eq 124
 ctest --test-dir build --output-on-failure
 ```
 
-本 Step 完成后，CTest 通过 164 个测试；后续 lifecycle hardening 补充 owner-only stop 和 `Session` 线程归属测试后，CTest 应通过 167 个测试。
+## 8. 验证命令
 
-## 10. 面试时怎么讲
+```bash
+ctest --test-dir build --output-on-failure -R "Timer|TcpServerTest\\.(IdleSessionIsClosedByHeartbeatTimeout|ActiveSessionSurvivesHeartbeatTimeout)|ReactorInterfaceTest.TcpServerHeaderIsSelfContained"
+cmake -S . -B build
+cmake --build build
+timeout 1s ./build/server/liteim_server || test $? -eq 124
+ctest --test-dir build --output-on-failure
+- 活跃连接持续发送完整入站 Packet 时不会被 idle timeout 关闭。
+- idle session 会被 `TcpServer` 的 heartbeat timeout 关闭。
+```
+
+## 9. 面试表达
+
+### 一句话
+
+我在 Reactor 里用 timerfd 统一处理定时事件。
+
+### 展开说
 
 可以这样讲：
 
@@ -575,7 +599,15 @@ ctest --test-dir build --output-on-failure
 - 关闭连接仍回到 Session 所属 loop。
 - `TimerHeap` 的取消用 lazy deletion。
 
-## 11. 面试常见追问
+### 容易被追问
+
+- 为什么不用普通线程 sleep？
+- 为什么不用每个 I/O loop 一个 timer？
+- lazy deletion 是什么？
+- 为什么 Session 只在完整入站 Packet 后刷新活跃时间？
+- timerfd 触发后为什么要 read？
+
+## 10. 面试常见追问
 
 ### 为什么不用普通线程 sleep？
 

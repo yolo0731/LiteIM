@@ -1,5 +1,15 @@
 # Step 8：实现 SocketUtil
 
+## 0. 本 Step 结论
+
+- 目标：本 Step 继续完善 liteim_net 网络模块，但还不进入 epoll、Reactor 或连接生命周期。
+- 前置依赖：依赖 Step 0-7 已建立的工程、协议或运行时基础。
+- 主要交付：`实现 SocketUtil` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：不实现 `bind()` / `listen()` / `accept()` 封装。
+
+## 1. 为什么需要这个 Step
+
 本 Step 继续完善 `liteim_net` 网络模块，但还不进入 `epoll`、Reactor 或连接生命周期。
 
 目标是把 Linux socket 常用系统调用收敛到 `SocketUtil`，让后续 `Acceptor`、`Session`、`TcpServer` 不需要到处手写 `socket()`、`fcntl()`、`setsockopt()` 和 `close()`。
@@ -10,7 +20,7 @@ Acceptor / Session
         -> Linux socket syscalls
 ```
 
-## 1. 为什么需要 SocketUtil
+### 为什么需要 SocketUtil
 
 Linux 网络服务端会反复做几类 fd 操作：
 
@@ -23,24 +33,67 @@ Linux 网络服务端会反复做几类 fd 操作：
 
 如果这些逻辑分散在 `Acceptor`、`Session`、`TcpServer` 里，后续错误处理会很乱：有的地方忘记设置非阻塞，有的地方直接 `exit()`，有的地方重复 `close()`。所以本 Step 先把这些底层动作集中起来。
 
-## 2. 本 Step 新增文件
+### createNonBlockingSocket 为什么直接带 SOCK_NONBLOCK
 
-```text
-include/liteim/net/SocketUtil.hpp
-src/net/SocketUtil.cpp
-tests/net/socket_util_test.cpp
+本项目的网络 I/O 线程不能被单个连接阻塞。后续 `accept` 得到的连接 fd、客户端连接 fd、监听 fd 都应该是非阻塞 fd。
+
+本 Step 的创建函数直接使用：
+
+```cpp
+::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0)
 ```
 
-同时更新：
+这样 fd 从创建出来的第一刻就是非阻塞，并且子进程执行新程序时不会继承这个 fd。
 
-```text
-src/net/CMakeLists.txt
-tests/CMakeLists.txt
+`setNonBlocking()` 仍然保留，是因为后续可能遇到已有 fd，例如 `accept()` 返回的 fd 或测试里手动创建的 fd，需要补充设置 `O_NONBLOCK`。
+
+### closeFd 为什么接收 int&
+
+`closeFd(int& fd)` 的关键不是只调用 `close(fd)`，而是关闭后把原变量改成：
+
+```cpp
+fd = kInvalidFd;
 ```
 
-`SocketUtil.cpp` 被加入现有 `liteim_net` target，后续网络层代码可以直接复用。
+这样同一个 fd 变量第二次传入 `closeFd()` 时，会直接按无效 fd 处理并返回成功，避免重复关闭同一个整数值。
 
-## SocketUtil.hpp 接口说明
+需要注意：
+
+- `closeFd()` 只能保护同一个变量不会重复关闭。
+- 如果调用方复制了 fd 整数值，另一个副本仍然可能造成误用。
+- 后续连接类会通过 RAII 和明确所有权进一步收紧这个边界。
+
+## 2. 本 Step 边界
+
+### 本 Step 做
+
+- 聚焦 `实现 SocketUtil` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
+
+### 本 Step 不做
+
+- 不实现 `bind()` / `listen()` / `accept()` 封装。
+- 不实现 `Epoller`
+- 不实现 `Channel`
+- 不实现 `EventLoop`
+- 不实现 `Acceptor`
+- 不实现 `Session`
+- 不实现 `TcpServer`
+- 不实现 慢客户端高水位回压
+
+## 3. 文件变化
+
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `include/liteim/net/SocketUtil.hpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/net/SocketUtil.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/net/socket_util_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/net/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `SocketUtil.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+
+## 4. 核心接口与契约
 
 `SocketUtil.hpp` 是 Linux socket 系统调用的薄封装。
 
@@ -78,7 +131,7 @@ socket options：
 - fd 的长期所有权后续交给 `UniqueFd`、`Acceptor`、`Session`。
 - `closeFd(int&)` 只能保护同一个变量，不能保护被复制出去的裸 fd。
 
-## SocketUtil 的作用场景和运行流程
+## 5. 运行流程
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -106,12 +159,12 @@ UniqueFd
 
 ### 3. 整体运行链路
 
-1. `Acceptor` 构造时调用 [createNonBlockingSocket()](../src/net/SocketUtil.cpp#L38) 得到 listen fd。
-2. `Acceptor` 调用 [setReuseAddr()](../src/net/SocketUtil.cpp#L69) 和 [setReusePort()](../src/net/SocketUtil.cpp#L73)。
+1. `Acceptor` 构造时调用 [createNonBlockingSocket()](../src/net/SocketUtil.cpp) 得到 listen fd。
+2. `Acceptor` 调用 [setReuseAddr()](../src/net/SocketUtil.cpp) 和 [setReusePort()](../src/net/SocketUtil.cpp)。
 3. `Acceptor` 自己完成 bind/listen 并把 fd 注册给 Channel。
-4. `accept4()` 返回 accepted fd 后，`Session` 构造里调用 [setNonBlocking()](../src/net/SocketUtil.cpp#L48) 做兜底。
-5. 资源释放时，`UniqueFd::reset()` 调用 [closeFd()](../src/net/SocketUtil.cpp#L91)。
-6. 如果后续实现非阻塞 connect，fd 可写后调用 [getSocketError()](../src/net/SocketUtil.cpp#L106) 判断连接是否真的成功。
+4. `accept4()` 返回 accepted fd 后，`Session` 构造里调用 [setNonBlocking()](../src/net/SocketUtil.cpp) 做兜底。
+5. 资源释放时，`UniqueFd::reset()` 调用 [closeFd()](../src/net/SocketUtil.cpp)。
+6. 如果后续实现非阻塞 connect，fd 可写后调用 [getSocketError()](../src/net/SocketUtil.cpp) 判断连接是否真的成功。
 
 ### 4. 自身内部运行流程
 
@@ -149,7 +202,9 @@ UniqueFd
 
 服务器监听 `0.0.0.0:9000` 时，`createNonBlockingSocket()` 创建 listen fd，`setReuseAddr()` 方便本地重启，`bindAndListen()` 进入监听状态。Alice 客户端连上后，后续 accepted fd 会保持非阻塞，交给 `Session` 管理；如果某次 `write()` 返回错误，`getSocketError(fd)` 可以把内核错误转成日志中的具体原因。
 
-## 3. SocketUtil 的公开接口
+## 6. 关键实现点
+
+### SocketUtil 的公开接口
 
 ```cpp
 inline constexpr int kInvalidFd = -1;
@@ -178,37 +233,7 @@ Status getSocketError(int fd, int& error_code);
 
 所有函数都返回 `Status`，不在工具函数里直接退出进程。
 
-## 4. createNonBlockingSocket 为什么直接带 SOCK_NONBLOCK
-
-本项目的网络 I/O 线程不能被单个连接阻塞。后续 `accept` 得到的连接 fd、客户端连接 fd、监听 fd 都应该是非阻塞 fd。
-
-本 Step 的创建函数直接使用：
-
-```cpp
-::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0)
-```
-
-这样 fd 从创建出来的第一刻就是非阻塞，并且子进程执行新程序时不会继承这个 fd。
-
-`setNonBlocking()` 仍然保留，是因为后续可能遇到已有 fd，例如 `accept()` 返回的 fd 或测试里手动创建的 fd，需要补充设置 `O_NONBLOCK`。
-
-## 5. closeFd 为什么接收 int&
-
-`closeFd(int& fd)` 的关键不是只调用 `close(fd)`，而是关闭后把原变量改成：
-
-```cpp
-fd = kInvalidFd;
-```
-
-这样同一个 fd 变量第二次传入 `closeFd()` 时，会直接按无效 fd 处理并返回成功，避免重复关闭同一个整数值。
-
-需要注意：
-
-- `closeFd()` 只能保护同一个变量不会重复关闭。
-- 如果调用方复制了 fd 整数值，另一个副本仍然可能造成误用。
-- 后续连接类会通过 RAII 和明确所有权进一步收紧这个边界。
-
-## 6. getSocketError 的用途
+### getSocketError 的用途
 
 `getSocketError()` 读取的是：
 
@@ -220,22 +245,13 @@ getsockopt(fd, SOL_SOCKET, SO_ERROR, ...)
 
 当前 Step 只提供这个薄封装，不实现客户端连接流程。
 
-## 7. 本 Step 不做什么
+## 7. 测试设计
 
-本 Step 不实现：
-
-- `bind()` / `listen()` / `accept()` 封装。
-- `Epoller`
-- `Channel`
-- `EventLoop`
-- `Acceptor`
-- `Session`
-- `TcpServer`
-- 慢客户端高水位回压
-
-这些属于后续 Step。当前只把 socket 常用工具函数准备好。
-
-## 8. 测试清单
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `实现 SocketUtil` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 新增测试文件：
 
@@ -263,18 +279,21 @@ TEST(SocketUtilTest, GetSocketErrorReturnsCurrentSoError)
 - `closeFd()` 会把 fd 变量改成 `kInvalidFd`，第二次关闭同一变量也安全。
 - `getSocketError()` 能读取新 socket 的 `SO_ERROR`，正常情况下是 `0`。
 
-## 9. 验证命令
+## 8. 验证命令
 
 ```bash
 cmake -S . -B build
 cmake --build build
-./build/server/liteim_server
 ctest --test-dir build --output-on-failure
 ```
 
-当前 Step 8 预期 CTest 通过 73 个测试，其中 6 个是新增的 `SocketUtilTest`。
+## 9. 面试表达
 
-## 10. 面试讲法
+### 一句话
+
+我把 Linux socket 常用操作封装成 SocketUtil，包括创建非阻塞 TCP socket、设置非阻塞、设置常见 socket option、读取 SO_ERROR 和关闭 fd。
+
+### 展开说
 
 可以这样讲：
 
@@ -286,20 +305,27 @@ ctest --test-dir build --output-on-failure
 - 非阻塞是网络线程的基本前提。
 - fd 关闭后的所有权问题不能只靠整数值解决，后续还要靠 RAII 和连接生命周期管理。
 
-## 11. 面试常见追问
+### 容易被追问
 
-**为什么不用 blocking socket？**
+- 为什么不用 blocking socket？
+- `SO_REUSEADDR` 和 `SO_REUSEPORT` 有什么区别？
+- 为什么 `closeFd()` 不能完全防止 fd 误用？
+- 为什么 `getSocketError()` 重要？
+
+## 10. 面试常见追问
+
+### 为什么不用 blocking socket？
 
 因为 I/O 线程要同时处理多个连接。如果某个 fd 的 `read()`、`write()` 或 `accept()` 阻塞，整个事件循环都会停住。
 
-**`SO_REUSEADDR` 和 `SO_REUSEPORT` 有什么区别？**
+### `SO_REUSEADDR` 和 `SO_REUSEPORT` 有什么区别？
 
 `SO_REUSEADDR` 主要解决地址快速复用问题，常见于服务重启后端口仍处于 `TIME_WAIT` 相关状态。`SO_REUSEPORT` 允许多个 socket 绑定同一地址端口，后续可以用于多进程或多监听扩展；当前 Step 只是提供工具函数。
 
-**为什么 `closeFd()` 不能完全防止 fd 误用？**
+### 为什么 `closeFd()` 不能完全防止 fd 误用？
 
 因为 fd 本质是一个整数。如果调用方复制了这个整数，关闭原变量只能把原变量置为 `-1`，不能自动修改所有副本。后续连接对象需要用 RAII 明确 fd 所有权。
 
-**为什么 `getSocketError()` 重要？**
+### 为什么 `getSocketError()` 重要？
 
 非阻塞连接和某些写事件里，事件到来并不等于操作一定成功。读取 `SO_ERROR` 可以拿到 socket 上真正的错误状态。

@@ -1,10 +1,18 @@
 # Step 35：FriendService 好友业务
 
+## 0. 本 Step 结论
+
+- 目标：Step 35 的目标是在注册登录之后补齐第一块 IM 关系业务：AddFriendRequest 和 ListFriendsRequest 经 MessageRouter 投递到业务线程池，由 FriendService 校验登录态、访问 MySQL 好友关系，并把 Redis 在线状态写进响应。
+- 前置依赖：依赖 Step 0-34 已建立的工程、协议或运行时基础。
+- 主要交付：`FriendService 好友业务` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：本 Step 不实现好友申请审批、黑名单、备注名、删除好友、私聊、群聊、离线消息、历史消息、HeartbeatService 或 BotGateway。
+
+## 1. 为什么需要这个 Step
+
 Step 35 的目标是在注册登录之后补齐第一块 IM 关系业务：`AddFriendRequest` 和 `ListFriendsRequest` 经 `MessageRouter` 投递到业务线程池，由 `FriendService` 校验登录态、访问 MySQL 好友关系，并把 Redis 在线状态写进响应。
 
-本 Step 不实现好友申请审批、黑名单、备注名、删除好友、私聊、群聊、离线消息、历史消息、HeartbeatService 或 BotGateway。
-
-## 1. 概念
+### 概念
 
 好友业务需要同时用到三类前置能力：
 
@@ -41,37 +49,40 @@ ListFriendsRequest
 - 好友在线状态使用 `TlvType::OnlineStatus`，`uint64` 值 `1` 表示在线，`0` 表示离线。
 - 第一版好友关系是直接双向添加，不做申请审批。
 
-## 2. 本 Step 新增 / 修改文件
+## 2. 本 Step 边界
 
-新增：
+### 本 Step 做
 
-```text
-include/liteim/service/FriendService.hpp
-src/service/FriendService.cpp
-tests/service/friend_service_test.cpp
-tutorials/step35_friend_service.md
-```
+- 聚焦 `FriendService 好友业务` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
 
-修改：
+### 本 Step 不做
 
-```text
-include/liteim/protocol/Tlv.hpp
-src/protocol/Tlv.cpp
-src/service/CMakeLists.txt
-server/main.cpp
-tests/CMakeLists.txt
-tests/protocol/tlv_type_test.cpp
-README.md
-tutorials/step03_protocol_types.md
-task_plan.md
-findings.md
-progress.md
-/home/yolo/jianli/PROJECT_MEMORY.md
-```
+- 不实现好友申请审批、黑名单、备注名、删除好友、私聊、群聊、离线消息、历史消息、HeartbeatService 或 BotGateway。
 
-本 Step 不修改 MySQL schema，也不新增 `MessageType`。好友消息类型 `AddFriendRequest`、`AddFriendResponse`、`ListFriendsRequest`、`ListFriendsResponse` 已在 Step 3 定义。
+## 3. 文件变化
 
-## 3. hpp 接口说明
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `include/liteim/service/FriendService.hpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/service/FriendService.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/service/friend_service_test.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tutorials/step35_friend_service.md` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `include/liteim/protocol/Tlv.hpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/protocol/Tlv.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/service/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `server/main.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/protocol/tlv_type_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `README.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tutorials/step03_protocol_types.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `task_plan.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `findings.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `progress.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `/home/yolo/jianli/PROJECT_MEMORY.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+
+## 4. 核心接口与契约
 
 ### FriendService
 
@@ -203,7 +214,7 @@ Status appendFriendFields(const UserProfileRecord& friend_profile, Packet& respo
 
 `OnlineStatus` 来自 `ICache::isUserOnline()`。如果 Redis/cache 返回错误，当前请求直接失败，避免把损坏缓存或 Redis 故障静默包装成“离线”。
 
-## 4. 作用场景和运行流程
+## 5. 运行流程
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -367,7 +378,19 @@ Nickname=Bob
 OnlineStatus=1
 ```
 
-## 5. 测试
+## 6. 关键实现点
+
+- 保持模块职责单一。
+- 失败时返回清晰错误，不吞掉异常状态。
+- 不跨越本 Step 边界提前实现后续业务。
+
+## 7. 测试设计
+
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `FriendService 好友业务` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 新增测试文件：
 
@@ -407,7 +430,33 @@ ctest --test-dir build -R "FriendService|TlvType" --output-on-failure
 docker compose -f docker/docker-compose.yml up -d --wait
 ```
 
-## 6. 面试常见追问
+## 8. 验证命令
+
+```bash
+cmake --build build --target liteim_tests -j2
+ctest --test-dir build -R "FriendService|TlvType" --output-on-failure
+docker compose -f docker/docker-compose.yml up -d --wait
+```
+
+## 9. 面试表达
+
+### 一句话
+
+本 Step 的核心是把 `FriendService 好友业务` 做成边界清楚、可测试、可继续扩展的一层。
+
+### 展开说
+
+围绕为什么需要 `FriendService 好友业务`、它依赖哪些前置 Step、它暴露什么接口、失败时怎么返回、线程和生命周期边界在哪里展开。
+
+### 容易被追问
+
+- 为什么 FriendService 不直接依赖 FriendDao？
+- 为什么当前用户不能从请求 body 里读 UserId？
+- 为什么重复添加好友返回 AlreadyExists，而 DAO 又是幂等的？
+- 为什么在线状态用 OnlineStatus TLV，而不是复用 SessionId？
+- 为什么 Redis 查询失败不直接当作离线？
+
+## 10. 面试常见追问
 
 ### Q1：为什么 FriendService 不直接依赖 FriendDao？
 

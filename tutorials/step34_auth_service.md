@@ -1,10 +1,18 @@
 # Step 34：AuthService 注册登录
 
+## 0. 本 Step 结论
+
+- 目标：Step 34 的目标是把注册和登录从“协议占位”推进到真实业务入口：RegisterRequest / LoginRequest 经 MessageRouter 投递到业务线程池，然后由 AuthService 访问 MySQL / Redis，并在登录成功后绑定在线 session。
+- 前置依赖：依赖 Step 0-33 已建立的工程、协议或运行时基础。
+- 主要交付：`AuthService 注册登录` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：本 Step 不实现好友、私聊、群聊、离线消息、历史消息、JWT、OAuth、短信或邮箱验证码。
+
+## 1. 为什么需要这个 Step
+
 Step 34 的目标是把注册和登录从“协议占位”推进到真实业务入口：`RegisterRequest` / `LoginRequest` 经 `MessageRouter` 投递到业务线程池，然后由 `AuthService` 访问 MySQL / Redis，并在登录成功后绑定在线 session。
 
-本 Step 不实现好友、私聊、群聊、离线消息、历史消息、JWT、OAuth、短信或邮箱验证码。
-
-## 1. 概念
+### 概念
 
 前面几步已经准备好了注册登录需要的基础能力：
 
@@ -44,32 +52,35 @@ LoginRequest
 - 密码哈希是课程项目基础实现，使用 OpenSSL `PBKDF2-HMAC-SHA256`，不是完整生产级认证体系。
 - 当前 `Session` 不暴露 peer IP，所以第一版 `LoginAttemptKey.remote_ip` 使用 `AuthServiceOptions::default_remote_ip`。后续如果网络层补 peer address，再把真实来源地址传入 AuthService。
 
-## 2. 本 Step 新增 / 修改文件
+## 2. 本 Step 边界
 
-新增：
+### 本 Step 做
 
-```text
-include/liteim/service/AuthService.hpp
-src/service/AuthService.cpp
-tests/service/auth_service_test.cpp
-tutorials/step34_auth_service.md
-```
+- 聚焦 `AuthService 注册登录` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
 
-修改：
+### 本 Step 不做
 
-```text
-src/service/CMakeLists.txt
-server/main.cpp
-tests/CMakeLists.txt
-README.md
-task_plan.md
-findings.md
-progress.md
-```
+- 不实现好友、私聊、群聊、离线消息、历史消息、JWT、OAuth、短信或邮箱验证码。
 
-本 Step 不修改 MySQL schema，也不新增 TLV 字段或消息类型。`users.password_hash` / `users.password_salt` 和 `Username` / `Password` / `Nickname` / `UserId` / `SessionId` TLV 都已经在前置 Step 中存在。
+## 3. 文件变化
 
-## 3. hpp 接口说明
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `include/liteim/service/AuthService.hpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/service/AuthService.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/service/auth_service_test.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tutorials/step34_auth_service.md` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/service/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `server/main.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `README.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `task_plan.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `findings.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `progress.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+
+## 4. 核心接口与契约
 
 ### AuthServiceOptions
 
@@ -164,7 +175,7 @@ Password
 
 登录失败不关闭连接。错误由 `MessageRouter` 统一转成 `ErrorResponse`。
 
-## 4. 作用场景和运行流程
+## 5. 运行流程
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -322,7 +333,19 @@ SessionId=7
 
 如果 Alice 连续输错密码达到阈值，后续登录会返回 `ErrorResponse`，但连接保持打开，客户端可以稍后重试。
 
-## 5. 测试
+## 6. 关键实现点
+
+- 保持模块职责单一。
+- 失败时返回清晰错误，不吞掉异常状态。
+- 不跨越本 Step 边界提前实现后续业务。
+
+## 7. 测试设计
+
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `AuthService 注册登录` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 新增测试文件：
 
@@ -357,7 +380,37 @@ docker compose -f docker/docker-compose.yml up -d --wait
 timeout 1s ./build/server/liteim_server || test $? -eq 124
 ```
 
-## 6. 面试常见追问
+## 8. 验证命令
+
+```bash
+cmake --build build --target liteim_tests -j2
+ctest --test-dir build -R "AuthService" --output-on-failure
+ctest --test-dir build -R "AuthService|MessageRouter|Service|Session|TcpServer" --output-on-failure
+ctest --test-dir build --output-on-failure
+git diff --check
+docker compose -f docker/docker-compose.yml up -d --wait
+timeout 1s ./build/server/liteim_server || test $? -eq 124
+```
+
+## 9. 面试表达
+
+### 一句话
+
+本 Step 的核心是把 `AuthService 注册登录` 做成边界清楚、可测试、可继续扩展的一层。
+
+### 展开说
+
+围绕为什么需要 `AuthService 注册登录`、它依赖哪些前置 Step、它暴露什么接口、失败时怎么返回、线程和生命周期边界在哪里展开。
+
+### 容易被追问
+
+- 为什么 AuthService 不直接依赖 MySqlStorage / RedisCache？
+- 为什么注册登录 handler 要走 business thread？
+- 为什么登录失败返回统一错误？
+- 为什么登录成功要绑定 SessionManager？
+- 为什么先不做 JWT / OAuth？
+
+## 10. 面试常见追问
 
 ### Q1：为什么 AuthService 不直接依赖 MySqlStorage / RedisCache？
 

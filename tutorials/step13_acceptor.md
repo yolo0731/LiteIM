@@ -1,8 +1,18 @@
-# Step 13: Acceptor
+# Step 13：Acceptor
+
+## 0. 本 Step 结论
+
+- 目标：本 Step 实现 Acceptor，也就是服务端的监听器。
+- 前置依赖：依赖 Step 0-12 已建立的工程、协议或运行时基础。
+- 主要交付：`Acceptor` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：不实现 `Session`
+
+## 1. 为什么需要这个 Step
 
 本 Step 实现 `Acceptor`，也就是服务端的监听器。
 
-## 概念
+### 概念
 
 `Acceptor` 只负责一件事：
 
@@ -14,39 +24,104 @@ listen socket 可读
 
 它不创建 `Session`，不解析协议，不处理登录，也不访问 MySQL / Redis。后续 `TcpServer` 会接收 `Acceptor` 交出的 fd，再决定把连接分配给哪个 I/O `EventLoop`。
 
-## 这一步新增了什么
+### 为什么 Step 13 需要 UniqueFd
 
-新增头文件：
-
-```text
-include/liteim/net/Acceptor.hpp
-include/liteim/net/UniqueFd.hpp
-```
-
-新增实现：
+fd 在 Linux 里只是一个整数。裸 `int fd` 本身看不出谁拥有它，也看不出谁应该关闭它。Step 13 开始真正产生网络 fd，所以必须把所有权边界说清楚：
 
 ```text
-src/net/Acceptor.cpp
-src/net/UniqueFd.cpp
+listen fd
+    -> Acceptor 长期拥有
+    -> Acceptor::close() / 析构时关闭
+
+accepted fd
+    -> accept4() 刚返回时由 Acceptor 临时拥有
+    -> 通过 NewConnectionCallback(UniqueFd, peer) 移动交给上层 TcpServer / Session
+    -> callback 抛异常或没有 callback 时由 UniqueFd 自动关闭
 ```
 
-新增测试：
+`UniqueFd` 的接口正好对应这几个动作：
+
+- 析构：关闭当前持有的 fd。
+- move 构造 / move 赋值：把 fd 所有权转给另一个 `UniqueFd`，避免两个对象同时关闭同一个 fd。
+- `release()`：少数必须交出裸 fd 的底层场景使用；调用后当前 `UniqueFd` 变成空 owner。
+- `reset()`：先关闭旧 fd，再接管新 fd。
+
+所以 `UniqueFd.cpp` 是 Step 13 的必要新增文件，不是额外业务功能。它是 `Acceptor` 的资源安全底座，专门解决异常路径和所有权转移问题。
+
+### 为什么 listen fd 要非阻塞
+
+因为服务端不能在 I/O 线程里被单个系统调用卡住。
+
+listen fd 可读只表示“现在至少可能有连接可以 accept”，不等于无限多连接都已经准备好了。所以处理 read callback 时要循环：
 
 ```text
-tests/net/acceptor_header_test.cpp
-tests/net/acceptor_test.cpp
-tests/net/unique_fd_test.cpp
+while true:
+    fd = accept4()
+    if fd >= 0:
+        callback(UniqueFd(fd), peer_address)
+        continue
+    if errno == EINTR:
+        continue
+    if errno == EAGAIN:
+        break
 ```
 
-这些文件的职责分工是：
+`EAGAIN` / `EWOULDBLOCK` 不是错误，它表示当前 pending connection 已经取完。
 
-- `Acceptor.hpp` / `Acceptor.cpp`：实现监听器。它创建 listen socket，注册 listen `Channel`，在 listen fd 可读时循环 `accept4()`，然后把新连接 fd 交给上层 callback。
-- `UniqueFd.hpp` / `UniqueFd.cpp`：实现轻量 RAII fd owner。它不代表 socket 业务语义，只表达“谁负责关闭这个 fd”。
-- `acceptor_header_test.cpp`：验证 `Acceptor.hpp` 可以独立包含，避免头文件依赖不完整。
-- `acceptor_test.cpp`：验证监听、连接接入、多连接 accept、关闭监听、owner-loop-only close 和 callback 异常路径。
-- `unique_fd_test.cpp`：验证 fd 析构关闭、`release()` 不关闭、move 转移所有权、`reset()` 关闭旧 fd。
+其他错误要区分处理：
 
-## Acceptor.hpp / UniqueFd.hpp 接口说明
+- `ECONNABORTED`：连接在 accept 前已经中止，记录日志后继续 accept 后续 pending connection。
+- `EMFILE` / `ENFILE`：进程或系统 fd 用尽，走 idle fd 保护。先关闭 idle fd，accept 一个连接并立即关闭，再重新打开 `/dev/null` 作为新的 idle fd。
+- 未知错误：记录 warn 日志并退出本轮 accept，避免静默吞掉真实系统调用问题。
+
+### 为什么使用 accept4
+
+`accept4()` 可以在接收连接的同时设置：
+
+```text
+SOCK_NONBLOCK
+SOCK_CLOEXEC
+```
+
+这样新连接 fd 从出生开始就是非阻塞且 close-on-exec 的，不需要先 accept 再 fcntl 补设置，减少短暂的状态窗口。
+
+## 2. 本 Step 边界
+
+### 本 Step 做
+
+- 聚焦 `Acceptor` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
+
+### 本 Step 不做
+
+- 不实现 `Session`
+- 不实现 `TcpServer`
+- 不实现 多 Reactor 线程池
+- 不实现 登录 / 聊天业务
+- 不实现 MySQL / Redis
+- 不实现 慢客户端回压
+
+## 3. 文件变化
+
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `include/liteim/net/Acceptor.hpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `include/liteim/net/UniqueFd.hpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/net/Acceptor.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/net/UniqueFd.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/net/acceptor_header_test.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/net/acceptor_test.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/net/unique_fd_test.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `Acceptor.hpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `Acceptor.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `UniqueFd.hpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `UniqueFd.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `acceptor_header_test.cpp` | 新增 | 验证 `Acceptor.hpp` 可以独立包含，避免头文件依赖不完整 |
+| `acceptor_test.cpp` | 新增 | 验证监听、连接接入、多连接 accept、关闭监听、owner-loop-only close 和 callback 异常路径 |
+| `unique_fd_test.cpp` | 新增 | 验证 fd 析构关闭、`release()` 不关闭、move 转移所有权、`reset()` 关闭旧 fd |
+
+## 4. 核心接口与契约
 
 `UniqueFd.hpp` 是 fd RAII owner：
 
@@ -86,7 +161,7 @@ tests/net/unique_fd_test.cpp
 - `handleAcceptError()` 区分 `ECONNABORTED`、`EMFILE`/`ENFILE` 和其他错误。
 - `rejectOneConnectionAfterFdExhaustion()` 使用 idle fd 技巧拒绝一个 pending connection。
 
-## Acceptor 的作用场景和运行流程
+## 5. 运行流程
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -111,13 +186,13 @@ TcpServer::start()
 ### 3. 整体运行链路
 
 1. `TcpServer::start()` 在 base loop 创建 `Acceptor`。
-2. [Acceptor 构造函数](../src/net/Acceptor.cpp#L74) 创建非阻塞 listen socket。
+2. [Acceptor 构造函数](../src/net/Acceptor.cpp) 创建非阻塞 listen socket。
 3. 构造函数设置 `SO_REUSEADDR` / `SO_REUSEPORT`，执行 bind/listen。
 4. 构造函数创建 `listen_channel_`，设置 read callback 并启用读事件。
-5. listen fd 可读后，EventLoop 调用 [handleRead()](../src/net/Acceptor.cpp#L172)。
+5. listen fd 可读后，EventLoop 调用 [handleRead()](../src/net/Acceptor.cpp)。
 6. `handleRead()` 循环 `accept4(SOCK_NONBLOCK | SOCK_CLOEXEC)` 到 `EAGAIN`。
 7. 每个 accepted fd 立即包进 `UniqueFd`，通过 callback move 给 `TcpServer`。
-8. [close()](../src/net/Acceptor.cpp#L129) 负责从 EventLoop 移除 Channel 并释放 listen / idle fd。
+8. [close()](../src/net/Acceptor.cpp) 负责从 EventLoop 移除 Channel 并释放 listen / idle fd。
 
 ### 4. 自身内部运行流程
 
@@ -134,12 +209,12 @@ TcpServer::start()
 
 核心函数流程：
 
-- [Acceptor::Acceptor()](../src/net/Acceptor.cpp#L74)：创建 socket、设置 option、bind/listen、注册 Channel。
-- [handleRead()](../src/net/Acceptor.cpp#L172)：accept 循环，成功就 move `UniqueFd` 给 callback。
-- [handleAcceptError()](../src/net/Acceptor.cpp#L201)：区分 `ECONNABORTED`、`EMFILE` / `ENFILE` 和其他错误。
-- [rejectOneConnectionAfterFdExhaustion()](../src/net/Acceptor.cpp#L216)：释放 idle fd，accept 一个连接再立即关闭，最后补回 idle fd。
-- [closeInLoop()](../src/net/Acceptor.cpp#L157)：移除 Channel、reset listen fd 和 idle fd。
-- [UniqueFd::reset()](../src/net/UniqueFd.cpp#L34)：关闭旧 fd，再接管新 fd。
+- [Acceptor::Acceptor()](../src/net/Acceptor.cpp)：创建 socket、设置 option、bind/listen、注册 Channel。
+- [handleRead()](../src/net/Acceptor.cpp)：accept 循环，成功就 move `UniqueFd` 给 callback。
+- [handleAcceptError()](../src/net/Acceptor.cpp)：区分 `ECONNABORTED`、`EMFILE` / `ENFILE` 和其他错误。
+- [rejectOneConnectionAfterFdExhaustion()](../src/net/Acceptor.cpp)：释放 idle fd，accept 一个连接再立即关闭，最后补回 idle fd。
+- [closeInLoop()](../src/net/Acceptor.cpp)：移除 Channel、reset listen fd 和 idle fd。
+- [UniqueFd::reset()](../src/net/UniqueFd.cpp)：关闭旧 fd，再接管新 fd。
 
 `handleRead()` 可以理解成“listen fd 可读后，一次性接干净当前积压连接”：
 
@@ -165,7 +240,9 @@ EAGAIN / EWOULDBLOCK 表示本轮积压连接接完
 
 base loop 正在监听 `0.0.0.0:9000`。Alice 客户端从 `127.0.0.1:52000` 连接进来时，`accept4()` 返回 fd=57，`Acceptor` 立刻用 `UniqueFd` 接住这个 fd，再把它移动给 `TcpServer`。后续 `TcpServer` 分配 `session_id=42`，把 fd 移交给 `Session`；整个过程不出现裸 fd 多次 `release()` 的所有权链。
 
-## Acceptor 的职责
+## 6. 关键实现点
+
+### Acceptor 的职责
 
 构造 `Acceptor` 时会完成：
 
@@ -182,74 +259,11 @@ enableReading()
 
 这里的 `enableReading()` 会通过 `Channel::update()` 注册到所属 `EventLoop`，所以 `Acceptor` 必须在它所属的 loop 线程里创建。
 
-本次 cleanup 后，`Acceptor::close()` 统一为 owner-loop-only：真正的 `removeChannel()` 和 listen fd 关闭只在所属 loop 线程执行，非 owner 线程直接调用会终止进程。这样不会在析构或停止路径里排入捕获裸 `this` 的清理任务，也不会让非 owner 线程碰 `Epoller` 内部状态。
-
 `UniqueFd` 是一个很小的 RAII 工具：对象析构时关闭自己持有的 fd，move 表示把所有权交给另一个 owner。`Acceptor` 用它保护 listen fd 和 accepted fd，尤其是 callback 抛异常时，accepted fd 不会泄漏。
 
 Step 13 hardening round 2 后，`Acceptor` 还会额外持有一个指向 `/dev/null` 的 idle fd。它平时什么也不做，只在进程 fd 用尽时临时释放一个 fd 槽位，用来 accept 并立即关闭一个 pending connection，让客户端明确感知连接被拒绝，同时避免 listen fd 在 LT 模式下因 `EMFILE` / `ENFILE` 反复唤醒导致 busy loop。
 
-## 为什么 Step 13 需要 UniqueFd
-
-fd 在 Linux 里只是一个整数。裸 `int fd` 本身看不出谁拥有它，也看不出谁应该关闭它。Step 13 开始真正产生网络 fd，所以必须把所有权边界说清楚：
-
-```text
-listen fd
-    -> Acceptor 长期拥有
-    -> Acceptor::close() / 析构时关闭
-
-accepted fd
-    -> accept4() 刚返回时由 Acceptor 临时拥有
-    -> 通过 NewConnectionCallback(UniqueFd, peer) 移动交给上层 TcpServer / Session
-    -> callback 抛异常或没有 callback 时由 UniqueFd 自动关闭
-```
-
-`UniqueFd` 的接口正好对应这几个动作：
-
-- 析构：关闭当前持有的 fd。
-- move 构造 / move 赋值：把 fd 所有权转给另一个 `UniqueFd`，避免两个对象同时关闭同一个 fd。
-- `release()`：少数必须交出裸 fd 的底层场景使用；调用后当前 `UniqueFd` 变成空 owner。
-- `reset()`：先关闭旧 fd，再接管新 fd。
-
-所以 `UniqueFd.cpp` 是 Step 13 的必要新增文件，不是额外业务功能。它是 `Acceptor` 的资源安全底座，专门解决异常路径和所有权转移问题。
-
-## 为什么 listen fd 要非阻塞
-
-因为服务端不能在 I/O 线程里被单个系统调用卡住。
-
-listen fd 可读只表示“现在至少可能有连接可以 accept”，不等于无限多连接都已经准备好了。所以处理 read callback 时要循环：
-
-```text
-while true:
-    fd = accept4()
-    if fd >= 0:
-        callback(UniqueFd(fd), peer_address)
-        continue
-    if errno == EINTR:
-        continue
-    if errno == EAGAIN:
-        break
-```
-
-`EAGAIN` / `EWOULDBLOCK` 不是错误，它表示当前 pending connection 已经取完。
-
-其他错误要区分处理：
-
-- `ECONNABORTED`：连接在 accept 前已经中止，记录日志后继续 accept 后续 pending connection。
-- `EMFILE` / `ENFILE`：进程或系统 fd 用尽，走 idle fd 保护。先关闭 idle fd，accept 一个连接并立即关闭，再重新打开 `/dev/null` 作为新的 idle fd。
-- 未知错误：记录 warn 日志并退出本轮 accept，避免静默吞掉真实系统调用问题。
-
-## 为什么使用 accept4
-
-`accept4()` 可以在接收连接的同时设置：
-
-```text
-SOCK_NONBLOCK
-SOCK_CLOEXEC
-```
-
-这样新连接 fd 从出生开始就是非阻塞且 close-on-exec 的，不需要先 accept 再 fcntl 补设置，减少短暂的状态窗口。
-
-## NewConnectionCallback
+### NewConnectionCallback
 
 `Acceptor` 的 callback 类型是：
 
@@ -268,43 +282,13 @@ sockaddr_in      对端地址
 
 如果设置了 callback，`Acceptor` 会把局部 `UniqueFd` move 给 callback。callback 抛异常时，`UniqueFd` 会在栈展开过程中自动关闭 accepted fd，避免“上层还没接管所有权就异常退出”造成泄漏。
 
-## close 的边界
+## 7. 测试设计
 
-`Acceptor::close()` 做两件事：
-
-```text
-从 EventLoop 移除 listen Channel
-关闭 listen fd
-```
-
-关闭后 `listenFd()` 返回 `kInvalidFd`，`listening()` 返回 false，新客户端不能再连接到这个监听 socket。
-
-`Acceptor::close()` 不再支持跨线程调用，也不再等待 `future` 或查询 `EventLoop::isStopped()`。如果调用方在非 owner 线程想停止监听，正确方式是在更高一层把动作投递回 base loop：
-
-```cpp
-base_loop->queueInLoop([&server]() {
-    server.stop();
-});
-```
-
-然后由 `TcpServer::stopInLoop()` 在 base loop 内关闭 `Acceptor`。这个约束和 `TcpServer` / `TimerManager` / `SignalWatcher` 的 owner-loop-only 生命周期保持一致。
-
-`EMFILE` / `ENFILE` 处理函数保留 `noexcept`，因为 fd 用尽路径不应再向外抛异常。但这些函数内部会写 warn 日志，所以日志调用被包在 no-throw wrapper 里：即使 `spdlog` sink 或格式化抛异常，也只丢弃这次日志，不让服务进程在异常资源状态下 `std::terminate()`。
-
-## 本 Step 不做什么
-
-本 Step 不实现：
-
-- `Session`
-- `TcpServer`
-- 多 Reactor 线程池
-- 登录 / 聊天业务
-- MySQL / Redis
-- 慢客户端回压
-
-这些会在后续 Step 继续补上。
-
-## 测试
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `Acceptor` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 新增测试覆盖：
 
@@ -332,7 +316,22 @@ ctest --test-dir build -R Acceptor --output-on-failure
 ctest --test-dir build --output-on-failure
 ```
 
-## 面试讲法
+## 8. 验证命令
+
+```bash
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build -R Acceptor --output-on-failure
+ctest --test-dir build --output-on-failure
+```
+
+## 9. 面试表达
+
+### 一句话
+
+Acceptor 是主 Reactor 上的监听器。
+
+### 展开说
 
 可以这样讲：
 
@@ -342,7 +341,12 @@ review hardening 后还可以补充：
 
 > listen fd、accepted fd 和 idle fd 都用 RAII 思路兜底。`Acceptor::close()` 必须在 owner/base loop 线程调用；跨线程停止由 `TcpServer` 或更上层先投递回 base loop，再同步关闭 listen Channel 和 fd。这个硬边界避免在 close/析构路径里捕获裸 `this` 排异步任务。fd 用尽时用 idle fd 套路拒绝一个 pending connection，避免 LT 模式下 `EMFILE` 触发 busy loop，且该异常路径中的日志不会从 `noexcept` helper 里继续抛出。`Channel::tie()` 则为下一步 `Session` 的 `shared_ptr` / `weak_ptr` 生命周期模型预留了基础。
 
-## 面试常见追问
+### 容易被追问
+
+- Acceptor 为什么不直接创建 Session？
+- 为什么 Acceptor::close() 必须 owner-loop-only？
+
+## 10. 面试常见追问
 
 ### Q1：Acceptor 为什么不直接创建 Session？
 

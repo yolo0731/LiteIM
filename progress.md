@@ -1,5 +1,78 @@
 # LiteIM Progress
 
+## 2026-05-14 Step 36 ChatService
+
+本次进入 `Step 36：ChatService 私聊业务`，目标是在 Step 33-35 的 service runtime 基础上补齐私聊发送闭环。
+
+Markdown 审计：
+
+- 检查 current-facing README、AGENTS、CLAUDE 和 tutorials，没有需要删除的当前错误文档。
+- 修复 `tutorials/step34_auth_service.md` 和 `tutorials/step35_friend_service.md` 的重复边界措辞。
+- 将 `task_plan.md` 中旧 `Current Decision` 过程块改名为 `Historical Route Snapshot`，避免后续 agent 把历史快照当成当前状态。
+- 清理 `task_plan.md` 旧 Step0 kept-files 列表中已经不存在的 `docs/architecture.md`、`docs/project_layout.md` 和 `tutorials/README.md`。
+
+TDD 过程：
+
+- RED：新增 `tests/service/chat_service_test.cpp` 并接入 `tests/CMakeLists.txt`，首次 `cmake --build build --target liteim_tests -j2` 按预期失败于缺少 `liteim/service/ChatService.hpp`。
+- GREEN：新增 `include/liteim/service/ChatService.hpp`、`src/service/ChatService.cpp`，更新 `src/service/CMakeLists.txt` 和 `server/main.cpp`，让 `PrivateMessageRequest` 通过 `MessageRouter` 进入 business `ThreadPool` handler。
+
+已完成代码：
+
+- `ChatService::registerHandlers()` 注册 `PrivateMessageRequest` 为 `BusinessThread` handler。
+- `handlePrivateMessage()` 从当前 session 查发送者，读取 `ReceiverId` / `MessageText`，校验接收方存在，生成私聊 conversation id，先落库，再在线 push 或离线未读 +1。
+- 在线接收方通过 `OnlineService::getSessionByUser()` 拿当前进程 `Session`，发送 `PrivateMessagePush`。
+- 离线接收方通过 `IStorage::saveMessageWithOfflineRecipients(message, {receiver_id}, saved)` 写离线记录，并通过 `ICache::incrUnread()` 增加未读数。
+- sender response 和 receiver push 都携带 `MessageId`、`ConversationType`、`ConversationId`、`SenderId`、`ReceiverId`、`MessageText`、`TimestampMs`。
+
+已完成文档同步：
+
+- 新增 `tutorials/step36_chat_service.md`。
+- 更新 README、`task_plan.md`、`findings.md`、本文件和 `/home/yolo/jianli/PROJECT_MEMORY.md`。
+- 没有更新 AGENTS/CLAUDE 的进度状态；它们仍只保留约束和读取顺序。
+
+最终验证：
+
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -R "ChatService" --output-on-failure`：6/6 通过。
+- `cmake --build build -j2`：通过。
+- `ctest --test-dir build --output-on-failure`：291/291 通过。
+- `git diff --check`：通过。
+- 教程模板扫描：`tutorials/step00` 到 `tutorials/step36` 都符合固定 0-10 模板，最后主章节是 `## 10. 面试常见追问`。
+- 旧教程章节、`Current Status`、旧面试章节名、行号锚点扫描：无输出。
+- 真实数据例子扫描：37/37 篇教程都有“该项目代码在实际应用中的具体数据例子”。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，server 启动 MySQL / Redis pool 后监听 `0.0.0.0:9000`，收到 SIGTERM 后通过 signalfd 退出。
+
+## 2026-05-14 Step Tutorial Markdown Compact Lecture Rewrite
+
+本次按既定计划做 Markdown-only 教程重构，范围是 `tutorials/step00_reset.md` 到 `tutorials/step35_friend_service.md`。
+
+执行边界：
+
+- 只重构 Markdown 教程结构和相关约束文字。
+- 不修改 C++、SQL、CMake、测试源码或协议行为。
+- 不创建 `tutorials/README.md`。
+- 不把本次进度、测试总数或 commit hash 写进 README。
+- 保留进入任务前已有的 C++ dirty diff；`step32_session_manager_online_service.md` 基于当前工作区内容重写。
+
+已完成：
+
+- 先试点 `step35_friend_service.md`、`step14_session.md`、`step20_backpressure.md`，确认固定 0-10 二级章节可用。
+- 将 `tutorials/step00_reset.md` 到 `tutorials/step35_friend_service.md` 全量重组到新模板。
+- 去掉教程里的精确 `#Lxx` 行号锚点，改为文件路径或函数名语境，避免后续行号漂移。
+- 更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 的长期教程模板规则。
+- 更新 `/home/yolo/jianli/AGENTS.md` 和 `/home/yolo/jianli/CLAUDE.md` 的教程约束文字，不写进度状态。
+- 更新 `task_plan.md` 和 `findings.md` 记录本次 Markdown-only 重构。
+
+验证结果：
+
+- 教程最后主章节扫描：36/36 篇最后一个主章节都是 `## 10. 面试常见追问`。
+- 旧提交章节 / Current Status 扫描：`tutorials/step*.md` 和 README 无命中。
+- 历史过程噪声扫描：`tutorials/step*.md` 无命中。
+- 真实数据例子扫描：36/36 篇都包含“该项目代码在实际应用中的具体数据例子”。
+- 标题模板扫描：36/36 篇二级章节与固定 0-10 模板一致。
+- 旧行号锚点和旧面试章节名扫描：`tutorials/step*.md` 和 README 无 `#Lxx`、`面试时怎么讲`、`面试讲法` 残留。
+- `git diff --check`：通过。
+
 ## 2026-05-14 Step 35 FriendService
 
 本次进入 `Step 35：FriendService 好友业务`，用户已确认采用协议方案一：新增 `TlvType::OnlineStatus`，好友列表和添加好友响应里用 `uint64` 的 `1/0` 表示在线/离线。

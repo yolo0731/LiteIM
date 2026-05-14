@@ -8,6 +8,58 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-14 Step 36 ChatService Findings
+
+本次进入 `Step 36：实现 ChatService 私聊`，只实现单进程私聊发送闭环，不推进群聊、离线消息拉取、历史查询、跨节点路由、可靠 ACK、好友策略校验或 BotGateway。
+
+已经确认并采用的设计：
+
+- `ChatService` 位于 `liteim_service`，依赖 `IStorage`、`ICache` 和 `OnlineService`，不直接依赖具体 DAO 或 Redis cache 组件。
+- `PrivateMessageRequest` body 只读取 `ReceiverId` 和 `MessageText`；发送者身份来自 `OnlineService::getUserBySession(session_id)`，不信任客户端传入的 `SenderId`。
+- handler 通过 `MessageRouter::DispatchMode::BusinessThread` 执行，MySQL / Redis 阻塞调用不进入 Reactor I/O 线程。
+- 私聊 `conversation_id` 由服务端根据发送方和接收方生成；seed 用户 `1001` / `1002` 保持示例值 `10011002`，更大用户 id 使用稳定 pair 规则。
+- 保存顺序固定为先 `IStorage::saveMessageWithOfflineRecipients()`，再根据接收方在线状态 push 或递增未读。
+- 在线投递只使用当前进程 `SessionManager` 绑定拿到的 `Session`；第一版不做 Redis 在线状态到跨节点路由的转换。
+- 接收方离线时，offline recipient 写 `{receiver_id}`，MySQL 保存成功后再调用 `ICache::incrUnread()`。
+- 成功 response 和 push 都写入 `MessageId`、`ConversationType`、`ConversationId`、`SenderId`、`ReceiverId`、`MessageText`、`TimestampMs`。
+
+本次不采用/不改：
+
+- 不实现群聊、离线消息拉取、历史查询、消息撤回、已读回执、可靠 ACK、跨节点转发、好友关系强制校验或 BotGateway。
+- 不新增协议类型或 TLV 字段，不修改 MySQL schema。
+- 不删除有价值的 process/debug Markdown 历史；只修正当前会误导后续 agent 的标题和明显重复措辞。
+
+## 2026-05-14 Markdown Audit Findings
+
+本次按用户要求检查当前 Markdown 文件：
+
+- 当前-facing README、AGENTS、CLAUDE 和 tutorials 没有旧 `Current Status` / `当前状态` / 教程提交章节 / `#Lxx` 行号锚点残留。
+- 教程 `step00` 到 `step36` 都符合固定 0-10 模板，最后主章节都是 `## 10. 面试常见追问`，且都保留真实数据例子小节。
+- 发现并修复 `step34_auth_service.md` 和 `step35_friend_service.md` 中的重复措辞：`不实现 本 Step 不实现...`。
+- `task_plan.md` 中旧 `Current Decision` 区块虽然属于过程历史，但标题容易误导，已改为 `Historical Route Snapshot`。
+- `task_plan.md` 中旧 Step0 kept-files 列表残留了已经删除的 `docs/architecture.md`、`docs/project_layout.md`、`tutorials/README.md`，已从该列表移除。
+- 没有删除 `docs/debug_cases/`、planning 历史或其他仍有查证价值的 Markdown 过程记录。
+
+## 2026-05-14 Step Tutorial Markdown Compact Lecture Rewrite Findings
+
+本次是 Markdown-only 教程重构，范围是 `tutorials/step00_reset.md` 到 `tutorials/step35_friend_service.md`，不修改 C++、SQL、CMake、测试源码或协议行为。
+
+确认并采用的新教程模板：
+
+- 每篇教程固定使用 0-10 个二级章节：`本 Step 结论`、`为什么需要这个 Step`、`本 Step 边界`、`文件变化`、`核心接口与契约`、`运行流程`、`关键实现点`、`测试设计`、`验证命令`、`面试表达`、`面试常见追问`。
+- `本 Step 边界` 提前到第 2 节，拆成“本 Step 做”和“本 Step 不做”，避免边界信息被放到文末。
+- `文件变化` 改为三列表格：`文件 | 变化 | 作用`。
+- `测试设计` 按“风险 -> 测试如何覆盖”组织，再保留必要测试名。
+- `面试表达` 固定为“一句话 / 展开说 / 容易被追问”。
+- `面试常见追问` 继续作为最后一个主章节，不新增教程提交信息章节。
+- 保留“该项目代码在实际应用中的具体数据例子”，继续使用 LiteIM 真实对象和值，例如 `user_id=1001`、`session_id=42`、`seq_id=7`、`message_id=5001`、`online:user:1002`。
+
+过程注意点：
+
+- 当前工作区进入任务前已有未提交 C++ 改动和 `tutorials/step32_session_manager_online_service.md` 改动；本次教程重构基于当前工作区内容处理 Step 32，未回滚这些用户侧改动。
+- 本次同步 `/home/yolo/jianli/PROJECT_MEMORY.md`、`AGENTS.md` 和 `CLAUDE.md` 只更新教程约束文字，不写完成状态或活动下一步。
+- 不创建 `tutorials/README.md`，不把本次进度写进 `README.md`。
+
 ## 2026-05-14 Step 35 FriendService Findings
 
 本次进入 `Step 35：实现 FriendService`，只实现好友添加和好友列表业务，不推进私聊、群聊、好友申请审批、黑名单、备注名、离线消息、历史消息、HeartbeatService 或 BotGateway。

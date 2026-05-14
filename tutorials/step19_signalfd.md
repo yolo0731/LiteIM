@@ -1,5 +1,15 @@
 # Step 19：实现 signalfd 优雅关闭
 
+## 0. 本 Step 结论
+
+- 目标：本 Step 的目标是让 liteim_server 收到 SIGINT 或 SIGTERM 时，不再依赖传统 signal handler 或默认杀进程行为，而是把信号转换成 Reactor 中的普通 fd 事件。
+- 前置依赖：依赖 Step 0-18 已建立的工程、协议或运行时基础。
+- 主要交付：`实现 signalfd 优雅关闭` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：不实现 业务 `ThreadPool` 的退出编排。
+
+## 1. 为什么需要这个 Step
+
 本 Step 的目标是让 `liteim_server` 收到 `SIGINT` 或 `SIGTERM` 时，不再依赖传统 signal handler 或默认杀进程行为，而是把信号转换成 Reactor 中的普通 fd 事件。
 
 到 Step 18.5 为止，LiteIM 已经能启动真实 echo server：
@@ -24,7 +34,7 @@ SIGINT / SIGTERM
 
 这样 `TcpServer` 仍然在 base loop 线程停止，符合 owner-loop 生命周期规则。
 
-## 1. 为什么用 signalfd
+### 为什么用 signalfd
 
 传统 signal handler 的限制很强，handler 里只能安全调用少量 async-signal-safe 函数。直接在 handler 里关闭 `TcpServer`、写日志、加锁、释放 `Channel` 或 join 线程都不安全。
 
@@ -44,43 +54,43 @@ epoll_wait()
   -> callback(SIGTERM)
 ```
 
-## 2. 本 Step 新增文件
+## 2. 本 Step 边界
 
-```text
-include/liteim/net/SignalWatcher.hpp
-src/net/SignalWatcher.cpp
-tests/net/signal_watcher_header_test.cpp
-tests/net/signal_watcher_test.cpp
-tests/server_signal_shutdown_test.sh
-tutorials/step19_signalfd.md
-```
+### 本 Step 做
 
-同时更新：
+- 聚焦 `实现 signalfd 优雅关闭` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
 
-```text
-src/net/CMakeLists.txt
-server/main.cpp
-tests/CMakeLists.txt
-README.md
-task_plan.md
-findings.md
-progress.md
-PROJECT_MEMORY.md
-```
+### 本 Step 不做
 
-## 3. SignalWatcher 的职责
+- 不实现 业务 `ThreadPool` 的退出编排。
+- 不实现 MySQL / Redis 连接池关闭。
+- 不实现 signalfd 以外的传统 signal handler。
+- 不实现 Session 输入路径简化。
+- 不实现 Session 状态机收敛。
+- 不实现 动态 rearm `TimerManager`。
 
-`SignalWatcher` 是一个 Reactor 内部对象，职责很窄：
+## 3. 文件变化
 
-- 保存需要监听的信号集合。
-- 在 owner loop 线程中阻塞这些信号。
-- 创建 `signalfd`。
-- 用 `Channel` 把 signal fd 注册到 `EventLoop`。
-- fd 可读时读取 `signalfd_siginfo`，并调用用户 callback。
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `include/liteim/net/SignalWatcher.hpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/net/SignalWatcher.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/net/signal_watcher_header_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/net/signal_watcher_test.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/server_signal_shutdown_test.sh` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tutorials/step19_signalfd.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/net/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `server/main.cpp` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `README.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `task_plan.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `findings.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `progress.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `PROJECT_MEMORY.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
 
-它不负责业务退出顺序。真正的退出动作由 `server/main.cpp` 中的 callback 决定。
-
-## 4. SignalWatcher.hpp 接口说明
+## 4. 核心接口与契约
 
 ### 构造函数
 
@@ -163,7 +173,7 @@ private helper：
 - `restoreSignalMask()` 恢复旧 mask。
 - `handleRead()` 循环读取 `signalfd_siginfo` 并执行 callback。
 
-## SignalWatcher 的作用场景和运行流程
+## 5. 运行流程
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -188,15 +198,15 @@ server/main.cpp
 ### 3. 整体运行链路
 
 1. `server/main.cpp` 在 base loop 中创建 `SignalWatcher`。
-2. [start()](../src/net/SignalWatcher.cpp#L49) 检查必须在 owner loop 线程调用。
-3. [startInLoop()](../src/net/SignalWatcher.cpp#L77) 校验 signal 列表和 callback。
-4. `startInLoop()` 调用 [rebuildSignalSet()](../src/net/SignalWatcher.cpp#L146) 构造 `sigset_t`。
-5. `startInLoop()` 调用 [blockSignals()](../src/net/SignalWatcher.cpp#L156) 阻塞这些信号并保存旧 mask。
+2. [start()](../src/net/SignalWatcher.cpp) 检查必须在 owner loop 线程调用。
+3. [startInLoop()](../src/net/SignalWatcher.cpp) 校验 signal 列表和 callback。
+4. `startInLoop()` 调用 [rebuildSignalSet()](../src/net/SignalWatcher.cpp) 构造 `sigset_t`。
+5. `startInLoop()` 调用 [blockSignals()](../src/net/SignalWatcher.cpp) 阻塞这些信号并保存旧 mask。
 6. `startInLoop()` 创建 signalfd，创建 Channel，注册读事件。
-7. SIGTERM 到来时，EventLoop 调用 [handleRead()](../src/net/SignalWatcher.cpp#L175)。
+7. SIGTERM 到来时，EventLoop 调用 [handleRead()](../src/net/SignalWatcher.cpp)。
 8. `handleRead()` 读出一个或多个 `signalfd_siginfo`，逐个调用 callback。
 9. callback 里先 `server.stop()`，再 `loop.quit()`。
-10. [stopInLoop()](../src/net/SignalWatcher.cpp#L123) 移除 Channel、关闭 fd、恢复旧 signal mask。
+10. [stopInLoop()](../src/net/SignalWatcher.cpp) 移除 Channel、关闭 fd、恢复旧 signal mask。
 
 ### 4. 自身内部运行流程
 
@@ -246,7 +256,21 @@ loop.quit()
 
 线上进程收到 `SIGTERM` 时，不在传统 signal handler 里直接析构 `TcpServer`。base loop 的 `SignalWatcher` 通过 signalfd 读到 `SIGTERM`，调用关闭回调：先在 base loop 内 `server.stop()`，再 `loop.quit()`。这样即使当前还有 `session_id=42` 或 timerfd 事件，清理路径也保持 owner-loop 顺序。
 
-## 5. server/main.cpp 如何退出
+## 6. 关键实现点
+
+### SignalWatcher 的职责
+
+`SignalWatcher` 是一个 Reactor 内部对象，职责很窄：
+
+- 保存需要监听的信号集合。
+- 在 owner loop 线程中阻塞这些信号。
+- 创建 `signalfd`。
+- 用 `Channel` 把 signal fd 注册到 `EventLoop`。
+- fd 可读时读取 `signalfd_siginfo`，并调用用户 callback。
+
+它不负责业务退出顺序。真正的退出动作由 `server/main.cpp` 中的 callback 决定。
+
+### server/main.cpp 如何退出
 
 `server/main.cpp` 现在是真正的 echo server 入口：
 
@@ -276,20 +300,13 @@ Config::defaults()
 1. callback 在 base loop 线程执行，所以 `server.stop()` 满足 Step 18.5 的 owner-loop-only 约束。
 2. `signal_watcher.start()` 在 `server.start()` 之前执行，所以后续创建的 I/O 线程会继承被阻塞的 `SIGINT` / `SIGTERM` mask，信号统一由 base loop 的 `signalfd` 读取。
 
-## 6. 本 Step 不做什么
-
-本 Step 不实现：
-
-- 业务 `ThreadPool` 的退出编排。
-- MySQL / Redis 连接池关闭。
-- signalfd 以外的传统 signal handler。
-- Session 输入路径简化。
-- Session 状态机收敛。
-- 动态 rearm `TimerManager`。
-
-这些属于后续独立 Step 或可选清理。
-
 ## 7. 测试设计
+
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `实现 signalfd 优雅关闭` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 新增测试：
 
@@ -323,7 +340,13 @@ ctest --test-dir build --output-on-failure
 git diff --check
 ```
 
-## 9. 面试时怎么讲
+## 9. 面试表达
+
+### 一句话
+
+我没有用传统 signal handler 直接释放资源，因为那里面不能安全地做日志、加锁、析构 Reactor 对象或 join 线程。
+
+### 展开说
 
 可以这样讲：
 
@@ -335,6 +358,13 @@ git diff --check
 - `TcpServer` 不从异步 signal handler 清理。
 - `TcpServer::stop()` 仍然只在 base loop 线程调用。
 - I/O 线程在 `SignalWatcher` 启动之后创建，会继承阻塞信号的 mask。
+
+### 容易被追问
+
+- 为什么不用 `std::signal()`？
+- 为什么 `SignalWatcher::stop()` 也要 owner-loop-only？
+- 为什么 `signal_watcher.start()` 要在 `server.start()` 之前？
+- 收到信号后为什么先 `server.stop()` 再 `loop.quit()`？
 
 ## 10. 面试常见追问
 

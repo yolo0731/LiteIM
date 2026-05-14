@@ -1,5 +1,15 @@
 # Step 30：UnreadCounter 和 LoginRateLimiter
 
+## 0. 本 Step 结论
+
+- 目标：Step 30 的目标是在 RedisPool 之上实现两个短期状态组件。
+- 前置依赖：依赖 Step 0-29 已建立的工程、协议或运行时基础。
+- 主要交付：`UnreadCounter 和 LoginRateLimiter` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：不提前实现后续 Step 的业务能力
+
+## 1. 为什么需要这个 Step
+
 Step 30 的目标是在 `RedisPool` 之上实现两个短期状态组件：
 
 - `UnreadCounter`：维护某个用户在某个会话上的未读消息数。
@@ -7,7 +17,7 @@ Step 30 的目标是在 `RedisPool` 之上实现两个短期状态组件：
 
 到 Step 29 为止，LiteIM 已经有 Redis client、Redis pool 和在线状态缓存。Step 30 继续把业务层常用 Redis key 收口到专门组件里，避免后续 AuthService / ChatService 直接拼 Redis 命令。
 
-## 1. 概念
+### 概念
 
 未读数和登录失败次数都属于 Redis 适合处理的短期状态。
 
@@ -27,31 +37,38 @@ Step 30 的目标是在 `RedisPool` 之上实现两个短期状态组件：
 
 Step 30 只实现 cache 组件本身，不把它接入登录流程或消息投递流程。真正的调用点会在后续 service Step 中完成。
 
-## 2. 本 Step 新增 / 修改文件
+## 2. 本 Step 边界
 
-新增：
+### 本 Step 做
 
-```text
-include/liteim/cache/UnreadCounter.hpp
-include/liteim/cache/LoginRateLimiter.hpp
-src/cache/UnreadCounter.cpp
-src/cache/LoginRateLimiter.cpp
-tests/cache/unread_login_cache_test.cpp
-tutorials/step30_unread_login_cache.md
-```
+- 聚焦 `UnreadCounter 和 LoginRateLimiter` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
 
-同时更新：
+### 本 Step 不做
 
-```text
-src/cache/CMakeLists.txt
-tests/CMakeLists.txt
-README.md
-task_plan.md
-findings.md
-progress.md
-```
+- 不提前实现后续 Step 的业务能力
+- 不改变已经定义好的模块边界
+- 不把阻塞 I/O 放进 Reactor I/O 线程
 
-## 3. UnreadCounter.hpp 接口说明
+## 3. 文件变化
+
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `include/liteim/cache/UnreadCounter.hpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `include/liteim/cache/LoginRateLimiter.hpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/cache/UnreadCounter.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/cache/LoginRateLimiter.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/cache/unread_login_cache_test.cpp` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `tutorials/step30_unread_login_cache.md` | 新增 | 承载本 Step 对应代码、测试或文档变化 |
+| `src/cache/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `tests/CMakeLists.txt` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `README.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `task_plan.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `findings.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+| `progress.md` | 修改 | 承载本 Step 对应代码、测试或文档变化 |
+
+## 4. 核心接口与契约
 
 ```cpp
 class UnreadCounter {
@@ -161,8 +178,6 @@ Status clearUnread(const UnreadKey& key);
 
 这个接口是幂等的。用户重复打开同一会话时重复清理未读数不应该报错。
 
-## 4. LoginRateLimiter.hpp 接口说明
-
 ```cpp
 class LoginRateLimiter {
 public:
@@ -258,7 +273,7 @@ Status clear(const LoginAttemptKey& key);
 
 key 不存在也返回 ok，保持幂等。
 
-## UnreadCounter / LoginRateLimiter 的作用场景和运行流程
+## 5. 运行流程
 
 ### 1. 在 LiteIM 里的具体使用场景
 
@@ -369,24 +384,19 @@ AuthService / ChatService
 
 Alice 给离线 Bob 发送 `conversation_id=10011002` 的私聊后，后续 ChatService 可以调用 `UnreadCounter::incrUnread({user_id=1002, conversation={1, 10011002}}, 1, unread)`，Redis key 是 `unread:user:1002:conversation:1:10011002`，返回 `unread=1`。登录限流则使用 `LoginAttemptKey{username=alice, remote_ip=127.0.0.1}`；连续失败 3 次后，`allow(key, 3, allowed)` 返回 `allowed=false`，登录成功再 `clear()`。
 
-## 后续实现 / 关键设计说明
+## 6. 关键实现点
 
-Step 30 不实现：
+- 保持模块职责单一。
+- 失败时返回清晰错误，不吞掉异常状态。
+- 不跨越本 Step 边界提前实现后续业务。
 
-- AuthService。
-- ChatService。
-- 消息投递时自动递增未读数。
-- 登录失败时自动记录 Redis。
-- 登录成功后自动清理失败计数。
-- 客户端会话列表未读展示。
-- Redis Cluster / Pub/Sub / Streams。
-- 分布式锁。
+## 7. 测试设计
 
-这些都属于后续业务 service、客户端和分布式扩展步骤。
-
-当前只固定 Redis key、失败语义和可测试的 cache API。
-
-## 测试设计
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `UnreadCounter 和 LoginRateLimiter` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
 新增 `tests/cache/unread_login_cache_test.cpp`。
 
@@ -405,7 +415,7 @@ Step 30 不实现：
 
 集成测试使用 `Config::defaults().redis`，也就是本地 Docker Redis `127.0.0.1:63790`。如果 Redis 不可用，测试会 skip。
 
-## 验证命令
+## 8. 验证命令
 
 ```bash
 cmake --build build
@@ -415,7 +425,13 @@ ctest --test-dir build --output-on-failure
 git diff --check
 ```
 
-## 面试时怎么讲
+## 9. 面试表达
+
+### 一句话
+
+Step 30 在 RedisPool 上实现了两个业务 cache 组件：UnreadCounter 和 LoginRateLimiter。
+
+### 展开说
 
 可以这样讲：
 
@@ -429,7 +445,12 @@ git diff --check
 - 阻塞 Redis API 不进入 I/O 线程。
 - TTL 负责登录失败窗口自动恢复。
 
-## 面试常见追问
+### 容易被追问
+
+- 未读计数为什么放 Redis？
+- 登录限流为什么按 username + remote_ip 组合？
+
+## 10. 面试常见追问
 
 ### Q1：未读计数为什么放 Redis？
 

@@ -7,6 +7,7 @@
 #include "liteim/net/SignalWatcher.hpp"
 #include "liteim/net/TcpServer.hpp"
 #include "liteim/service/AuthService.hpp"
+#include "liteim/service/ChatService.hpp"
 #include "liteim/service/FriendService.hpp"
 #include "liteim/service/MessageRouter.hpp"
 #include "liteim/service/OnlineService.hpp"
@@ -58,6 +59,7 @@ int main() {
     liteim::MessageRouter router(business_pool);
     liteim::AuthService auth_service(storage, cache, online_service);
     liteim::FriendService friend_service(storage, cache, online_service);
+    liteim::ChatService chat_service(storage, cache, online_service);
     const auto auth_status = auth_service.registerHandlers(router);
     if (!auth_status.isOk()) {
         liteim::Logger::get()->error("Failed to register auth handlers: {}", auth_status.message());
@@ -70,6 +72,14 @@ int main() {
     if (!friend_status.isOk()) {
         liteim::Logger::get()->error("Failed to register friend handlers: {}",
                                      friend_status.message());
+        redis_pool.close();
+        mysql_pool.close();
+        signal_watcher.stop();
+        return 1;
+    }
+    const auto chat_status = chat_service.registerHandlers(router);
+    if (!chat_status.isOk()) {
+        liteim::Logger::get()->error("Failed to register chat handlers: {}", chat_status.message());
         redis_pool.close();
         mysql_pool.close();
         signal_watcher.stop();

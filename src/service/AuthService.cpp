@@ -3,6 +3,7 @@
 #include "liteim/base/ErrorCode.hpp"
 #include "liteim/protocol/TlvCodec.hpp"
 
+// 链接openssl库,用于注册 / 登录里的密码盐和密码哈希
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 
@@ -15,9 +16,9 @@
 namespace liteim {
 namespace {
 
-constexpr std::size_t kPasswordSaltBytes = 16;
-constexpr std::size_t kPasswordHashBytes = 32;
-constexpr int kPbkdf2Iterations = 10000;
+constexpr std::size_t kPasswordSaltBytes = 16;  // 16 字节盐
+constexpr std::size_t kPasswordHashBytes = 32;  // 32 字节哈希
+constexpr int kPbkdf2Iterations = 10000;        // PBKDF2 迭代次数
 
 Status invalidCredentialsStatus() {
     return Status::error(ErrorCode::InvalidArgument, "invalid username or password");
@@ -28,9 +29,11 @@ Status loginLimitedStatus() {
 }
 
 Status emptyFieldStatus(const char* field_name) {
-    return Status::error(ErrorCode::InvalidArgument, std::string(field_name) + " must not be empty");
+    return Status::error(ErrorCode::InvalidArgument,
+                         std::string(field_name) + " must not be empty");
 }
 
+// 二进制转十六进制字符串,openssl生成的盐和哈希都是二进制的，这里转成十六进制字符串存储
 std::string toHex(const unsigned char* data, std::size_t len) {
     static constexpr char kHex[] = "0123456789abcdef";
     std::string output;
@@ -42,6 +45,7 @@ std::string toHex(const unsigned char* data, std::size_t len) {
     return output;
 }
 
+// 生成随机 salt
 Status generateSalt(std::string& salt) {
     std::array<unsigned char, kPasswordSaltBytes> bytes{};
     if (RAND_bytes(bytes.data(), static_cast<int>(bytes.size())) != 1) {
@@ -51,20 +55,23 @@ Status generateSalt(std::string& salt) {
     return Status::ok();
 }
 
+// 哈希密码，使用 PBKDF2-HMAC-SHA256 算法，输入密码和盐，输出哈希值
 Status hashPassword(const std::string& password, const std::string& salt,
                     std::string& password_hash) {
     std::array<unsigned char, kPasswordHashBytes> bytes{};
-    const auto rc = PKCS5_PBKDF2_HMAC(
-        password.data(), static_cast<int>(password.size()),
-        reinterpret_cast<const unsigned char*>(salt.data()), static_cast<int>(salt.size()),
-        kPbkdf2Iterations, EVP_sha256(), static_cast<int>(bytes.size()), bytes.data());
+    const auto rc = PKCS5_PBKDF2_HMAC(password.data(), static_cast<int>(password.size()),
+                                      reinterpret_cast<const unsigned char*>(salt.data()),
+                                      static_cast<int>(salt.size()), kPbkdf2Iterations,
+                                      EVP_sha256(), static_cast<int>(bytes.size()), bytes.data());
     if (rc != 1) {
         return Status::error(ErrorCode::InternalError, "failed to hash password");
     }
+    // 把二进制哈希转成十六进制字符串存储
     password_hash = toHex(bytes.data(), bytes.size());
     return Status::ok();
 }
 
+// 安全比较哈希
 bool secureEquals(const std::string& lhs, const std::string& rhs) {
     if (lhs.size() != rhs.size()) {
         return false;
@@ -72,11 +79,12 @@ bool secureEquals(const std::string& lhs, const std::string& rhs) {
 
     unsigned char diff = 0;
     for (std::size_t i = 0; i < lhs.size(); ++i) {
-        diff |= static_cast<unsigned char>(lhs[i] ^ rhs[i]);
+        diff |= static_cast<unsigned char>(lhs[i] ^ rhs[i]);  // 两个字符做异或
     }
     return diff == 0;
 }
 
+// 从 TLV 里取必填字符串,TlvMap& fields表示已经解析好的 TLV 字段，TlvType type 表示要取哪个字段，field_name 用于错误信息，output 用于输出结果
 Status requiredString(const TlvMap& fields, TlvType type, const char* field_name,
                       std::string& output) {
     const auto status = getString(fields, type, output);
@@ -89,6 +97,7 @@ Status requiredString(const TlvMap& fields, TlvType type, const char* field_name
     return Status::ok();
 }
 
+// 取可选昵称，如果没有提供昵称，就用用户名当昵称
 Status optionalNickname(const TlvMap& fields, const std::string& username, std::string& nickname) {
     const auto it = fields.find(TlvType::Nickname);
     if (it == fields.end() || it->second.empty()) {
@@ -106,6 +115,7 @@ Status optionalNickname(const TlvMap& fields, const std::string& username, std::
     return Status::ok();
 }
 
+// 组装response的Packet body
 Status appendUserFields(const UserRecord& user, Packet& response) {
     const auto id_status = appendUint64(TlvType::UserId, user.user_id, response.body);
     if (!id_status.isOk()) {
