@@ -8,6 +8,28 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-14 Step 35 FriendService Findings
+
+本次进入 `Step 35：实现 FriendService`，只实现好友添加和好友列表业务，不推进私聊、群聊、好友申请审批、黑名单、备注名、离线消息、历史消息、HeartbeatService 或 BotGateway。
+
+已经确认并采用的设计：
+
+- 用户已选择协议方案一：新增 `TlvType::OnlineStatus`，用 `uint64` 表示好友在线状态，`1` 为在线，`0` 为离线。
+- `FriendService` 位于 `liteim_service`，依赖 `IStorage`、`ICache` 和 `OnlineService`，不直接依赖具体 DAO 或 Redis cache 组件。
+- `AddFriendRequest` 使用 `TargetUserId` 表达要添加的用户；`AddFriendResponse` 返回好友公开资料和在线状态。
+- `ListFriendsRequest` 不需要额外 body；当前登录用户来自 `OnlineService::getUserBySession()`。
+- `ListFriendsResponse` 对每个好友重复写入 `FriendId`、`Username`、`Nickname` 和 `OnlineStatus`，按字段出现顺序一一对应。
+- 添加好友前先确认当前 session 已登录，再确认目标用户存在，再通过 `IStorage::getFriends()` 检查重复好友，重复时返回 `AlreadyExists`。
+- 在线状态通过 `ICache::isUserOnline(friend_id, online)` 查询；Redis/cache 错误不被静默吞掉。
+- 所有 MySQL / Redis 调用都通过 `MessageRouter` 的 `BusinessThread` handler 执行，不进入 Reactor I/O 线程。
+
+本次不采用/不改：
+
+- 不做好友申请审批、黑名单、备注名、删除好友或搜索用户。
+- 不实现私聊、群聊、离线消息、历史消息、HeartbeatService 或 BotGateway。
+- 不把 MySQL / Redis 阻塞调用放进 Reactor I/O 线程。
+- 不修改 MySQL schema。
+
 ## 2026-05-14 Step 34 AuthService Findings
 
 本次进入 `Step 34：实现 AuthService 注册登录`，只实现注册/登录业务闭环，不推进 FriendService、ChatService、离线消息、历史消息、HeartbeatService、BotGateway 或客户端。

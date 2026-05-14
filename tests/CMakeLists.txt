@@ -43,6 +43,7 @@ add_executable(liteim_tests
     service/online_service_test.cpp
     service/message_router_test.cpp
     service/auth_service_test.cpp
+    service/friend_service_test.cpp
     timer/timer_heap_header_test.cpp
     timer/timer_heap_test.cpp
     timer/timer_manager_header_test.cpp

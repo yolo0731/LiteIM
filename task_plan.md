@@ -31,6 +31,7 @@ The workspace documentation roles are now separated:
 
 | Phase | Status | Notes |
 | --- | --- | --- |
+| Step 35 FriendService | done | Added `FriendService` with RED/GREEN tests, `TlvType::OnlineStatus`, business-thread handlers for `AddFriendRequest` / `ListFriendsRequest`, MySQL-backed friendship writes, duplicate-friend `AlreadyExists`, Redis-backed online-state response fields, server runtime registration, README/tutorial/planning docs, full build, full CTest 285/285, diff check, and server smoke. No friend approval, blacklist, remark name, private chat, group chat, offline messages, history, heartbeat service, or BotGateway. |
 | Step 34 AuthService register and login | done | Added `AuthService` with RED/GREEN tests, PBKDF2-HMAC-SHA256 password hashing, register/login handlers over `IStorage` / `ICache` / `OnlineService`, and server runtime wiring for MySQL / Redis / AuthService. Register/login run in the business thread pool through `MessageRouter`; successful login clears failure counts, writes Redis online state, and binds `SessionManager`. Full build, full CTest 279/279, diff check, and server smoke passed. |
 | Step 33 MessageRouter async dispatch framework | done | Added `MessageRouter` with RED/GREEN tests and runtime wiring. It parses request TLVs, dispatches handlers inline or through the business `ThreadPool`, returns `ErrorResponse` for invalid/unhandled paths, preserves request `seq_id`, and is wired from `server/main.cpp` through `TcpServer::setMessageCallback()`. `server/main.cpp` starts `SignalWatcher` before the business pool so worker threads inherit the blocked SIGINT/SIGTERM mask. Full build, full CTest 272/272, server smoke, and diff check passed. |
 | Step 32 SessionManager and OnlineService | done | Added `liteim_service` with `SessionManager` and `OnlineService`, using a kick-old-keep-new repeated-login policy. Memory binding uses `user_id -> weak_ptr<Session>` and `session_id -> user_id`; OnlineService writes/refreshes/clears Redis-backed online state through `ICache` while stale old-session unbinds do not delete the new Redis online key. No AuthService, MessageRouter, ChatService, or TcpServer runtime protocol wiring introduced. |
@@ -229,7 +230,8 @@ Current route status:
 - Step 32 `SessionManager and OnlineService` is complete.
 - Step 33 `MessageRouter async dispatch framework` is complete.
 - Step 34 `AuthService register and login` is complete.
-- Default next implementation step is Step 35 `FriendService`.
+- Step 35 `FriendService` is complete.
+- Default next implementation step is Step 36 `ChatService private chat`.
 
 LiteIM phases:
 

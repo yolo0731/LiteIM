@@ -20,6 +20,8 @@ const char* toString(TlvType type) noexcept {
         return "FRIEND_ID";
     case TlvType::TargetUserId:
         return "TARGET_USER_ID";
+    case TlvType::OnlineStatus:
+        return "ONLINE_STATUS";
     case TlvType::GroupId:
         return "GROUP_ID";
     case TlvType::GroupName:

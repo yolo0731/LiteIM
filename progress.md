@@ -1,5 +1,52 @@
 # LiteIM Progress
 
+## 2026-05-14 Step 35 FriendService
+
+本次进入 `Step 35：FriendService 好友业务`，用户已确认采用协议方案一：新增 `TlvType::OnlineStatus`，好友列表和添加好友响应里用 `uint64` 的 `1/0` 表示在线/离线。
+
+目标边界：
+
+- 实现 `AddFriendRequest` / `ListFriendsRequest` handler。
+- 当前用户身份来自 `OnlineService::getUserBySession()`，未登录请求返回错误。
+- 添加好友写 `IStorage::addFriendship()`，重复好友返回 `AlreadyExists`。
+- 好友列表来自 `IStorage::getFriends()`，在线状态来自 `ICache::isUserOnline()`。
+- handler 通过 `MessageRouter` 注册为 `BusinessThread`，避免在 Reactor I/O 线程执行 MySQL / Redis 阻塞调用。
+- 不实现好友申请审批、黑名单、备注名、私聊、群聊、离线消息、历史消息、HeartbeatService 或 BotGateway。
+
+TDD 过程：
+
+- RED：新增 `tests/service/friend_service_test.cpp` 并接入 `tests/CMakeLists.txt`，更新 `tests/protocol/tlv_type_test.cpp` 期望 `TlvType::OnlineStatus`；首次 `cmake --build build --target liteim_tests -j2` 按预期失败于缺少 `liteim/service/FriendService.hpp`。
+- GREEN：新增 `TlvType::OnlineStatus`、`FriendService` header/source、server runtime 注册，并把 `FriendService.cpp` 接入 `liteim_service`。
+
+当前验证：
+
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -R "FriendService|TlvType" --output-on-failure`：8/8 通过。
+
+已完成代码：
+
+- 新增 `include/liteim/service/FriendService.hpp` 和 `src/service/FriendService.cpp`。
+- 新增 `TlvType::OnlineStatus`，字符串名为 `ONLINE_STATUS`，好友在线状态用 `uint64` 的 `1/0` 表达。
+- `FriendService::registerHandlers()` 将 `AddFriendRequest` / `ListFriendsRequest` 注册为 `BusinessThread` handler。
+- `handleAddFriend()` 从当前 session 查登录用户，读取 `TargetUserId`，校验目标用户存在，重复好友返回 `AlreadyExists`，成功后写 MySQL 好友关系并返回好友公开资料和在线状态。
+- `handleListFriends()` 查询当前用户好友列表，并为每个好友追加 `FriendId` / `Username` / `Nickname` / `OnlineStatus`。
+- `server/main.cpp` 注入 `FriendService` 并注册好友 handler。
+
+已完成文档同步：
+
+- 更新 README、`tutorials/step03_protocol_types.md`、新增 `tutorials/step35_friend_service.md`。
+- 更新 `task_plan.md`、`findings.md`、本文件和 `/home/yolo/jianli/PROJECT_MEMORY.md`。
+
+最终验证：
+
+- `cmake --build build -j2`：通过。
+- `ctest --test-dir build -R "FriendService|AuthService|MessageRouter|Service|Session|TcpServer|TlvType|LiteIMServerSignal" --output-on-failure`：65/65 通过。
+- `ctest --test-dir build --output-on-failure`：285/285 通过。
+- `git diff --check`：通过。
+- `rg -n "^## .*提交信息|^## .*Current Status|^## .*当前状态" README.md tutorials/step35_friend_service.md tutorials/step03_protocol_types.md`：无输出。
+- `tutorials/step35_friend_service.md` 最后一个主章节是 `## 6. 面试常见追问`。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，server 启动 MySQL / Redis pool 后监听 `0.0.0.0:9000`，收到 SIGTERM 后通过 signalfd 退出。
+
 ## 2026-05-14 Step 34 AuthService
 
 本次进入 `Step 34：AuthService 注册登录`，目标是在 Step33 `MessageRouter` 骨架上接入真实注册/登录业务，并保证 MySQL / Redis 调用只发生在 business 线程池 handler 中。

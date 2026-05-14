@@ -76,7 +76,7 @@ tests/protocol/
 
 - 底层类型同样是 `std::uint16_t`，对应 TLV header 的 2 字节 type。
 - 用户和认证字段包括 `Username`、`Password`、`UserId`、`Nickname`、`Token`、`SessionId`。
-- 好友字段包括 `FriendId`、`TargetUserId`。
+- 好友字段包括 `FriendId`、`TargetUserId`、`OnlineStatus`。
 - 群组字段包括 `GroupId`、`GroupName`。
 - 消息字段包括 `ConversationType`、`ConversationId`、`MessageId`、`MessageText`、`SenderId`、`ReceiverId`、`TimestampMs`、`Offset`、`Limit`、`UnreadCount`。
 - 错误字段包括 `ErrorCode`、`ErrorMessage`。
@@ -331,6 +331,7 @@ enum class TlvType : std::uint16_t {
 
     FriendId = 20,
     TargetUserId = 21,
+    OnlineStatus = 22,
 
     GroupId = 30,
     GroupName = 31,
@@ -446,6 +447,7 @@ TEST(TlvTypeTest, UnknownTypeReturnsUnknown)
 
 - 核心 TLV 字段类型能转换成可读字符串。
 - `TlvType::Unknown` 和未注册整数值返回 `UNKNOWN`。
+- `TlvType::OnlineStatus` 返回 `ONLINE_STATUS`，Step 35 用 `uint64` 的 `1/0` 表达好友在线 / 离线。
 
 ## 9. 如何验证
 
