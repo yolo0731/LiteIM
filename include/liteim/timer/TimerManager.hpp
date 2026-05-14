@@ -41,7 +41,7 @@ private:
     std::int64_t steadyNowMilliseconds() const noexcept;
 
     EventLoop* loop_;
-    std::chrono::milliseconds tick_interval_; // 定时器管理器的滴答间隔，单位毫秒
+    std::chrono::milliseconds tick_interval_;  // 定时器管理器的滴答间隔，单位毫秒
     UniqueFd timer_fd_;
     std::unique_ptr<Channel> timer_channel_;
     TimerHeap timers_;
@@ -50,4 +50,4 @@ private:
     bool handling_timer_event_{false};
 };
 
-} // namespace liteim
+}  // namespace liteim

@@ -35,7 +35,8 @@ Status FrameDecoder::feed(const Byte* data, std::size_t len, std::vector<Packet>
 
     while (buffer_.size() - read_index >= kPacketHeaderSize) {
         PacketHeader header;
-        const auto header_status = parseHeader(buffer_.data() + read_index, kPacketHeaderSize, header);
+        const auto header_status =
+            parseHeader(buffer_.data() + read_index, kPacketHeaderSize, header);
         if (!header_status.isOk()) {
             compact_consumed(read_index);
             error_ = true;
@@ -49,7 +50,8 @@ Status FrameDecoder::feed(const Byte* data, std::size_t len, std::vector<Packet>
 
         Packet packet;
         packet.header = header;
-        packet.body.assign(buffer_.begin() + static_cast<std::ptrdiff_t>(read_index + kPacketHeaderSize),
+        packet.body.assign(buffer_.begin() +
+                               static_cast<std::ptrdiff_t>(read_index + kPacketHeaderSize),
                            buffer_.begin() + static_cast<std::ptrdiff_t>(read_index + frame_size));
         output.push_back(std::move(packet));
 
@@ -77,4 +79,4 @@ void FrameDecoder::reset() {
     error_ = false;
 }
 
-} // namespace liteim
+}  // namespace liteim

@@ -37,8 +37,8 @@ std::string uniqueMessageText(const std::string& label) {
 
 std::uint64_t uniqueConversationId() {
     static std::atomic<std::uint64_t> counter{0};
-    const auto ticks = static_cast<std::uint64_t>(
-        std::chrono::steady_clock::now().time_since_epoch().count());
+    const auto ticks =
+        static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
     return 6100000000ULL + (ticks % 1000000ULL) + counter.fetch_add(1);
 }
 
@@ -74,14 +74,15 @@ void cleanupPre31Rows(const liteim::MySqlConfig& config) {
                       "WHERE message_id IN ("
                       "SELECT message_id FROM messages WHERE message_text LIKE 'pre31\\_%')");
     executeCleanupSql(connection, "DELETE FROM messages WHERE message_text LIKE 'pre31\\_%'");
-    executeCleanupSql(connection,
-                      "DELETE FROM friendships "
-                      "WHERE user_id IN (SELECT user_id FROM users WHERE username LIKE 'pre31\\_%') "
-                      "OR friend_id IN (SELECT user_id FROM users WHERE username LIKE 'pre31\\_%')");
-    executeCleanupSql(connection,
-                      "DELETE FROM group_members "
-                      "WHERE group_id IN (SELECT group_id FROM chat_groups WHERE group_name LIKE 'pre31\\_%') "
-                      "OR user_id IN (SELECT user_id FROM users WHERE username LIKE 'pre31\\_%')");
+    executeCleanupSql(
+        connection, "DELETE FROM friendships "
+                    "WHERE user_id IN (SELECT user_id FROM users WHERE username LIKE 'pre31\\_%') "
+                    "OR friend_id IN (SELECT user_id FROM users WHERE username LIKE 'pre31\\_%')");
+    executeCleanupSql(
+        connection,
+        "DELETE FROM group_members "
+        "WHERE group_id IN (SELECT group_id FROM chat_groups WHERE group_name LIKE 'pre31\\_%') "
+        "OR user_id IN (SELECT user_id FROM users WHERE username LIKE 'pre31\\_%')");
     executeCleanupSql(connection,
                       "DELETE FROM chat_groups "
                       "WHERE group_name LIKE 'pre31\\_%' "
@@ -141,7 +142,7 @@ protected:
     std::unique_ptr<liteim::MySqlStorage> storage;
 };
 
-} // namespace
+}  // namespace
 
 TEST(MySqlStorageTest, HeaderIsSelfContained) {
     liteim::MySqlPool pool(testMySqlConfig());
@@ -170,13 +171,12 @@ TEST_F(MySqlStorageIntegrationTest, ImplementsIStorageForUsersFriendsAndPublicPr
 TEST_F(MySqlStorageIntegrationTest, SaveMessageWithOfflineRecipientsCommitsBothTables) {
     const auto sender = createUser();
     const auto receiver = createUser();
-    const auto message = makePrivateMessage(sender,
-                                            receiver,
-                                            uniqueConversationId(),
+    const auto message = makePrivateMessage(sender, receiver, uniqueConversationId(),
                                             uniqueMessageText("combined_commit"));
 
     liteim::MessageRecord saved;
-    const auto status = storage->saveMessageWithOfflineRecipients(message, {receiver.user_id}, saved);
+    const auto status =
+        storage->saveMessageWithOfflineRecipients(message, {receiver.user_id}, saved);
     ASSERT_TRUE(status.isOk()) << status.message();
     EXPECT_GE(saved.message_id, 10000U);
     EXPECT_EQ(saved.text, message.text);
@@ -195,7 +195,8 @@ TEST_F(MySqlStorageIntegrationTest, SaveMessageWithOfflineRecipientsCommitsBothT
     EXPECT_EQ(pending.front().message.message_id, saved.message_id);
 }
 
-TEST_F(MySqlStorageIntegrationTest, SaveMessageWithOfflineRecipientsRollsBackMessageWhenOfflineInsertFails) {
+TEST_F(MySqlStorageIntegrationTest,
+       SaveMessageWithOfflineRecipientsRollsBackMessageWhenOfflineInsertFails) {
     const auto sender = createUser();
     const auto receiver = createUser();
     const auto conversation_id = uniqueConversationId();
@@ -203,7 +204,8 @@ TEST_F(MySqlStorageIntegrationTest, SaveMessageWithOfflineRecipientsRollsBackMes
     const auto message = makePrivateMessage(sender, receiver, conversation_id, text);
 
     liteim::MessageRecord saved;
-    const auto status = storage->saveMessageWithOfflineRecipients(message, {999999999999ULL}, saved);
+    const auto status =
+        storage->saveMessageWithOfflineRecipients(message, {999999999999ULL}, saved);
     ASSERT_FALSE(status.isOk());
     EXPECT_EQ(saved.message_id, 0U);
     EXPECT_TRUE(saved.text.empty());
@@ -220,14 +222,12 @@ TEST_F(MySqlStorageIntegrationTest, SaveMessageWithOfflineRecipientsRollsBackMes
 TEST_F(MySqlStorageIntegrationTest, SaveMessageWithOfflineRecipientsDeduplicatesOfflineUsers) {
     const auto sender = createUser();
     const auto receiver = createUser();
-    const auto message = makePrivateMessage(sender,
-                                            receiver,
-                                            uniqueConversationId(),
+    const auto message = makePrivateMessage(sender, receiver, uniqueConversationId(),
                                             uniqueMessageText("combined_dedup"));
 
     liteim::MessageRecord saved;
-    const auto status =
-        storage->saveMessageWithOfflineRecipients(message, {receiver.user_id, receiver.user_id}, saved);
+    const auto status = storage->saveMessageWithOfflineRecipients(
+        message, {receiver.user_id, receiver.user_id}, saved);
 
     ASSERT_TRUE(status.isOk()) << status.message();
     EXPECT_GE(saved.message_id, 10000U);

@@ -47,7 +47,7 @@ Status parsePort(const std::string& value, std::uint16_t& output) {
     return Status::ok();
 }
 
-} // namespace
+}  // namespace
 
 Config Config::defaults() {
     return Config{};
@@ -76,13 +76,15 @@ Status Config::loadFromFile(const std::filesystem::path& path) {
 
         const auto equals_pos = line.find('=');
         if (equals_pos == std::string::npos) {
-            return Status::error(ErrorCode::ParseError, "invalid config line " + std::to_string(line_number));
+            return Status::error(ErrorCode::ParseError,
+                                 "invalid config line " + std::to_string(line_number));
         }
 
         auto key = trim(line.substr(0, equals_pos));
         auto value = trim(line.substr(equals_pos + 1));
         if (key.empty()) {
-            return Status::error(ErrorCode::ParseError, "empty config key at line " + std::to_string(line_number));
+            return Status::error(ErrorCode::ParseError,
+                                 "empty config key at line " + std::to_string(line_number));
         }
 
         values[std::move(key)] = std::move(value);
@@ -103,7 +105,8 @@ Status Config::loadFromFile(const std::filesystem::path& path) {
             status = parseUint32(value, high_water_mark);
             if (status.isOk()) {
                 if (high_water_mark == 0) {
-                    return Status::error(ErrorCode::InvalidArgument, "output high water mark must be positive");
+                    return Status::error(ErrorCode::InvalidArgument,
+                                         "output high water mark must be positive");
                 }
                 session_output_high_water_mark = high_water_mark;
             }
@@ -147,4 +150,4 @@ Status Config::loadFromFile(const std::filesystem::path& path) {
     return Status::ok();
 }
 
-} // namespace liteim
+}  // namespace liteim

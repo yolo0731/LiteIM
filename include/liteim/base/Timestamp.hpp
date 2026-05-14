@@ -21,4 +21,4 @@ private:
     Clock::time_point time_point_;
 };
 
-} // namespace liteim
+}  // namespace liteim

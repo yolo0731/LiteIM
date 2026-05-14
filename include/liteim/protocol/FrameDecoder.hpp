@@ -23,4 +23,4 @@ private:
     bool error_{false};
 };
 
-} // namespace liteim
+}  // namespace liteim

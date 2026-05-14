@@ -16,8 +16,8 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
-#include <stdexcept>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -93,8 +93,7 @@ liteim::UniqueFd connectTo(std::uint16_t port) {
     }
 
     const auto address = loopbackAddress(port);
-    const int rc = ::connect(client.fd(),
-                             reinterpret_cast<const sockaddr*>(&address),
+    const int rc = ::connect(client.fd(), reinterpret_cast<const sockaddr*>(&address),
                              static_cast<socklen_t>(sizeof(address)));
     EXPECT_EQ(rc, 0) << "connect errno=" << errno;
     return client;
@@ -141,8 +140,8 @@ TEST(AcceptorTest, ClientConnectionTriggersNewConnectionCallback) {
         liteim::EventLoop loop;
         liteim::Acceptor acceptor(&loop, "127.0.0.1", 0);
         acceptor.setNewConnectionCallback(
-            [&loop, &accepted, &accepted_fd_nonblocking, &accepted_fd_cloexec](liteim::UniqueFd accepted_fd,
-                                                                               const sockaddr_in& peer) {
+            [&loop, &accepted, &accepted_fd_nonblocking,
+             &accepted_fd_cloexec](liteim::UniqueFd accepted_fd, const sockaddr_in& peer) {
                 const int fd = accepted_fd.fd();
                 EXPECT_EQ(peer.sin_family, AF_INET);
                 accepted_fd_nonblocking = (getSocketFlag(fd) & O_NONBLOCK) != 0;
@@ -177,13 +176,14 @@ TEST(AcceptorTest, MultiplePendingConnectionsAreAccepted) {
     std::thread loop_thread([&handle, &accepted_count]() {
         liteim::EventLoop loop;
         liteim::Acceptor acceptor(&loop, "127.0.0.1", 0);
-        acceptor.setNewConnectionCallback([&loop, &accepted_count](liteim::UniqueFd accepted_fd, const sockaddr_in&) {
-            EXPECT_GE(accepted_fd.fd(), 0);
-            const int count = ++accepted_count;
-            if (count == kConnectionCount) {
-                loop.quit();
-            }
-        });
+        acceptor.setNewConnectionCallback(
+            [&loop, &accepted_count](liteim::UniqueFd accepted_fd, const sockaddr_in&) {
+                EXPECT_GE(accepted_fd.fd(), 0);
+                const int count = ++accepted_count;
+                if (count == kConnectionCount) {
+                    loop.quit();
+                }
+            });
 
         {
             std::lock_guard<std::mutex> lock(handle.mutex);
@@ -219,8 +219,7 @@ TEST(AcceptorTest, ClosedListenSocketRejectsNewConnections) {
     ASSERT_GE(client.fd(), 0);
     const auto address = loopbackAddress(port);
     errno = 0;
-    const int rc = ::connect(client.fd(),
-                             reinterpret_cast<const sockaddr*>(&address),
+    const int rc = ::connect(client.fd(), reinterpret_cast<const sockaddr*>(&address),
                              static_cast<socklen_t>(sizeof(address)));
 
     EXPECT_EQ(rc, -1);
@@ -235,10 +234,11 @@ TEST(AcceptorTest, AcceptedFdIsClosedWhenCallbackThrowsBeforeTakingOwnership) {
     std::thread loop_thread([&handle, &callback_fd, &callback_exception_escaped]() {
         liteim::EventLoop loop;
         liteim::Acceptor acceptor(&loop, "127.0.0.1", 0);
-        acceptor.setNewConnectionCallback([&callback_fd](liteim::UniqueFd accepted_fd, const sockaddr_in&) {
-            callback_fd = accepted_fd.fd();
-            throw std::runtime_error("callback failed before taking fd ownership");
-        });
+        acceptor.setNewConnectionCallback(
+            [&callback_fd](liteim::UniqueFd accepted_fd, const sockaddr_in&) {
+                callback_fd = accepted_fd.fd();
+                throw std::runtime_error("callback failed before taking fd ownership");
+            });
 
         {
             std::lock_guard<std::mutex> lock(handle.mutex);
@@ -301,10 +301,11 @@ TEST(AcceptorTest, FdExhaustionRejectsPendingConnectionWithoutLaterCallback) {
     std::thread loop_thread([&handle, &accepted_count, &start_loop, &start_mutex, &start_ready]() {
         liteim::EventLoop loop;
         liteim::Acceptor acceptor(&loop, "127.0.0.1", 0);
-        acceptor.setNewConnectionCallback([&accepted_count](liteim::UniqueFd accepted_fd, const sockaddr_in&) {
-            EXPECT_GE(accepted_fd.fd(), 0);
-            ++accepted_count;
-        });
+        acceptor.setNewConnectionCallback(
+            [&accepted_count](liteim::UniqueFd accepted_fd, const sockaddr_in&) {
+                EXPECT_GE(accepted_fd.fd(), 0);
+                ++accepted_count;
+            });
 
         {
             std::lock_guard<std::mutex> lock(handle.mutex);

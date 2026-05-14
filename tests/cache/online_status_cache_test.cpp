@@ -61,7 +61,7 @@ protected:
     std::vector<std::uint64_t> created_users;
 };
 
-} // namespace
+}  // namespace
 
 TEST(OnlineStatusCacheTest, HeaderIsSelfContained) {
     liteim::RedisPool pool(testRedisConfig(1));

@@ -36,7 +36,8 @@ std::string testName(const std::string& suffix) {
            test_info->test_suite_name() + "_" + test_info->name() + "_" + suffix;
 }
 
-liteim::UnreadKey unreadKey(std::uint64_t user_id, liteim::ConversationType type, std::uint64_t conversation_id) {
+liteim::UnreadKey unreadKey(std::uint64_t user_id, liteim::ConversationType type,
+                            std::uint64_t conversation_id) {
     liteim::UnreadKey key;
     key.user_id = user_id;
     key.conversation = {type, conversation_id};
@@ -88,18 +89,20 @@ protected:
     std::vector<liteim::LoginAttemptKey> login_keys;
 };
 
-} // namespace
+}  // namespace
 
 TEST(UnreadCounterTest, RejectsInvalidInputBeforeBorrowingRedis) {
     liteim::RedisPool pool(testRedisConfig(1));
     liteim::UnreadCounter counter(pool);
     std::uint64_t unread_count = 100;
 
-    auto status = counter.incrUnread(unreadKey(0, liteim::ConversationType::kPrivate, 1), 1, unread_count);
+    auto status =
+        counter.incrUnread(unreadKey(0, liteim::ConversationType::kPrivate, 1), 1, unread_count);
     EXPECT_FALSE(status.isOk());
     EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
 
-    status = counter.incrUnread(unreadKey(1, liteim::ConversationType::kPrivate, 1), 0, unread_count);
+    status =
+        counter.incrUnread(unreadKey(1, liteim::ConversationType::kPrivate, 1), 0, unread_count);
     EXPECT_FALSE(status.isOk());
     EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
 
@@ -107,9 +110,9 @@ TEST(UnreadCounterTest, RejectsInvalidInputBeforeBorrowingRedis) {
     EXPECT_FALSE(status.isOk());
     EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
 
-    status = counter.incrUnread(unreadKey(1, liteim::ConversationType::kPrivate, 1),
-                                static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) + 1U,
-                                unread_count);
+    status = counter.incrUnread(
+        unreadKey(1, liteim::ConversationType::kPrivate, 1),
+        static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) + 1U, unread_count);
     EXPECT_FALSE(status.isOk());
     EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
 }
@@ -137,7 +140,8 @@ TEST(LoginRateLimiterTest, RejectsInvalidInputBeforeBorrowingRedis) {
 }
 
 TEST_F(Step30CacheIntegrationTest, UnreadCounterIncrementsReadsAndClearsCount) {
-    const auto key = rememberUnreadKey(unreadKey(testUserId(1), liteim::ConversationType::kPrivate, 7001));
+    const auto key =
+        rememberUnreadKey(unreadKey(testUserId(1), liteim::ConversationType::kPrivate, 7001));
     std::uint64_t unread_count = 0;
 
     ASSERT_TRUE(unread_counter->getUnread(key, unread_count).isOk());
@@ -158,9 +162,12 @@ TEST_F(Step30CacheIntegrationTest, UnreadCounterIncrementsReadsAndClearsCount) {
 }
 
 TEST_F(Step30CacheIntegrationTest, UnreadCounterSeparatesUsersAndConversations) {
-    const auto alice_private = rememberUnreadKey(unreadKey(testUserId(2), liteim::ConversationType::kPrivate, 7002));
-    const auto alice_group = rememberUnreadKey(unreadKey(testUserId(2), liteim::ConversationType::kGroup, 9001));
-    const auto bob_private = rememberUnreadKey(unreadKey(testUserId(3), liteim::ConversationType::kPrivate, 7002));
+    const auto alice_private =
+        rememberUnreadKey(unreadKey(testUserId(2), liteim::ConversationType::kPrivate, 7002));
+    const auto alice_group =
+        rememberUnreadKey(unreadKey(testUserId(2), liteim::ConversationType::kGroup, 9001));
+    const auto bob_private =
+        rememberUnreadKey(unreadKey(testUserId(3), liteim::ConversationType::kPrivate, 7002));
     std::uint64_t unread_count = 0;
 
     ASSERT_TRUE(unread_counter->incrUnread(alice_private, 1, unread_count).isOk());
@@ -175,7 +182,8 @@ TEST_F(Step30CacheIntegrationTest, UnreadCounterSeparatesUsersAndConversations) 
     EXPECT_EQ(unread_count, 3U);
 }
 
-TEST_F(Step30CacheIntegrationTest, LoginRateLimiterRejectsAfterFailureThresholdAndClearAllowsAgain) {
+TEST_F(Step30CacheIntegrationTest,
+       LoginRateLimiterRejectsAfterFailureThresholdAndClearAllowsAgain) {
     const auto key = rememberLoginKey({testName("alice"), "127.0.0.1"});
     bool allowed = false;
 

@@ -11,9 +11,11 @@ namespace liteim {
 namespace {
 
 constexpr unsigned int kMysqlDuplicateEntry = 1062;
+// MySQL 错误代码，表示违反唯一约束，一个 user_id + message_id 只能有一条记录
 
 Status malformedOfflineMessageRowStatus() {
-    return Status::error(ErrorCode::InternalError, "offline_messages query returned a malformed row");
+    return Status::error(ErrorCode::InternalError,
+                         "offline_messages query returned a malformed row");
 }
 
 Status requiredValue(const MySqlRow& row, std::size_t index, const std::string*& value) {
@@ -69,9 +71,7 @@ Status parseConversationType(const std::string& text, ConversationType& type) {
     return malformedOfflineMessageRowStatus();
 }
 
-Status bindUint64(PreparedStatement& statement,
-                  std::size_t index,
-                  std::uint64_t value,
+Status bindUint64(PreparedStatement& statement, std::size_t index, std::uint64_t value,
                   const std::string& field_name) {
     if (value == 0U) {
         return Status::error(ErrorCode::InvalidArgument, field_name + " must not be zero");
@@ -87,6 +87,8 @@ void rollbackSilently(MySqlConnection& connection) noexcept {
     (void)executeSimple(connection, "ROLLBACK");
 }
 
+// 把 MySQL 查询出来的一行数据转换成 OfflineMessageRecord,要求一行必须有 10 列
+// 结果里既有离线记录字段，也有真实消息字段
 Status rowToOfflineMessageRecord(const MySqlRow& row, OfflineMessageRecord& record) {
     if (row.values.size() != 10U) {
         return malformedOfflineMessageRowStatus();
@@ -145,7 +147,8 @@ Status rowToOfflineMessageRecord(const MySqlRow& row, OfflineMessageRecord& reco
     }
 
     OfflineMessageRecord parsed_record;
-    const auto offline_parse_status = parseUint64(*offline_message_id, parsed_record.offline_message_id);
+    const auto offline_parse_status =
+        parseUint64(*offline_message_id, parsed_record.offline_message_id);
     if (!offline_parse_status.isOk()) {
         return offline_parse_status;
     }
@@ -153,7 +156,8 @@ Status rowToOfflineMessageRecord(const MySqlRow& row, OfflineMessageRecord& reco
     if (!user_parse_status.isOk()) {
         return user_parse_status;
     }
-    const auto offline_created_parse_status = parseInt64(*offline_created_at_ms, parsed_record.created_at_ms);
+    const auto offline_created_parse_status =
+        parseInt64(*offline_created_at_ms, parsed_record.created_at_ms);
     if (!offline_created_parse_status.isOk()) {
         return offline_created_parse_status;
     }
@@ -161,11 +165,13 @@ Status rowToOfflineMessageRecord(const MySqlRow& row, OfflineMessageRecord& reco
     if (!message_parse_status.isOk()) {
         return message_parse_status;
     }
-    const auto type_status = parseConversationType(*conversation_type, parsed_record.message.conversation.type);
+    const auto type_status =
+        parseConversationType(*conversation_type, parsed_record.message.conversation.type);
     if (!type_status.isOk()) {
         return type_status;
     }
-    const auto conversation_parse_status = parseUint64(*conversation_id, parsed_record.message.conversation.id);
+    const auto conversation_parse_status =
+        parseUint64(*conversation_id, parsed_record.message.conversation.id);
     if (!conversation_parse_status.isOk()) {
         return conversation_parse_status;
     }
@@ -188,11 +194,10 @@ Status rowToOfflineMessageRecord(const MySqlRow& row, OfflineMessageRecord& reco
     return Status::ok();
 }
 
-} // namespace
+}  // namespace
 
 OfflineMessageDao::OfflineMessageDao(MySqlPool& pool, std::chrono::milliseconds acquire_timeout)
-    : pool_(&pool), acquire_timeout_(acquire_timeout) {
-}
+    : pool_(&pool), acquire_timeout_(acquire_timeout) {}
 
 Status OfflineMessageDao::saveOfflineMessage(std::uint64_t user_id, std::uint64_t message_id) {
     ConnectionGuard guard;
@@ -231,7 +236,8 @@ Status OfflineMessageDao::saveOfflineMessage(std::uint64_t user_id, std::uint64_
         return insert_status;
     }
     if (affected_rows != 1U) {
-        return Status::error(ErrorCode::InternalError, "save offline message affected unexpected row count");
+        return Status::error(ErrorCode::InternalError,
+                             "save offline message affected unexpected row count");
     }
     return Status::ok();
 }
@@ -319,8 +325,9 @@ Status OfflineMessageDao::markOfflineDelivered(std::uint64_t user_id,
         rollbackSilently(*guard);
         return prepare_status;
     }
-
+    // 获取当前时间戳，单位是毫秒，用于更新 delivered_at_ms 字段，表示这些消息的送达时间。
     const auto delivered_at_ms = Timestamp::now().millisecondsSinceEpoch();
+    // 遍历要标记为已送达的消息 ID 列表，逐条执行 UPDATE 语句，将这些消息的 delivered 字段更新为 1，并设置 delivered_at_ms 为当前时间戳。
     for (const auto message_id : message_ids) {
         const auto delivered_status = statement.bindInt64(0, delivered_at_ms);
         if (!delivered_status.isOk()) {
@@ -354,4 +361,4 @@ Status OfflineMessageDao::markOfflineDelivered(std::uint64_t user_id,
     return executeSimple(*guard, "COMMIT");
 }
 
-} // namespace liteim
+}  // namespace liteim

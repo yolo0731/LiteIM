@@ -35,7 +35,7 @@ void EventLoopThreadPool::start() {
         started_ = true;
     } catch (...) {
         stop();
-        throw; // 把这个原异常继续往外抛
+        throw;  // 把这个原异常继续往外抛
     }
 }
 
@@ -61,8 +61,8 @@ EventLoop* EventLoopThreadPool::getNextLoop() {
         return base_loop_;
     }
 
-    auto* loop = loops_[next_];          // 轮询分配EventLoop，保证负载均衡
-    next_ = (next_ + 1) % loops_.size(); // 如果到尾了，就回到 0
+    auto* loop = loops_[next_];           // 轮询分配EventLoop，保证负载均衡
+    next_ = (next_ + 1) % loops_.size();  // 如果到尾了，就回到 0
     return loop;
 }
 
@@ -78,4 +78,4 @@ bool EventLoopThreadPool::started() const noexcept {
     return started_;
 }
 
-} // namespace liteim
+}  // namespace liteim

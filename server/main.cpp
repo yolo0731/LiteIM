@@ -12,10 +12,7 @@ int main() {
     liteim::Logger::init(liteim::parseLogLevel(config.log_level));
 
     liteim::EventLoop loop;
-    liteim::TcpServer server(&loop,
-                             config.server_host,
-                             config.server_port,
-                             config.io_threads);
+    liteim::TcpServer server(&loop, config.server_host, config.server_port, config.io_threads);
     server.setSessionOutputHighWaterMark(config.session_output_high_water_mark);
     liteim::SignalWatcher signal_watcher(&loop, std::vector<int>{SIGINT, SIGTERM}, [&](int signo) {
         liteim::Logger::get()->info("LiteIM server received signal {}, shutting down", signo);
@@ -29,8 +26,7 @@ int main() {
     }
 
     server.start();
-    liteim::Logger::get()->info("LiteIM server is listening on {}:{}",
-                                config.server_host,
+    liteim::Logger::get()->info("LiteIM server is listening on {}:{}", config.server_host,
                                 server.port());
 
     loop.loop();

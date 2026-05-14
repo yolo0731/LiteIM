@@ -10,20 +10,23 @@
 namespace liteim {
 namespace {
 
-constexpr unsigned int kMysqlDuplicateEntry = 1062;
+constexpr unsigned int kMysqlDuplicateEntry = 1062;  // MySQL 重复键错误码
 
+// 用户查询结果行格式错误的统一错误状态
 Status malformedUserRowStatus() {
     return Status::error(ErrorCode::InternalError, "users query returned a malformed row");
 }
 
+// 从查询结果行中获取指定列的值，确保该值存在且非NULL
 Status requiredValue(const MySqlRow& row, std::size_t index, const std::string*& value) {
     if (index >= row.values.size() || !row.values[index].has_value()) {
         return malformedUserRowStatus();
     }
-    value = &(*row.values[index]);
+    value = &(*row.values[index]);  // 把取到的字符串地址交给外面的指针变量
     return Status::ok();
 }
 
+// 将字符串解析为无符号64位整数
 Status parseUint64(const std::string& text, std::uint64_t& value) {
     try {
         std::size_t parsed = 0;
@@ -52,6 +55,7 @@ Status parseInt64(const std::string& text, std::int64_t& value) {
     }
 }
 
+// 将MySQL查询结果行转换为UserRecord结构
 Status rowToUserRecord(const MySqlRow& row, UserRecord& user) {
     if (row.values.size() != 6U) {
         return malformedUserRowStatus();
@@ -89,12 +93,14 @@ Status rowToUserRecord(const MySqlRow& row, UserRecord& user) {
         return created_at_status;
     }
 
-    UserRecord parsed_user;
+    UserRecord
+        parsed_user;  // 创建临时 UserRecord对象来存储解析结果，只有在所有字段都成功解析后才赋值给输出参数 user
     const auto id_status = parseUint64(*user_id, parsed_user.user_id);
     if (!id_status.isOk()) {
         return id_status;
     }
-    const auto created_status = parseInt64(*created_at_ms, parsed_user.created_at_ms);
+    const auto created_status =
+        parseInt64(*created_at_ms, parsed_user.created_at_ms);  //将字符串解析为整数类型
     if (!created_status.isOk()) {
         return created_status;
     }
@@ -105,13 +111,16 @@ Status rowToUserRecord(const MySqlRow& row, UserRecord& user) {
     parsed_user.nickname = *nickname;
 
     user = std::move(parsed_user);
+    // 只有在所有字段都成功解析后才将结果赋值给输出参数 user，确保输出参数要么包含完整的有效数据，要么保持不变
     return Status::ok();
 }
 
+// 绑定用户ID参数到预处理语句
 Status bindUserId(PreparedStatement& statement, std::uint64_t user_id) {
     return statement.bindUInt64(0, user_id);
 }
 
+// 查询单个用户并将结果转换为UserRecord结构，确保查询结果只有一行且格式正确
 Status querySingleUser(PreparedStatement& statement, UserRecord& user) {
     MySqlQueryResult result;
     const auto query_status = statement.executeQuery(result);
@@ -127,11 +136,10 @@ Status querySingleUser(PreparedStatement& statement, UserRecord& user) {
     return rowToUserRecord(result.rows().front(), user);
 }
 
-} // namespace
+}  // namespace
 
 UserDao::UserDao(MySqlPool& pool, std::chrono::milliseconds acquire_timeout)
-    : pool_(&pool), acquire_timeout_(acquire_timeout) {
-}
+    : pool_(&pool), acquire_timeout_(acquire_timeout) {}
 
 Status UserDao::createUser(const CreateUserRequest& request, UserRecord& created_user) {
     const auto now_ms = Timestamp::now().millisecondsSinceEpoch();
@@ -143,10 +151,10 @@ Status UserDao::createUser(const CreateUserRequest& request, UserRecord& created
         }
 
         PreparedStatement statement(*guard);
-        const auto prepare_status =
-            statement.prepare("INSERT INTO users "
-                              "(username, password_hash, password_salt, nickname, created_at_ms, updated_at_ms) "
-                              "VALUES (?, ?, ?, ?, ?, ?)");
+        const auto prepare_status = statement.prepare(
+            "INSERT INTO users "
+            "(username, password_hash, password_salt, nickname, created_at_ms, updated_at_ms) "
+            "VALUES (?, ?, ?, ?, ?, ?)");
         if (!prepare_status.isOk()) {
             return prepare_status;
         }
@@ -185,10 +193,12 @@ Status UserDao::createUser(const CreateUserRequest& request, UserRecord& created
             return insert_status;
         }
         if (affected_rows != 1U) {
-            return Status::error(ErrorCode::InternalError, "create user affected unexpected row count");
+            return Status::error(ErrorCode::InternalError,
+                                 "create user affected unexpected row count");
         }
     }
 
+    // 插入成功后，再查完整用户,可以拿到自动生成的 user_id
     return findUserByUsername(request.username, created_user);
 }
 
@@ -200,9 +210,9 @@ Status UserDao::findUserByUsername(const std::string& username, UserRecord& user
     }
 
     PreparedStatement statement(*guard);
-    const auto prepare_status =
-        statement.prepare("SELECT user_id, username, password_hash, password_salt, nickname, created_at_ms "
-                          "FROM users WHERE username = ? LIMIT 1");
+    const auto prepare_status = statement.prepare(
+        "SELECT user_id, username, password_hash, password_salt, nickname, created_at_ms "
+        "FROM users WHERE username = ? LIMIT 1");
     if (!prepare_status.isOk()) {
         return prepare_status;
     }
@@ -222,9 +232,9 @@ Status UserDao::findUserById(std::uint64_t user_id, UserRecord& user) {
     }
 
     PreparedStatement statement(*guard);
-    const auto prepare_status =
-        statement.prepare("SELECT user_id, username, password_hash, password_salt, nickname, created_at_ms "
-                          "FROM users WHERE user_id = ? LIMIT 1");
+    const auto prepare_status = statement.prepare(
+        "SELECT user_id, username, password_hash, password_salt, nickname, created_at_ms "
+        "FROM users WHERE user_id = ? LIMIT 1");
     if (!prepare_status.isOk()) {
         return prepare_status;
     }
@@ -236,4 +246,4 @@ Status UserDao::findUserById(std::uint64_t user_id, UserRecord& user) {
     return querySingleUser(statement, user);
 }
 
-} // namespace liteim
+}  // namespace liteim

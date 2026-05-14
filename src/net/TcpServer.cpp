@@ -1,7 +1,7 @@
 #include "liteim/net/TcpServer.hpp"
 
-#include "liteim/net/Acceptor.hpp"
 #include "liteim/base/Timestamp.hpp"
+#include "liteim/net/Acceptor.hpp"
 #include "liteim/net/EventLoop.hpp"
 #include "liteim/net/UniqueFd.hpp"
 #include "liteim/timer/TimerManager.hpp"
@@ -14,7 +14,8 @@
 
 namespace liteim {
 
-TcpServer::TcpServer(EventLoop* base_loop, std::string listen_ip, std::uint16_t port, std::size_t io_thread_count)
+TcpServer::TcpServer(EventLoop* base_loop, std::string listen_ip, std::uint16_t port,
+                     std::size_t io_thread_count)
     : base_loop_(base_loop), listen_ip_(std::move(listen_ip)), requested_port_(port),
       io_threads_(base_loop, io_thread_count) {
     if (base_loop_ == nullptr) {
@@ -35,7 +36,8 @@ void TcpServer::setMessageCallback(MessageCallback callback) {
     message_callback_ = std::move(callback);
 }
 
-void TcpServer::setHeartbeatOptions(std::chrono::milliseconds interval, std::chrono::milliseconds timeout) {
+void TcpServer::setHeartbeatOptions(std::chrono::milliseconds interval,
+                                    std::chrono::milliseconds timeout) {
     base_loop_->assertInLoopThread();
     if (started_.load()) {
         throw std::logic_error("heartbeat options must be set before TcpServer starts");
@@ -51,7 +53,8 @@ void TcpServer::setHeartbeatOptions(std::chrono::milliseconds interval, std::chr
 void TcpServer::setSessionOutputHighWaterMark(std::size_t high_water_mark) {
     base_loop_->assertInLoopThread();
     if (started_.load()) {
-        throw std::logic_error("session output high water mark must be set before TcpServer starts");
+        throw std::logic_error(
+            "session output high water mark must be set before TcpServer starts");
     }
     if (high_water_mark == 0) {
         throw std::invalid_argument("session output high water mark must be positive");
@@ -69,8 +72,9 @@ void TcpServer::start() {
     io_threads_.start();
     try {
         auto acceptor = std::make_unique<Acceptor>(base_loop_, listen_ip_, requested_port_);
-        acceptor->setNewConnectionCallback(
-            [this](UniqueFd accepted_fd, const sockaddr_in&) { handleNewConnection(std::move(accepted_fd)); });
+        acceptor->setNewConnectionCallback([this](UniqueFd accepted_fd, const sockaddr_in&) {
+            handleNewConnection(std::move(accepted_fd));
+        });
 
         port_ = acceptor->port();
         acceptor_ = std::move(acceptor);
@@ -157,7 +161,7 @@ void TcpServer::stopInLoop() noexcept {
         for (const auto& [_, session] : sessions_) {
             sessions.push_back(session);
         }
-        sessions_.clear(); // 把整个 unordered_map 清空
+        sessions_.clear();  // 把整个 unordered_map 清空
     }
 
     for (const auto& session : sessions) {
@@ -177,7 +181,8 @@ void TcpServer::handleNewConnection(UniqueFd accepted_fd) {
 
     EventLoop* io_loop = io_threads_.getNextLoop();
     auto accepted_holder = std::make_shared<UniqueFd>(std::move(accepted_fd));
-    io_loop->queueInLoop([this, io_loop, accepted_holder]() { createSessionInLoop(io_loop, accepted_holder); });
+    io_loop->queueInLoop(
+        [this, io_loop, accepted_holder]() { createSessionInLoop(io_loop, accepted_holder); });
 }
 
 void TcpServer::createSessionInLoop(EventLoop* io_loop, std::shared_ptr<UniqueFd> accepted_fd) {
@@ -189,9 +194,11 @@ void TcpServer::createSessionInLoop(EventLoop* io_loop, std::shared_ptr<UniqueFd
     const auto session_id = next_session_id_.fetch_add(1);
     auto session = std::make_shared<Session>(io_loop, std::move(*accepted_fd), session_id);
     session->setOutputHighWaterMark(session_output_high_water_mark_);
-    session->setMessageCallback(
-        [this](const Session::Ptr& observed, const Packet& packet) { handleMessage(observed, packet); });
-    session->setCloseCallback([this, session_id](const Session::Ptr&) { removeSession(session_id); });
+    session->setMessageCallback([this](const Session::Ptr& observed, const Packet& packet) {
+        handleMessage(observed, packet);
+    });
+    session->setCloseCallback(
+        [this, session_id](const Session::Ptr&) { removeSession(session_id); });
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -271,4 +278,4 @@ void TcpServer::closeIdleSessions() {
     }
 }
 
-} // namespace liteim
+}  // namespace liteim

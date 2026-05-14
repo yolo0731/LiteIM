@@ -14,17 +14,19 @@ namespace {
 constexpr int kInitialEventListSize = 16;
 
 Status invalidEpollStatus(const char* action) {
-    return Status::error(ErrorCode::IoError, std::string(action) + " failed because epoll fd is invalid");
+    return Status::error(ErrorCode::IoError,
+                         std::string(action) + " failed because epoll fd is invalid");
 }
 
 Status errnoStatus(const char* action, int error_number) {
-    return Status::error(ErrorCode::IoError,
-                         std::string(action) + " failed with errno " + std::to_string(error_number));
+    return Status::error(ErrorCode::IoError, std::string(action) + " failed with errno " +
+                                                 std::to_string(error_number));
 }
 
 Status validateChannel(const char* action, Channel* channel) {
     if (channel == nullptr || channel->fd() < 0) {
-        return Status::error(ErrorCode::InvalidArgument, std::string(action) + " requires a valid channel");
+        return Status::error(ErrorCode::InvalidArgument,
+                             std::string(action) + " requires a valid channel");
     }
 
     return Status::ok();
@@ -37,10 +39,11 @@ epoll_event makeEpollEvent(Channel* channel) {
     return event;
 }
 
-} // namespace
+}  // namespace
 
 Epoller::Epoller(EventLoop* owner_loop)
-    : owner_loop_(owner_loop), epoll_fd_(::epoll_create1(EPOLL_CLOEXEC)), events_(kInitialEventListSize) {
+    : owner_loop_(owner_loop), epoll_fd_(::epoll_create1(EPOLL_CLOEXEC)),
+      events_(kInitialEventListSize) {
     if (epoll_fd_ < 0) {
         throw std::runtime_error("epoll_create1 failed with errno " + std::to_string(errno));
     }
@@ -55,7 +58,8 @@ Epoller::~Epoller() {
 
 Status Epoller::validateChannelOwner(Channel* channel) const {
     if (owner_loop_ != nullptr && channel != nullptr && channel->ownerLoop() != owner_loop_) {
-        return Status::error(ErrorCode::InvalidArgument, "channel belongs to a different EventLoop");
+        return Status::error(ErrorCode::InvalidArgument,
+                             "channel belongs to a different EventLoop");
     }
 
     return Status::ok();
@@ -67,7 +71,8 @@ Status Epoller::poll(int timeout_ms, ChannelList& active_channels) {
         return invalidEpollStatus("epoll_wait");
     }
 
-    const int event_count = ::epoll_wait(epoll_fd_, events_.data(), static_cast<int>(events_.size()), timeout_ms);
+    const int event_count =
+        ::epoll_wait(epoll_fd_, events_.data(), static_cast<int>(events_.size()), timeout_ms);
     if (event_count < 0) {
         if (errno == EINTR) {
             return Status::ok();
@@ -110,7 +115,8 @@ Status Epoller::updateChannel(Channel* channel) {
     auto found = channels_.find(fd);
     if (found == channels_.end()) {
         if (channel->isNoneEvent()) {
-            return Status::error(ErrorCode::InvalidArgument, "cannot add channel without interested events");
+            return Status::error(ErrorCode::InvalidArgument,
+                                 "cannot add channel without interested events");
         }
 
         auto event = makeEpollEvent(channel);
@@ -122,7 +128,8 @@ Status Epoller::updateChannel(Channel* channel) {
     }
 
     if (found->second != channel) {
-        return Status::error(ErrorCode::InvalidArgument, "fd already belongs to a different channel");
+        return Status::error(ErrorCode::InvalidArgument,
+                             "fd already belongs to a different channel");
     }
 
     if (channel->isNoneEvent()) {
@@ -170,4 +177,4 @@ Status Epoller::removeChannel(Channel* channel) {
     return Status::ok();
 }
 
-} // namespace liteim
+}  // namespace liteim

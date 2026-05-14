@@ -25,4 +25,4 @@ const char* toString(ErrorCode code) noexcept {
     return "Unknown";
 }
 
-} // namespace liteim
+}  // namespace liteim

@@ -36,7 +36,7 @@ TTL 表示在线状态有效期：
 - 连接断开：删除 key。
 - 异常断开或删除失败：TTL 到期兜底自动离线。
 
-Step 29 只实现 cache 组件，不把它接入登录流程、心跳 runtime 或 `Session` 关闭流程。这些会在后续业务 service 步骤完成。
+Step 29 只实现 cache 组件，不把它接入登录流程、心跳 runtime 或 `Session` 关闭流程。Step 32 的 `OnlineService` 开始组合它和当前进程内的 session 绑定。
 
 ## 2. 本 Step 新增 / 修改文件
 
@@ -371,8 +371,8 @@ Step 29 不实现：
 - AuthService 登录成功写 Redis。
 - 心跳 runtime 续期。
 - Session 断开 runtime 清理。
-- SessionManager。
-- OnlineService。
+- Step 32 的 SessionManager。
+- Step 32 的 OnlineService。
 - 跨节点路由。
 - Redis Cluster / Pub/Sub / Streams。
 

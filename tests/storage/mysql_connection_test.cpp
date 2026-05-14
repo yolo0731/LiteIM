@@ -21,7 +21,7 @@ protected:
     liteim::MySqlConnection connection;
 };
 
-} // namespace
+}  // namespace
 
 TEST(MySqlConnectionTest, HeaderIsSelfContained) {
     liteim::MySqlConnection connection;
@@ -63,14 +63,16 @@ TEST_F(MySqlIntegrationTest, ExecuteUpdateAndQueryRoundTripSpecialCharacters) {
 
     const std::string special_text = "quote ' and injection OR 1=1 -- \\\\ newline\n中文";
     liteim::PreparedStatement insert(connection);
-    ASSERT_TRUE(insert.prepare("INSERT INTO liteim_step23_params (id, text_value) VALUES (?, ?)").isOk());
+    ASSERT_TRUE(
+        insert.prepare("INSERT INTO liteim_step23_params (id, text_value) VALUES (?, ?)").isOk());
     ASSERT_TRUE(insert.bindInt64(0, 7).isOk());
     ASSERT_TRUE(insert.bindString(1, special_text).isOk());
     ASSERT_TRUE(insert.executeUpdate(affected_rows).isOk());
     EXPECT_EQ(affected_rows, 1U);
 
     liteim::PreparedStatement query(connection);
-    ASSERT_TRUE(query.prepare("SELECT text_value FROM liteim_step23_params WHERE text_value = ?").isOk());
+    ASSERT_TRUE(
+        query.prepare("SELECT text_value FROM liteim_step23_params WHERE text_value = ?").isOk());
     ASSERT_TRUE(query.bindString(0, special_text).isOk());
 
     liteim::MySqlQueryResult result;

@@ -17,9 +17,12 @@ TEST(ReactorInterfaceTest, AcceptorHeaderIsSelfContained) {
     static_assert(std::is_same_v<Acceptor::NewConnectionCallback, Callback>);
     static_assert(std::is_same_v<decltype(&Acceptor::setNewConnectionCallback),
                                  void (Acceptor::*)(Callback)>);
-    static_assert(std::is_same_v<decltype(&Acceptor::listenFd), int (Acceptor::*)() const noexcept>);
-    static_assert(std::is_same_v<decltype(&Acceptor::port), std::uint16_t (Acceptor::*)() const noexcept>);
-    static_assert(std::is_same_v<decltype(&Acceptor::listening), bool (Acceptor::*)() const noexcept>);
+    static_assert(
+        std::is_same_v<decltype(&Acceptor::listenFd), int (Acceptor::*)() const noexcept>);
+    static_assert(
+        std::is_same_v<decltype(&Acceptor::port), std::uint16_t (Acceptor::*)() const noexcept>);
+    static_assert(
+        std::is_same_v<decltype(&Acceptor::listening), bool (Acceptor::*)() const noexcept>);
     static_assert(std::is_same_v<decltype(&Acceptor::close), void (Acceptor::*)() noexcept>);
 
     SUCCEED();

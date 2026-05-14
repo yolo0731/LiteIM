@@ -16,17 +16,17 @@ namespace liteim {
 namespace {
 
 Status errnoStatus(const char* action, int error_number) {
-    return Status::error(ErrorCode::IoError,
-                         std::string(action) + " failed with errno " + std::to_string(error_number));
+    return Status::error(ErrorCode::IoError, std::string(action) + " failed with errno " +
+                                                 std::to_string(error_number));
 }
 
 // 把 C++ 的毫秒时间间隔，转换成 Linux timerfd_settime() 需要的 itimerspec 配置。
 itimerspec makeIntervalSpec(std::chrono::milliseconds interval) {
     itimerspec spec{};
     const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(
-        interval); // timerfd_settime() 的时间参数是秒和纳秒的组合，所以先把毫秒转换成秒
-    const auto nanos =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(interval - seconds); // 再把剩下毫秒转换成纳秒
+        interval);  // timerfd_settime() 的时间参数是秒和纳秒的组合，所以先把毫秒转换成秒
+    const auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        interval - seconds);  // 再把剩下毫秒转换成纳秒
 
     // 设置定时器的初始过期时间
     spec.it_value.tv_sec = seconds.count();
@@ -38,7 +38,7 @@ itimerspec makeIntervalSpec(std::chrono::milliseconds interval) {
     return spec;
 }
 
-} // namespace
+}  // namespace
 
 TimerManager::TimerManager(EventLoop* loop, std::chrono::milliseconds tick_interval)
     : loop_(loop), tick_interval_(tick_interval) {
@@ -56,7 +56,8 @@ TimerManager::~TimerManager() {
 
 Status TimerManager::start() {
     if (!loop_->isInLoopThread()) {
-        return Status::error(ErrorCode::InvalidArgument, "TimerManager must start in its owner EventLoop thread");
+        return Status::error(ErrorCode::InvalidArgument,
+                             "TimerManager must start in its owner EventLoop thread");
     }
 
     return startInLoop();
@@ -74,7 +75,8 @@ void TimerManager::stop() noexcept {
     stopInLoop();
 }
 
-TimerManager::TimerId TimerManager::runAfter(std::chrono::milliseconds delay, TimerCallback callback) {
+TimerManager::TimerId TimerManager::runAfter(std::chrono::milliseconds delay,
+                                             TimerCallback callback) {
     loop_->assertInLoopThread();
     const auto delay_ms = delay.count() < 0 ? 0 : delay.count();
     return timers_.add(steadyNowMilliseconds() + delay_ms, std::move(callback));
@@ -99,7 +101,8 @@ Status TimerManager::startInLoop() {
         return Status::ok();
     }
     if (tick_interval_.count() <= 0) {
-        return Status::error(ErrorCode::InvalidArgument, "TimerManager tick interval must be positive");
+        return Status::error(ErrorCode::InvalidArgument,
+                             "TimerManager tick interval must be positive");
     }
 
     timer_channel_.reset();
@@ -109,7 +112,8 @@ Status TimerManager::startInLoop() {
         return errnoStatus("timerfd_create", errno);
     }
 
-    auto spec = makeIntervalSpec(tick_interval_); // 设置定时器的初始过期时间和间隔时间，单位是秒和纳秒
+    auto spec =
+        makeIntervalSpec(tick_interval_);  // 设置定时器的初始过期时间和间隔时间，单位是秒和纳秒
     if (::timerfd_settime(timer_fd_.fd(), 0, &spec, nullptr) < 0) {
         // 内核维护timerfd，每spec.it_interval时间到期一次，变得可读，直到被read读掉
         const auto status = errnoStatus("timerfd_settime", errno);
@@ -187,8 +191,9 @@ void TimerManager::handleRead() noexcept {
 }
 
 std::int64_t TimerManager::steadyNowMilliseconds() const noexcept {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
         .count();
 }
 
-} // namespace liteim
+}  // namespace liteim

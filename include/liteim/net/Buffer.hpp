@@ -34,4 +34,4 @@ private:
     std::size_t write_index_{0};
 };
 
-} // namespace liteim
+}  // namespace liteim

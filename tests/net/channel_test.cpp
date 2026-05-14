@@ -177,14 +177,17 @@ TEST(ChannelTest, HandleEventDoesNotCopyStoredCallbacks) {
         int* copies;
         int* calls;
 
-        CopyCountingCallback(int* copy_count, int* call_count) : copies(copy_count), calls(call_count) {}
+        CopyCountingCallback(int* copy_count, int* call_count)
+            : copies(copy_count), calls(call_count) {}
 
-        CopyCountingCallback(const CopyCountingCallback& other) : copies(other.copies), calls(other.calls) {
+        CopyCountingCallback(const CopyCountingCallback& other)
+            : copies(other.copies), calls(other.calls) {
             ++(*copies);
         }
 
         CopyCountingCallback(CopyCountingCallback&& other) noexcept
-            : copies(std::exchange(other.copies, nullptr)), calls(std::exchange(other.calls, nullptr)) {}
+            : copies(std::exchange(other.copies, nullptr)),
+              calls(std::exchange(other.calls, nullptr)) {}
 
         CopyCountingCallback& operator=(const CopyCountingCallback&) = delete;
         CopyCountingCallback& operator=(CopyCountingCallback&&) = delete;

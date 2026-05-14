@@ -45,4 +45,4 @@ private:
     NewConnectionCallback new_connection_callback_;
 };
 
-} // namespace liteim
+}  // namespace liteim

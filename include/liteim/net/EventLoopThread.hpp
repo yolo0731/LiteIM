@@ -18,7 +18,7 @@ public:
     EventLoopThread(const EventLoopThread&) = delete;
     EventLoopThread& operator=(const EventLoopThread&) = delete;
 
-    EventLoop* startLoop(); // 把子线程里这个 EventLoop loop 的地址保存到成员变量 loop_里。
+    EventLoop* startLoop();  // 把子线程里这个 EventLoop loop 的地址保存到成员变量 loop_里。
     void stop() noexcept;
     bool running() const noexcept;
 
@@ -41,4 +41,4 @@ private:
     std::exception_ptr startup_exception_;
 };
 
-} // namespace liteim
+}  // namespace liteim

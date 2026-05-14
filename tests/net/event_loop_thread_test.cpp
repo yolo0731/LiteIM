@@ -68,7 +68,8 @@ TEST(EventLoopThreadTest, OwnerStopWaitsAfterStopIsRequestedInsideLoop) {
 
     {
         std::unique_lock<std::mutex> lock(mutex);
-        ASSERT_TRUE(ready.wait_for(lock, std::chrono::seconds(2), [&]() { return self_stop_returned; }));
+        ASSERT_TRUE(
+            ready.wait_for(lock, std::chrono::seconds(2), [&]() { return self_stop_returned; }));
     }
 
     thread.stop();

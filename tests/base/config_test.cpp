@@ -9,8 +9,8 @@
 namespace {
 
 std::filesystem::path writeTempConfig(const std::string& content) {
-    const auto path = std::filesystem::temp_directory_path() /
-                      std::filesystem::path{"liteim_config_test.conf"};
+    const auto path =
+        std::filesystem::temp_directory_path() / std::filesystem::path{"liteim_config_test.conf"};
     std::ofstream output(path);
     output << content;
     return path;

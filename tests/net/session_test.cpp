@@ -73,9 +73,7 @@ void writeAll(int fd, const liteim::Bytes& data) {
     }
 }
 
-liteim::Bytes readExactWithTimeout(int fd,
-                                   std::size_t len,
-                                   std::chrono::milliseconds timeout) {
+liteim::Bytes readExactWithTimeout(int fd, std::size_t len, std::chrono::milliseconds timeout) {
     liteim::Bytes output(len);
     std::size_t read_bytes = 0;
     const auto deadline = std::chrono::steady_clock::now() + timeout;
@@ -88,7 +86,8 @@ liteim::Bytes readExactWithTimeout(int fd,
             return output;
         }
 
-        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
+        const auto remaining =
+            std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
         pollfd pfd{};
         pfd.fd = fd;
         pfd.events = POLLIN;
@@ -157,9 +156,7 @@ TEST(SessionTest, HalfPacketDoesNotInvokeMessageCallback) {
     std::atomic_int callback_count{0};
 
     session->setMessageCallback([&callback_count](const std::shared_ptr<liteim::Session>&,
-                                                  const liteim::Packet&) {
-        ++callback_count;
-    });
+                                                  const liteim::Packet&) { ++callback_count; });
     session->start();
 
     const liteim::Bytes half(encoded.begin(), encoded.begin() + 5);
@@ -182,11 +179,11 @@ TEST(SessionTest, SplitPacketAcrossReadsInvokesCallbackAfterSecondRead) {
     const auto encoded = encodeOrDie(makePacket("split-complete", 9));
     std::uint64_t observed_seq_id = 0;
 
-    session->setMessageCallback(
-        [&loop, &observed_seq_id](const std::shared_ptr<liteim::Session>&, const liteim::Packet& packet) {
-            observed_seq_id = packet.header.seq_id;
-            loop.quit();
-        });
+    session->setMessageCallback([&loop, &observed_seq_id](const std::shared_ptr<liteim::Session>&,
+                                                          const liteim::Packet& packet) {
+        observed_seq_id = packet.header.seq_id;
+        loop.quit();
+    });
     session->start();
 
     const auto split_pos = encoded.size() / 2;
@@ -239,11 +236,12 @@ TEST(SessionTest, PeerCloseInvokesCloseCallback) {
     auto session = std::make_shared<liteim::Session>(&loop, std::move(sockets.server));
     int close_count = 0;
 
-    session->setCloseCallback([&loop, &close_count](const std::shared_ptr<liteim::Session>& closed) {
-        EXPECT_TRUE(closed->closed());
-        ++close_count;
-        loop.quit();
-    });
+    session->setCloseCallback(
+        [&loop, &close_count](const std::shared_ptr<liteim::Session>& closed) {
+            EXPECT_TRUE(closed->closed());
+            ++close_count;
+            loop.quit();
+        });
     session->start();
 
     sockets.peer.reset();
@@ -261,11 +259,12 @@ TEST(SessionTest, MalformedPacketClosesSession) {
     malformed[0] = static_cast<liteim::Byte>(0);
     int close_count = 0;
 
-    session->setCloseCallback([&loop, &close_count](const std::shared_ptr<liteim::Session>& closed) {
-        EXPECT_TRUE(closed->closed());
-        ++close_count;
-        loop.quit();
-    });
+    session->setCloseCallback(
+        [&loop, &close_count](const std::shared_ptr<liteim::Session>& closed) {
+            EXPECT_TRUE(closed->closed());
+            ++close_count;
+            loop.quit();
+        });
     session->start();
 
     writeAll(sockets.peer.fd(), malformed);
@@ -305,7 +304,8 @@ TEST(SessionTest, SendPacketFromOtherThreadDeliversEncodedPacket) {
 
     const auto status = session->sendPacket(packet);
     ASSERT_TRUE(status.isOk()) << status.message();
-    const auto received = readExactWithTimeout(sockets.peer.fd(), expected.size(), std::chrono::seconds(2));
+    const auto received =
+        readExactWithTimeout(sockets.peer.fd(), expected.size(), std::chrono::seconds(2));
     EXPECT_EQ(received, expected);
 
     loop_ptr->queueInLoop([&]() {
@@ -318,10 +318,7 @@ TEST(SessionTest, SendPacketFromOtherThreadDeliversEncodedPacket) {
 TEST(SessionTest, LargePacketLeavesPendingOutputWhenPeerDoesNotRead) {
     auto sockets = makeSocketPair();
     int send_buffer_size = 4096;
-    const int rc = ::setsockopt(sockets.server.fd(),
-                                SOL_SOCKET,
-                                SO_SNDBUF,
-                                &send_buffer_size,
+    const int rc = ::setsockopt(sockets.server.fd(), SOL_SOCKET, SO_SNDBUF, &send_buffer_size,
                                 static_cast<socklen_t>(sizeof(send_buffer_size)));
     ASSERT_EQ(rc, 0) << "setsockopt errno=" << errno;
 

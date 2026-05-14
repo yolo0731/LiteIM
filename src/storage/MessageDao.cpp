@@ -11,7 +11,7 @@
 namespace liteim {
 namespace {
 
-constexpr std::uint32_t kMaxHistoryLimit = 50;
+constexpr std::uint32_t kMaxHistoryLimit = 50;  // 限制一次查询历史消息的最大条数
 
 Status malformedMessageRowStatus() {
     return Status::error(ErrorCode::InternalError, "messages query returned a malformed row");
@@ -52,7 +52,7 @@ Status parseInt64(const std::string& text, std::int64_t& value) {
         return malformedMessageRowStatus();
     }
 }
-
+// 将字符串解析为 ConversationType 枚举值
 Status parseConversationType(const std::string& text, ConversationType& type) {
     std::uint64_t raw_type = 0;
     const auto parse_status = parseUint64(text, raw_type);
@@ -70,18 +70,18 @@ Status parseConversationType(const std::string& text, ConversationType& type) {
     return malformedMessageRowStatus();
 }
 
-Status bindUint64(PreparedStatement& statement,
-                  std::size_t index,
-                  std::uint64_t value,
+Status bindUint64(PreparedStatement& statement, std::size_t index, std::uint64_t value,
                   const std::string& field_name) {
     (void)field_name;
     return statement.bindUInt64(index, value);
 }
 
-Status bindConversationType(PreparedStatement& statement, std::size_t index, ConversationType type) {
+Status bindConversationType(PreparedStatement& statement, std::size_t index,
+                            ConversationType type) {
     return statement.bindInt64(index, static_cast<std::int64_t>(type));
 }
 
+// 把 MySQL 查出来的一行消息数据，转换成 MessageRecord。
 Status rowToMessageRecord(const MySqlRow& row, MessageRecord& message) {
     if (row.values.size() != 7U) {
         return malformedMessageRowStatus();
@@ -129,7 +129,8 @@ Status rowToMessageRecord(const MySqlRow& row, MessageRecord& message) {
     if (!id_status.isOk()) {
         return id_status;
     }
-    const auto type_status = parseConversationType(*conversation_type, parsed_message.conversation.type);
+    const auto type_status =
+        parseConversationType(*conversation_type, parsed_message.conversation.type);
     if (!type_status.isOk()) {
         return type_status;
     }
@@ -155,8 +156,10 @@ Status rowToMessageRecord(const MySqlRow& row, MessageRecord& message) {
     return Status::ok();
 }
 
+// 验证 ConversationKey 的合法性，比如 type 是否是已知的枚举值，id 是否非零等。
 Status validateConversationKey(const ConversationKey& conversation) {
-    if (conversation.type != ConversationType::kPrivate && conversation.type != ConversationType::kGroup) {
+    if (conversation.type != ConversationType::kPrivate &&
+        conversation.type != ConversationType::kGroup) {
         return Status::error(ErrorCode::InvalidArgument, "conversation type is invalid");
     }
     if (conversation.id == 0U) {
@@ -165,16 +168,16 @@ Status validateConversationKey(const ConversationKey& conversation) {
     return Status::ok();
 }
 
-Status normalizeMessageForInsert(const MessageRecord& input,
-                                 ConversationType expected_type,
-                                 std::uint64_t& receiver_id,
-                                 std::int64_t& created_at_ms) {
+// 规范化消息记录以便插入数据库，比如根据 conversation type 确定 receiver_id，设置 created_at_ms 等。
+Status normalizeMessageForInsert(const MessageRecord& input, ConversationType expected_type,
+                                 std::uint64_t& receiver_id, std::int64_t& created_at_ms) {
     const auto conversation_status = validateConversationKey(input.conversation);
     if (!conversation_status.isOk()) {
         return conversation_status;
     }
     if (input.conversation.type != expected_type) {
-        return Status::error(ErrorCode::InvalidArgument, "message conversation type does not match DAO method");
+        return Status::error(ErrorCode::InvalidArgument,
+                             "message conversation type does not match DAO method");
     }
     if (input.sender_id == 0U) {
         return Status::error(ErrorCode::InvalidArgument, "sender id must not be zero");
@@ -182,16 +185,19 @@ Status normalizeMessageForInsert(const MessageRecord& input,
 
     receiver_id = input.receiver_id;
     if (expected_type == ConversationType::kPrivate && receiver_id == 0U) {
-        return Status::error(ErrorCode::InvalidArgument, "private message receiver id must not be zero");
+        return Status::error(ErrorCode::InvalidArgument,
+                             "private message receiver id must not be zero");
     }
     if (expected_type == ConversationType::kGroup && receiver_id == 0U) {
         receiver_id = input.conversation.id;
     }
 
-    created_at_ms = input.created_at_ms > 0 ? input.created_at_ms : Timestamp::now().millisecondsSinceEpoch();
+    created_at_ms =
+        input.created_at_ms > 0 ? input.created_at_ms : Timestamp::now().millisecondsSinceEpoch();
     return Status::ok();
 }
 
+// 执行一个查询消息的 SQL，并要求结果必须刚好一行。
 Status querySingleMessage(PreparedStatement& statement, MessageRecord& message) {
     MySqlQueryResult result;
     const auto query_status = statement.executeQuery(result);
@@ -207,27 +213,28 @@ Status querySingleMessage(PreparedStatement& statement, MessageRecord& message) 
     return rowToMessageRecord(result.rows().front(), message);
 }
 
+// 查出当前连接刚刚 INSERT 的那条 messages 记录。
 Status queryLastInsertedMessage(MySqlConnection& connection, MessageRecord& message) {
     PreparedStatement query(connection);
-    const auto prepare_status =
-        query.prepare("SELECT message_id, conversation_type, conversation_id, sender_id, receiver_id, "
-                      "message_text, created_at_ms "
-                      "FROM messages WHERE message_id = LAST_INSERT_ID() LIMIT 1");
+    const auto prepare_status = query.prepare(
+        "SELECT message_id, conversation_type, conversation_id, sender_id, receiver_id, "
+        "message_text, created_at_ms "
+        "FROM messages WHERE message_id = LAST_INSERT_ID() LIMIT 1");
     if (!prepare_status.isOk()) {
         return prepare_status;
     }
     return querySingleMessage(query, message);
 }
 
+// 回滚事务，事务中间失败时，先 ROLLBACK，再返回原来的错误。
 Status rollbackAndReturn(MySqlConnection& connection, const Status& status) {
     (void)connection.executeSimple("ROLLBACK");
     return status;
 }
 
-Status saveMessageWithType(MySqlPool& pool,
-                           std::chrono::milliseconds acquire_timeout,
-                           const MessageRecord& message,
-                           ConversationType expected_type,
+// 整个保存消息的流程：先验证和规范化输入，开始事务，执行 INSERT，查询刚插入的消息记录，最后提交事务。如果中间任何一步失败，都回滚事务并返回错误。
+Status saveMessageWithType(MySqlPool& pool, std::chrono::milliseconds acquire_timeout,
+                           const MessageRecord& message, ConversationType expected_type,
                            MessageRecord& saved_message) {
     std::uint64_t receiver_id = 0;
     std::int64_t created_at_ms = 0;
@@ -243,16 +250,16 @@ Status saveMessageWithType(MySqlPool& pool,
         return acquire_status;
     }
 
-    const auto begin_status = guard->executeSimple("START TRANSACTION");
+    const auto begin_status = guard->executeSimple("START TRANSACTION");  // 开始事务
     if (!begin_status.isOk()) {
         return begin_status;
     }
 
     PreparedStatement statement(*guard);
-    const auto prepare_status =
-        statement.prepare("INSERT INTO messages "
-                          "(conversation_type, conversation_id, sender_id, receiver_id, message_text, created_at_ms) "
-                          "VALUES (?, ?, ?, ?, ?, ?)");
+    const auto prepare_status = statement.prepare(
+        "INSERT INTO messages "
+        "(conversation_type, conversation_id, sender_id, receiver_id, message_text, created_at_ms) "
+        "VALUES (?, ?, ?, ?, ?, ?)");
     if (!prepare_status.isOk()) {
         return rollbackAndReturn(*guard, prepare_status);
     }
@@ -261,7 +268,8 @@ Status saveMessageWithType(MySqlPool& pool,
     if (!type_status.isOk()) {
         return rollbackAndReturn(*guard, type_status);
     }
-    const auto conversation_status = bindUint64(statement, 1, message.conversation.id, "conversation_id");
+    const auto conversation_status =
+        bindUint64(statement, 1, message.conversation.id, "conversation_id");
     if (!conversation_status.isOk()) {
         return rollbackAndReturn(*guard, conversation_status);
     }
@@ -283,39 +291,43 @@ Status saveMessageWithType(MySqlPool& pool,
     }
 
     std::uint64_t affected_rows = 0;
+    // 执行 INSERT 语句，affected_rows 应该是 1，如果不是，说明插入失败，回滚事务并返回错误。
     const auto insert_status = statement.executeUpdate(affected_rows);
     if (!insert_status.isOk()) {
         return rollbackAndReturn(*guard, insert_status);
     }
     if (affected_rows != 1U) {
-        return rollbackAndReturn(*guard,
-                                 Status::error(ErrorCode::InternalError,
-                                               "save message affected unexpected row count"));
+        return rollbackAndReturn(
+            *guard,
+            Status::error(ErrorCode::InternalError, "save message affected unexpected row count"));
     }
-
+    // 查询刚插入的消息记录，MySQL 提供了 LAST_INSERT_ID() 函数可以获取当前连接最后一次插入的 AUTO_INCREMENT 主键值，这里利用它来查询刚插入的消息。
     const auto query_status = queryLastInsertedMessage(*guard, saved_message);
     if (!query_status.isOk()) {
         return rollbackAndReturn(*guard, query_status);
     }
 
-    return guard->executeSimple("COMMIT");
+    return guard->executeSimple("COMMIT");  // 提交事务
 }
 
-} // namespace
+}  // namespace
 
 MessageDao::MessageDao(MySqlPool& pool, std::chrono::milliseconds acquire_timeout)
-    : pool_(&pool), acquire_timeout_(acquire_timeout) {
-}
+    : pool_(&pool), acquire_timeout_(acquire_timeout) {}
 
 Status MessageDao::savePrivateMessage(const MessageRecord& message, MessageRecord& saved_message) {
-    return saveMessageWithType(*pool_, acquire_timeout_, message, ConversationType::kPrivate, saved_message);
+    return saveMessageWithType(*pool_, acquire_timeout_, message, ConversationType::kPrivate,
+                               saved_message);
 }
 
 Status MessageDao::saveGroupMessage(const MessageRecord& message, MessageRecord& saved_message) {
-    return saveMessageWithType(*pool_, acquire_timeout_, message, ConversationType::kGroup, saved_message);
+    // message是调用方传进来的“待保存消息”，saved_message是MySQL 保存后查回来的“完整消息”
+    return saveMessageWithType(*pool_, acquire_timeout_, message, ConversationType::kGroup,
+                               saved_message);
 }
 
-Status MessageDao::getHistoryByConversation(const HistoryQuery& query, std::vector<MessageRecord>& messages) {
+Status MessageDao::getHistoryByConversation(const HistoryQuery& query,
+                                            std::vector<MessageRecord>& messages) {
     messages.clear();
 
     const auto conversation_status = validateConversationKey(query.conversation);
@@ -334,16 +346,19 @@ Status MessageDao::getHistoryByConversation(const HistoryQuery& query, std::vect
     }
 
     PreparedStatement statement(*guard);
-    const auto sql =
-        query.before_message_id == 0U
-            ? "SELECT message_id, conversation_type, conversation_id, sender_id, receiver_id, message_text, "
-              "created_at_ms FROM messages "
-              "WHERE conversation_type = ? AND conversation_id = ? "
-              "ORDER BY message_id DESC LIMIT ?"
-            : "SELECT message_id, conversation_type, conversation_id, sender_id, receiver_id, message_text, "
-              "created_at_ms FROM messages "
-              "WHERE conversation_type = ? AND conversation_id = ? AND message_id < ? "
-              "ORDER BY message_id DESC LIMIT ?";
+    // 根据是否有 before_message_id 来选择不同的 SQL，查询消息历史记录，结果按照 message_id 降序排列，如果 before_message_id 不为零，还要加一个 message_id < before_message_id 的条件来实现分页查询。
+    // 分页查询: 第一次请求不传 before_message_id，查询最新的 limit 条消息；第二次请求传上次返回的最后一条消息的 message_id 作为 before_message_id，就能查询到更早的 limit 条消息
+    const auto sql = query.before_message_id == 0U
+                         ? "SELECT message_id, conversation_type, conversation_id, sender_id, "
+                           "receiver_id, message_text, "
+                           "created_at_ms FROM messages "
+                           "WHERE conversation_type = ? AND conversation_id = ? "
+                           "ORDER BY message_id DESC LIMIT ?"
+                         : "SELECT message_id, conversation_type, conversation_id, sender_id, "
+                           "receiver_id, message_text, "
+                           "created_at_ms FROM messages "
+                           "WHERE conversation_type = ? AND conversation_id = ? AND message_id < ? "
+                           "ORDER BY message_id DESC LIMIT ?";
 
     const auto prepare_status = statement.prepare(sql);
     if (!prepare_status.isOk()) {
@@ -353,14 +368,16 @@ Status MessageDao::getHistoryByConversation(const HistoryQuery& query, std::vect
     if (!type_status.isOk()) {
         return type_status;
     }
-    const auto conversation_bind_status = bindUint64(statement, 1, query.conversation.id, "conversation_id");
+    const auto conversation_bind_status =
+        bindUint64(statement, 1, query.conversation.id, "conversation_id");
     if (!conversation_bind_status.isOk()) {
         return conversation_bind_status;
     }
 
     std::size_t limit_index = 2;
     if (query.before_message_id != 0U) {
-        const auto before_status = bindUint64(statement, 2, query.before_message_id, "before_message_id");
+        const auto before_status =
+            bindUint64(statement, 2, query.before_message_id, "before_message_id");
         if (!before_status.isOk()) {
             return before_status;
         }
@@ -392,4 +409,4 @@ Status MessageDao::getHistoryByConversation(const HistoryQuery& query, std::vect
     return Status::ok();
 }
 
-} // namespace liteim
+}  // namespace liteim

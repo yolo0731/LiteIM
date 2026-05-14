@@ -20,9 +20,9 @@ class EventLoop;
 inline constexpr std::size_t kSessionDefaultOutputHighWaterMark = 4 * 1024 * 1024;
 
 enum class SessionState {
-    kNew,     // Session对象刚创建，还没有开始
-    kStarted, // Session对象已经开始，可以正常收发消息
-    kClosing, // Session对象正在关闭过程中，可能是因为调用了close()或者发生了错误，此时不应该再发送消息
+    kNew,      // Session对象刚创建，还没有开始
+    kStarted,  // Session对象已经开始，可以正常收发消息
+    kClosing,  // Session对象正在关闭过程中，可能是因为调用了close()或者发生了错误，此时不应该再发送消息
     kClosed,  // Session对象已经完全关闭，资源已经释放，此时Session对象不应该再被使用
 };
 
@@ -76,4 +76,4 @@ private:
     std::atomic<std::int64_t> last_active_time_ms_{0};
 };
 
-} // namespace liteim
+}  // namespace liteim

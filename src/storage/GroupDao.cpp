@@ -57,9 +57,7 @@ Status validateId(std::uint64_t id, const std::string& field_name) {
     return Status::ok();
 }
 
-Status bindId(PreparedStatement& statement,
-              std::size_t index,
-              std::uint64_t id,
+Status bindId(PreparedStatement& statement, std::size_t index, std::uint64_t id,
               const std::string& field_name) {
     const auto validate_status = validateId(id, field_name);
     if (!validate_status.isOk()) {
@@ -176,6 +174,7 @@ Status querySingleGroup(PreparedStatement& statement, GroupRecord& group) {
     return rowToGroupRecord(result.rows().front(), group);
 }
 
+// 查刚刚插入的群资料
 Status queryLastInsertedGroup(MySqlConnection& connection, GroupRecord& group) {
     PreparedStatement query(connection);
     const auto prepare_status =
@@ -187,9 +186,11 @@ Status queryLastInsertedGroup(MySqlConnection& connection, GroupRecord& group) {
     return querySingleGroup(query, group);
 }
 
-Status queryGroupOwner(MySqlConnection& connection, std::uint64_t group_id, std::uint64_t& owner_id) {
+Status queryGroupOwner(MySqlConnection& connection, std::uint64_t group_id,
+                       std::uint64_t& owner_id) {
     PreparedStatement query(connection);
-    const auto prepare_status = query.prepare("SELECT owner_id FROM chat_groups WHERE group_id = ? LIMIT 1");
+    const auto prepare_status =
+        query.prepare("SELECT owner_id FROM chat_groups WHERE group_id = ? LIMIT 1");
     if (!prepare_status.isOk()) {
         return prepare_status;
     }
@@ -210,23 +211,23 @@ Status queryGroupOwner(MySqlConnection& connection, std::uint64_t group_id, std:
         return malformedGroupRowStatus();
     }
 
-    const std::string* raw_owner_id = nullptr;
+    const std::string* raw_owner_id = nullptr;  // 用来指向查询结果里的原始字符串
     const auto owner_status = requiredValue(result.rows().front(), 0, raw_owner_id);
     if (!owner_status.isOk()) {
         return owner_status;
     }
+    // 把 raw_owner_id 指向的字符串解析成 std::uint64_t，
     return parseUint64(*raw_owner_id, owner_id);
 }
 
-Status insertGroupMember(MySqlConnection& connection,
-                         std::uint64_t group_id,
-                         std::uint64_t user_id,
+Status insertGroupMember(MySqlConnection& connection, std::uint64_t group_id, std::uint64_t user_id,
                          std::int64_t joined_at_ms) {
     PreparedStatement statement(connection);
-    const auto prepare_status =
-        statement.prepare("INSERT INTO group_members (group_id, user_id, joined_at_ms) "
-                          "VALUES (?, ?, ?) "
-                          "ON DUPLICATE KEY UPDATE joined_at_ms = group_members.joined_at_ms");
+    const auto prepare_status = statement.prepare(
+        "INSERT INTO group_members (group_id, user_id, joined_at_ms) "
+        "VALUES (?, ?, ?) "
+        "ON DUPLICATE KEY UPDATE joined_at_ms = "
+        "group_members.joined_at_ms");  // ON DUPLICATE KEY UPDATE确保重复添加成员时幂等
     if (!prepare_status.isOk()) {
         return prepare_status;
     }
@@ -247,11 +248,10 @@ Status insertGroupMember(MySqlConnection& connection,
     return statement.executeUpdate(affected_rows);
 }
 
-} // namespace
+}  // namespace
 
 GroupDao::GroupDao(MySqlPool& pool, std::chrono::milliseconds acquire_timeout)
-    : pool_(&pool), acquire_timeout_(acquire_timeout) {
-}
+    : pool_(&pool), acquire_timeout_(acquire_timeout) {}
 
 Status GroupDao::createGroup(const CreateGroupRequest& request, GroupRecord& created_group) {
     const auto owner_status = validateId(request.owner_id, "owner_id");
@@ -313,7 +313,8 @@ Status GroupDao::createGroup(const CreateGroupRequest& request, GroupRecord& cre
     }
     if (affected_rows != 1U) {
         rollbackSilently(*guard);
-        return Status::error(ErrorCode::InternalError, "create group affected unexpected row count");
+        return Status::error(ErrorCode::InternalError,
+                             "create group affected unexpected row count");
     }
 
     const auto query_status = queryLastInsertedGroup(*guard, created_group);
@@ -322,7 +323,8 @@ Status GroupDao::createGroup(const CreateGroupRequest& request, GroupRecord& cre
         return query_status;
     }
 
-    const auto member_status = insertGroupMember(*guard, created_group.group_id, request.owner_id, now_ms);
+    const auto member_status =
+        insertGroupMember(*guard, created_group.group_id, request.owner_id, now_ms);
     if (!member_status.isOk()) {
         rollbackSilently(*guard);
         return member_status;
@@ -373,7 +375,8 @@ Status GroupDao::removeGroupMember(std::uint64_t group_id, std::uint64_t user_id
         return owner_status;
     }
     if (owner_id == user_id) {
-        return Status::error(ErrorCode::InvalidArgument, "group owner cannot be removed from members");
+        return Status::error(ErrorCode::InvalidArgument,
+                             "group owner cannot be removed from members");
     }
 
     PreparedStatement statement(*guard);
@@ -479,4 +482,4 @@ Status GroupDao::findGroupById(std::uint64_t group_id, GroupRecord& group) {
     return querySingleGroup(statement, group);
 }
 
-} // namespace liteim
+}  // namespace liteim

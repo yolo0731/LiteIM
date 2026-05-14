@@ -68,9 +68,10 @@ void logWarnNoexcept(const char* format, int error_number) noexcept {
     }
 }
 
-} // namespace
+}  // namespace
 
-Acceptor::Acceptor(EventLoop* loop, const std::string& listen_ip, std::uint16_t port) : loop_(loop) {
+Acceptor::Acceptor(EventLoop* loop, const std::string& listen_ip, std::uint16_t port)
+    : loop_(loop) {
     if (loop_ == nullptr) {
         throw std::invalid_argument("Acceptor requires a valid EventLoop");
     }
@@ -152,8 +153,8 @@ void Acceptor::handleRead() {
     while (listen_fd_) {
         sockaddr_in peer_address{};
         socklen_t len = static_cast<socklen_t>(sizeof(peer_address));
-        const int fd =
-            ::accept4(listen_fd_.fd(), reinterpret_cast<sockaddr*>(&peer_address), &len, SOCK_NONBLOCK | SOCK_CLOEXEC);
+        const int fd = ::accept4(listen_fd_.fd(), reinterpret_cast<sockaddr*>(&peer_address), &len,
+                                 SOCK_NONBLOCK | SOCK_CLOEXEC);
         if (fd >= 0) {
             UniqueFd accepted_fd(fd);
             if (new_connection_callback_) {
@@ -197,8 +198,8 @@ void Acceptor::rejectOneConnectionAfterFdExhaustion() noexcept {
 
     sockaddr_in peer_address{};
     socklen_t len = static_cast<socklen_t>(sizeof(peer_address));
-    const int fd =
-        ::accept4(listen_fd_.fd(), reinterpret_cast<sockaddr*>(&peer_address), &len, SOCK_NONBLOCK | SOCK_CLOEXEC);
+    const int fd = ::accept4(listen_fd_.fd(), reinterpret_cast<sockaddr*>(&peer_address), &len,
+                             SOCK_NONBLOCK | SOCK_CLOEXEC);
     if (fd >= 0) {
         UniqueFd rejected_fd(fd);
     } else {
@@ -213,4 +214,4 @@ void Acceptor::rejectOneConnectionAfterFdExhaustion() noexcept {
     idle_fd_.reset(idle_fd);
 }
 
-} // namespace liteim
+}  // namespace liteim

@@ -79,4 +79,4 @@ struct HistoryQuery {
     std::uint32_t limit{50};
 };
 
-} // namespace liteim
+}  // namespace liteim

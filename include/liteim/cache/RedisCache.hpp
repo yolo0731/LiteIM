@@ -22,11 +22,13 @@ public:
     Status isUserOnline(std::uint64_t user_id, bool& online) override;
     Status getOnlineSession(std::uint64_t user_id, OnlineSession& session) override;
 
-    Status incrUnread(const UnreadKey& key, std::uint64_t delta, std::uint64_t& unread_count) override;
+    Status incrUnread(const UnreadKey& key, std::uint64_t delta,
+                      std::uint64_t& unread_count) override;
     Status getUnread(const UnreadKey& key, std::uint64_t& unread_count) override;
     Status clearUnread(const UnreadKey& key) override;
 
-    Status allowLoginAttempt(const LoginAttemptKey& key, std::uint32_t max_failures, bool& allowed) override;
+    Status allowLoginAttempt(const LoginAttemptKey& key, std::uint32_t max_failures,
+                             bool& allowed) override;
     Status recordLoginFailure(const LoginAttemptKey& key, std::chrono::seconds ttl) override;
     Status clearLoginFailure(const LoginAttemptKey& key) override;
 
@@ -36,4 +38,4 @@ private:
     LoginRateLimiter login_limiter_;
 };
 
-} // namespace liteim
+}  // namespace liteim

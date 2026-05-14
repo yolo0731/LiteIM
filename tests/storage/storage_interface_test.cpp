@@ -35,7 +35,8 @@ public:
         return liteim::Status::ok();
     }
 
-    liteim::Status getFriends(std::uint64_t, std::vector<liteim::UserProfileRecord>& friends) override {
+    liteim::Status getFriends(std::uint64_t,
+                              std::vector<liteim::UserProfileRecord>& friends) override {
         friends.push_back(liteim::UserProfileRecord{7, "friend", "Friend", 100});
         return liteim::Status::ok();
     }
@@ -56,7 +57,8 @@ public:
         return liteim::Status::ok();
     }
 
-    liteim::Status getGroupMembers(std::uint64_t, std::vector<liteim::GroupMemberRecord>& members) override {
+    liteim::Status getGroupMembers(std::uint64_t,
+                                   std::vector<liteim::GroupMemberRecord>& members) override {
         members.push_back(liteim::GroupMemberRecord{42, "user", "User", 200});
         return liteim::Status::ok();
     }
@@ -66,9 +68,10 @@ public:
         return liteim::Status::ok();
     }
 
-    liteim::Status saveMessageWithOfflineRecipients(const liteim::MessageRecord&,
-                                                    const std::vector<std::uint64_t>& offline_user_ids,
-                                                    liteim::MessageRecord& saved_message) override {
+    liteim::Status
+    saveMessageWithOfflineRecipients(const liteim::MessageRecord&,
+                                     const std::vector<std::uint64_t>& offline_user_ids,
+                                     liteim::MessageRecord& saved_message) override {
         saved_message.message_id = 1001;
         saved_message.receiver_id = offline_user_ids.empty() ? 7 : offline_user_ids.front();
         return liteim::Status::ok();
@@ -78,7 +81,9 @@ public:
         return liteim::Status::ok();
     }
 
-    liteim::Status getOfflineMessages(std::uint64_t, std::vector<liteim::OfflineMessageRecord>& messages) override {
+    liteim::Status
+    getOfflineMessages(std::uint64_t,
+                       std::vector<liteim::OfflineMessageRecord>& messages) override {
         messages.push_back(liteim::OfflineMessageRecord{1, 42, liteim::MessageRecord{}, 300});
         return liteim::Status::ok();
     }
@@ -87,18 +92,15 @@ public:
         return liteim::Status::ok();
     }
 
-    liteim::Status getHistory(const liteim::HistoryQuery&, std::vector<liteim::MessageRecord>& messages) override {
-        messages.push_back(liteim::MessageRecord{1001,
-                                                 {liteim::ConversationType::kPrivate, 7},
-                                                 42,
-                                                 7,
-                                                 "hello",
-                                                 400});
+    liteim::Status getHistory(const liteim::HistoryQuery&,
+                              std::vector<liteim::MessageRecord>& messages) override {
+        messages.push_back(liteim::MessageRecord{
+            1001, {liteim::ConversationType::kPrivate, 7}, 42, 7, "hello", 400});
         return liteim::Status::ok();
     }
 };
 
-} // namespace
+}  // namespace
 
 TEST(StorageInterfaceTest, HeaderIsSelfContained) {
     static_assert(std::is_abstract_v<liteim::IStorage>);
@@ -138,8 +140,7 @@ TEST(StorageInterfaceTest, CanBeImplementedByFakeStorage) {
     liteim::MessageRecord saved_message;
     const auto combined_status = interface.saveMessageWithOfflineRecipients(
         liteim::MessageRecord{0, {liteim::ConversationType::kPrivate, 7}, 42, 7, "offline", 500},
-        {7},
-        saved_message);
+        {7}, saved_message);
     ASSERT_TRUE(combined_status.isOk()) << combined_status.message();
     EXPECT_EQ(saved_message.message_id, 1001U);
 }

@@ -8,6 +8,7 @@
 namespace liteim {
 namespace {
 
+// 登录失败记录的 Redis key 键前缀
 constexpr const char* kLoginFailureKeyPrefix = "login:failure:";
 
 Status invalidUsernameStatus() {
@@ -19,7 +20,8 @@ Status invalidRemoteIpStatus() {
 }
 
 Status invalidMaxFailuresStatus() {
-    return Status::error(ErrorCode::InvalidArgument, "login limiter max_failures must be greater than zero");
+    return Status::error(ErrorCode::InvalidArgument,
+                         "login limiter max_failures must be greater than zero");
 }
 
 Status invalidTtlStatus() {
@@ -40,9 +42,10 @@ Status validateLoginKey(const LoginAttemptKey& key) {
     return Status::ok();
 }
 
+// 构建登录失败记录的 Redis key
 std::string loginFailureKey(const LoginAttemptKey& key) {
-    return std::string(kLoginFailureKeyPrefix) + std::to_string(key.username.size()) + ':' + key.username + ':' +
-           std::to_string(key.remote_ip.size()) + ':' + key.remote_ip;
+    return std::string(kLoginFailureKeyPrefix) + std::to_string(key.username.size()) + ':' +
+           key.username + ':' + std::to_string(key.remote_ip.size()) + ':' + key.remote_ip;
 }
 
 Status parseUint64(const std::string& input, std::uint64_t& value) {
@@ -63,24 +66,27 @@ Status parseUint64(const std::string& input, std::uint64_t& value) {
     }
 }
 
-Status acquireClient(RedisPool& pool, std::chrono::milliseconds timeout, RedisConnectionGuard& guard) {
+Status acquireClient(RedisPool& pool, std::chrono::milliseconds timeout,
+                     RedisConnectionGuard& guard) {
     const auto status = pool.acquire(timeout, guard);
     if (!status.isOk()) {
         return status;
     }
     if (!guard) {
-        return Status::error(ErrorCode::InternalError, "Redis pool returned an empty connection guard");
+        return Status::error(ErrorCode::InternalError,
+                             "Redis pool returned an empty connection guard");
     }
     return Status::ok();
 }
 
-} // namespace
+}  // namespace
 
 LoginRateLimiter::LoginRateLimiter(RedisPool& pool, std::chrono::milliseconds acquire_timeout)
-    : pool_(pool), acquire_timeout_(acquire_timeout) {
-}
+    : pool_(pool), acquire_timeout_(acquire_timeout) {}
 
-Status LoginRateLimiter::allow(const LoginAttemptKey& key, std::uint32_t max_failures, bool& allowed) {
+// 判断是否允许登录
+Status LoginRateLimiter::allow(const LoginAttemptKey& key, std::uint32_t max_failures,
+                               bool& allowed) {
     allowed = false;
 
     const auto key_status = validateLoginKey(key);
@@ -117,6 +123,7 @@ Status LoginRateLimiter::allow(const LoginAttemptKey& key, std::uint32_t max_fai
     return Status::ok();
 }
 
+// 记录一次登录失败
 Status LoginRateLimiter::recordFailure(const LoginAttemptKey& key, std::chrono::seconds ttl) {
     const auto key_status = validateLoginKey(key);
     if (!key_status.isOk()) {
@@ -136,9 +143,7 @@ Status LoginRateLimiter::recordFailure(const LoginAttemptKey& key, std::chrono::
     return guard->eval("local value = redis.call('INCR', KEYS[1]); "
                        "redis.call('EXPIRE', KEYS[1], ARGV[1]); "
                        "return value",
-                       {loginFailureKey(key)},
-                       {std::to_string(ttl.count())},
-                       value);
+                       {loginFailureKey(key)}, {std::to_string(ttl.count())}, value);
 }
 
 Status LoginRateLimiter::clear(const LoginAttemptKey& key) {
@@ -157,4 +162,4 @@ Status LoginRateLimiter::clear(const LoginAttemptKey& key) {
     return guard->del(loginFailureKey(key), removed_count);
 }
 
-} // namespace liteim
+}  // namespace liteim

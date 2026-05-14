@@ -31,7 +31,8 @@ public:
         return liteim::Status::error(liteim::ErrorCode::NotFound, "user is offline");
     }
 
-    liteim::Status incrUnread(const liteim::UnreadKey&, std::uint64_t delta, std::uint64_t& unread_count) override {
+    liteim::Status incrUnread(const liteim::UnreadKey&, std::uint64_t delta,
+                              std::uint64_t& unread_count) override {
         unread_count += delta;
         return liteim::Status::ok();
     }
@@ -45,12 +46,14 @@ public:
         return liteim::Status::ok();
     }
 
-    liteim::Status allowLoginAttempt(const liteim::LoginAttemptKey&, std::uint32_t, bool& allowed) override {
+    liteim::Status allowLoginAttempt(const liteim::LoginAttemptKey&, std::uint32_t,
+                                     bool& allowed) override {
         allowed = true;
         return liteim::Status::ok();
     }
 
-    liteim::Status recordLoginFailure(const liteim::LoginAttemptKey&, std::chrono::seconds) override {
+    liteim::Status recordLoginFailure(const liteim::LoginAttemptKey&,
+                                      std::chrono::seconds) override {
         return liteim::Status::ok();
     }
 
@@ -59,7 +62,7 @@ public:
     }
 };
 
-} // namespace
+}  // namespace
 
 TEST(CacheInterfaceTest, HeaderIsSelfContained) {
     static_assert(std::is_abstract_v<liteim::ICache>);
@@ -83,7 +86,8 @@ TEST(CacheInterfaceTest, NullCacheCanBeUsedAsTestDouble) {
     EXPECT_FALSE(online);
 
     std::uint64_t unread = 0;
-    const auto incr_status = interface.incrUnread({42, {liteim::ConversationType::kPrivate, 7}}, 3, unread);
+    const auto incr_status =
+        interface.incrUnread({42, {liteim::ConversationType::kPrivate, 7}}, 3, unread);
     ASSERT_TRUE(incr_status.isOk()) << incr_status.message();
     EXPECT_EQ(unread, 3U);
 

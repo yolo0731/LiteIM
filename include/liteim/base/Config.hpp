@@ -22,7 +22,7 @@ struct RedisConfig {
     std::string host{"127.0.0.1"};
     std::uint16_t port{63790};
     std::string password{"6"};
-    std::uint32_t db{0};
+    std::uint32_t db{0};  // 使用 Redis 的 0 号库
     std::uint32_t pool_size{4};
 };
 
@@ -46,4 +46,4 @@ struct Config {
     Status loadFromFile(const std::filesystem::path& path);
 };
 
-} // namespace liteim
+}  // namespace liteim

@@ -30,4 +30,4 @@ Status getUint64(const TlvMap& map, TlvType type, std::uint64_t& output);
 Status getRepeatedString(const TlvMap& map, TlvType type, std::vector<std::string>& output);
 Status getRepeatedUint64(const TlvMap& map, TlvType type, std::vector<std::uint64_t>& output);
 
-} // namespace liteim
+}  // namespace liteim

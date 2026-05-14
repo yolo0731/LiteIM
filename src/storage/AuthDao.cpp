@@ -6,8 +6,7 @@
 namespace liteim {
 
 AuthDao::AuthDao(MySqlPool& pool, std::chrono::milliseconds acquire_timeout)
-    : pool_(&pool), acquire_timeout_(acquire_timeout) {
-}
+    : pool_(&pool), acquire_timeout_(acquire_timeout) {}
 
 Status AuthDao::usernameExists(const std::string& username, bool& exists) {
     exists = false;
@@ -19,7 +18,8 @@ Status AuthDao::usernameExists(const std::string& username, bool& exists) {
     }
 
     PreparedStatement statement(*guard);
-    const auto prepare_status = statement.prepare("SELECT user_id FROM users WHERE username = ? LIMIT 1");
+    const auto prepare_status =
+        statement.prepare("SELECT user_id FROM users WHERE username = ? LIMIT 1");
     if (!prepare_status.isOk()) {
         return prepare_status;
     }
@@ -38,4 +38,4 @@ Status AuthDao::usernameExists(const std::string& username, bool& exists) {
     return Status::ok();
 }
 
-} // namespace liteim
+}  // namespace liteim

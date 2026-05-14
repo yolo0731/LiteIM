@@ -26,4 +26,4 @@ private:
     int fd_{kInvalidFd};
 };
 
-} // namespace liteim
+}  // namespace liteim

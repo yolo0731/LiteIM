@@ -57,9 +57,7 @@ Status validateUserId(std::uint64_t user_id, const std::string& field_name) {
     return Status::ok();
 }
 
-Status bindUserId(PreparedStatement& statement,
-                  std::size_t index,
-                  std::uint64_t user_id,
+Status bindUserId(PreparedStatement& statement, std::size_t index, std::uint64_t user_id,
                   const std::string& field_name) {
     const auto validate_status = validateUserId(user_id, field_name);
     if (!validate_status.isOk()) {
@@ -116,11 +114,10 @@ Status rowToUserProfileRecord(const MySqlRow& row, UserProfileRecord& user) {
     return Status::ok();
 }
 
-} // namespace
+}  // namespace
 
 FriendDao::FriendDao(MySqlPool& pool, std::chrono::milliseconds acquire_timeout)
-    : pool_(&pool), acquire_timeout_(acquire_timeout) {
-}
+    : pool_(&pool), acquire_timeout_(acquire_timeout) {}
 
 Status FriendDao::addFriendship(std::uint64_t user_id, std::uint64_t friend_id) {
     const auto user_status = validateUserId(user_id, "user_id");
@@ -140,7 +137,7 @@ Status FriendDao::addFriendship(std::uint64_t user_id, std::uint64_t friend_id) 
     if (!acquire_status.isOk()) {
         return acquire_status;
     }
-
+    // 开始事务，确保两条记录要么都插入成功，要么都不插入
     const auto begin_status = guard->executeSimple("START TRANSACTION");
     if (!begin_status.isOk()) {
         return begin_status;
@@ -249,4 +246,4 @@ Status FriendDao::getFriends(std::uint64_t user_id, std::vector<UserProfileRecor
     return Status::ok();
 }
 
-} // namespace liteim
+}  // namespace liteim

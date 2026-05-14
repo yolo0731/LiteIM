@@ -79,7 +79,8 @@ liteim::Bytes readExactWithTimeout(int fd, std::size_t len, std::chrono::millise
             return output;
         }
 
-        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
+        const auto remaining =
+            std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
         pollfd pfd{};
         pfd.fd = fd;
         pfd.events = POLLIN;
@@ -129,8 +130,8 @@ liteim::UniqueFd connectTo(std::uint16_t port) {
     }
 
     const auto address = loopbackAddress(port);
-    const int rc =
-        ::connect(client.fd(), reinterpret_cast<const sockaddr*>(&address), static_cast<socklen_t>(sizeof(address)));
+    const int rc = ::connect(client.fd(), reinterpret_cast<const sockaddr*>(&address),
+                             static_cast<socklen_t>(sizeof(address)));
     EXPECT_EQ(rc, 0) << "connect errno=" << errno;
     return client;
 }
@@ -241,7 +242,7 @@ private:
     std::thread thread_;
 };
 
-} // namespace
+}  // namespace
 
 TEST(TcpServerTest, EchoesPacketToClient) {
     RunningTcpServer server(1);
@@ -264,16 +265,17 @@ TEST(TcpServerTest, DistributesConnectionsAcrossIoLoops) {
     int callback_count = 0;
 
     RunningTcpServer server(2, [&](liteim::TcpServer& tcp_server, liteim::EventLoop&) {
-        tcp_server.setMessageCallback([&](const liteim::Session::Ptr& session, const liteim::Packet& packet) {
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-                observed_loops.insert(session->ownerLoop());
-                ++callback_count;
-            }
-            callback_ready.notify_one();
-            const auto status = session->sendPacket(packet);
-            EXPECT_TRUE(status.isOk()) << status.message();
-        });
+        tcp_server.setMessageCallback(
+            [&](const liteim::Session::Ptr& session, const liteim::Packet& packet) {
+                {
+                    std::lock_guard<std::mutex> lock(mutex);
+                    observed_loops.insert(session->ownerLoop());
+                    ++callback_count;
+                }
+                callback_ready.notify_one();
+                const auto status = session->sendPacket(packet);
+                EXPECT_TRUE(status.isOk()) << status.message();
+            });
     });
 
     auto first_client = connectTo(server.port());
@@ -290,7 +292,8 @@ TEST(TcpServerTest, DistributesConnectionsAcrossIoLoops) {
     writeAll(second_client.fd(), second_expected);
 
     EXPECT_EQ(readExactWithTimeout(first_client.fd(), first_expected.size(), 2s), first_expected);
-    EXPECT_EQ(readExactWithTimeout(second_client.fd(), second_expected.size(), 2s), second_expected);
+    EXPECT_EQ(readExactWithTimeout(second_client.fd(), second_expected.size(), 2s),
+              second_expected);
 
     std::unique_lock<std::mutex> lock(mutex);
     ASSERT_TRUE(callback_ready.wait_for(lock, 2s, [&]() { return callback_count >= 2; }));
@@ -315,13 +318,14 @@ TEST(TcpServerTest, SendToSessionFromOtherThreadDeliversPacket) {
     std::uint64_t observed_session_id = 0;
 
     RunningTcpServer server(1, [&](liteim::TcpServer& tcp_server, liteim::EventLoop&) {
-        tcp_server.setMessageCallback([&](const liteim::Session::Ptr& session, const liteim::Packet&) {
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-                observed_session_id = session->id();
-            }
-            callback_ready.notify_one();
-        });
+        tcp_server.setMessageCallback(
+            [&](const liteim::Session::Ptr& session, const liteim::Packet&) {
+                {
+                    std::lock_guard<std::mutex> lock(mutex);
+                    observed_session_id = session->id();
+                }
+                callback_ready.notify_one();
+            });
     });
 
     auto client = connectTo(server.port());
@@ -385,13 +389,14 @@ TEST(TcpServerTest, SlowClientIsClosedWhenOutputExceedsHighWaterMark) {
 
     RunningTcpServer server(1, [&](liteim::TcpServer& tcp_server, liteim::EventLoop&) {
         tcp_server.setSessionOutputHighWaterMark(64);
-        tcp_server.setMessageCallback([&](const liteim::Session::Ptr& session, const liteim::Packet&) {
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-                observed_session_id = session->id();
-            }
-            callback_ready.notify_one();
-        });
+        tcp_server.setMessageCallback(
+            [&](const liteim::Session::Ptr& session, const liteim::Packet&) {
+                {
+                    std::lock_guard<std::mutex> lock(mutex);
+                    observed_session_id = session->id();
+                }
+                callback_ready.notify_one();
+            });
     });
 
     auto client = connectTo(server.port());
@@ -405,7 +410,8 @@ TEST(TcpServerTest, SlowClientIsClosedWhenOutputExceedsHighWaterMark) {
         ASSERT_TRUE(callback_ready.wait_for(lock, 2s, [&]() { return observed_session_id != 0; }));
     }
 
-    const auto status = server.sendToSession(observed_session_id, makePacket(std::string(128, 'x'), 362));
+    const auto status =
+        server.sendToSession(observed_session_id, makePacket(std::string(128, 'x'), 362));
 
     ASSERT_TRUE(status.isOk()) << status.message();
     EXPECT_TRUE(waitUntil([&]() { return server.sessionCount() == 0; }, 2s));
@@ -418,13 +424,14 @@ TEST(TcpServerTest, ClosedSlowClientIsRemovedFromSessionTable) {
 
     RunningTcpServer server(1, [&](liteim::TcpServer& tcp_server, liteim::EventLoop&) {
         tcp_server.setSessionOutputHighWaterMark(64);
-        tcp_server.setMessageCallback([&](const liteim::Session::Ptr& session, const liteim::Packet&) {
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-                observed_session_id = session->id();
-            }
-            callback_ready.notify_one();
-        });
+        tcp_server.setMessageCallback(
+            [&](const liteim::Session::Ptr& session, const liteim::Packet&) {
+                {
+                    std::lock_guard<std::mutex> lock(mutex);
+                    observed_session_id = session->id();
+                }
+                callback_ready.notify_one();
+            });
     });
 
     auto client = connectTo(server.port());
@@ -438,11 +445,13 @@ TEST(TcpServerTest, ClosedSlowClientIsRemovedFromSessionTable) {
         ASSERT_TRUE(callback_ready.wait_for(lock, 2s, [&]() { return observed_session_id != 0; }));
     }
 
-    const auto push_status = server.sendToSession(observed_session_id, makePacket(std::string(128, 'x'), 372));
+    const auto push_status =
+        server.sendToSession(observed_session_id, makePacket(std::string(128, 'x'), 372));
     ASSERT_TRUE(push_status.isOk()) << push_status.message();
     ASSERT_TRUE(waitUntil([&]() { return server.sessionCount() == 0; }, 2s));
 
-    const auto retry_status = server.sendToSession(observed_session_id, makePacket("after close", 373));
+    const auto retry_status =
+        server.sendToSession(observed_session_id, makePacket("after close", 373));
     EXPECT_FALSE(retry_status.isOk());
     EXPECT_EQ(retry_status.code(), liteim::ErrorCode::NotFound);
 }
@@ -457,17 +466,18 @@ TEST(TcpServerTest, SlowClientAccumulatedSmallPacketsTriggerHighWaterMark) {
 
     RunningTcpServer server(1, [&](liteim::TcpServer& tcp_server, liteim::EventLoop&) {
         tcp_server.setSessionOutputHighWaterMark(128);
-        tcp_server.setMessageCallback([&](const liteim::Session::Ptr& session, const liteim::Packet&) {
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-                observed_session_id = session->id();
-                callback_entered = true;
-            }
-            callback_ready.notify_one();
+        tcp_server.setMessageCallback(
+            [&](const liteim::Session::Ptr& session, const liteim::Packet&) {
+                {
+                    std::lock_guard<std::mutex> lock(mutex);
+                    observed_session_id = session->id();
+                    callback_entered = true;
+                }
+                callback_ready.notify_one();
 
-            std::unique_lock<std::mutex> lock(mutex);
-            release_ready.wait(lock, [&]() { return release_callback; });
-        });
+                std::unique_lock<std::mutex> lock(mutex);
+                release_ready.wait(lock, [&]() { return release_callback; });
+            });
     });
 
     auto client = connectTo(server.port());
@@ -483,7 +493,8 @@ TEST(TcpServerTest, SlowClientAccumulatedSmallPacketsTriggerHighWaterMark) {
 
     bool all_sends_accepted = true;
     for (std::uint64_t seq_id = 402; seq_id < 405; ++seq_id) {
-        const auto status = server.sendToSession(observed_session_id, makePacket(std::string(32, 'x'), seq_id));
+        const auto status =
+            server.sendToSession(observed_session_id, makePacket(std::string(32, 'x'), seq_id));
         if (!status.isOk()) {
             all_sends_accepted = false;
             ADD_FAILURE() << status.message();
@@ -553,13 +564,14 @@ TEST(TcpServerTest, ServerWritesDoNotRefreshHeartbeatActivity) {
 
     RunningTcpServer server(1, [&](liteim::TcpServer& tcp_server, liteim::EventLoop&) {
         tcp_server.setHeartbeatOptions(20ms, 80ms);
-        tcp_server.setMessageCallback([&](const liteim::Session::Ptr& session, const liteim::Packet&) {
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-                observed_session_id = session->id();
-            }
-            callback_ready.notify_one();
-        });
+        tcp_server.setMessageCallback(
+            [&](const liteim::Session::Ptr& session, const liteim::Packet&) {
+                {
+                    std::lock_guard<std::mutex> lock(mutex);
+                    observed_session_id = session->id();
+                }
+                callback_ready.notify_one();
+            });
     });
 
     auto client = connectTo(server.port());
@@ -577,7 +589,8 @@ TEST(TcpServerTest, ServerWritesDoNotRefreshHeartbeatActivity) {
     std::thread pusher([&]() {
         std::uint64_t seq_id = 602;
         while (keep_pushing.load()) {
-            const auto status = server.sendToSession(observed_session_id, makePacket("server-push", seq_id++));
+            const auto status =
+                server.sendToSession(observed_session_id, makePacket("server-push", seq_id++));
             (void)status;
             std::this_thread::sleep_for(10ms);
         }

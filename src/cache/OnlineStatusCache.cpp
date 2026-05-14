@@ -12,19 +12,24 @@
 namespace liteim {
 namespace {
 
+// 在线状态的 Redis key 键前缀
 constexpr const char* kOnlineKeyPrefix = "online:user:";
+// 在线状态值的版本前缀
 constexpr const char* kValuePrefix = "v1:";
 
+// 生成online的 Redis key
 std::string onlineKey(std::uint64_t user_id) {
     return std::string(kOnlineKeyPrefix) + std::to_string(user_id);
 }
 
 Status invalidUserIdStatus() {
-    return Status::error(ErrorCode::InvalidArgument, "online cache user_id must be greater than zero");
+    return Status::error(ErrorCode::InvalidArgument,
+                         "online cache user_id must be greater than zero");
 }
 
 Status invalidSessionIdStatus() {
-    return Status::error(ErrorCode::InvalidArgument, "online cache session_id must be greater than zero");
+    return Status::error(ErrorCode::InvalidArgument,
+                         "online cache session_id must be greater than zero");
 }
 
 Status invalidServerIdStatus() {
@@ -71,17 +76,21 @@ Status validateSession(const OnlineSession& session) {
     return Status::ok();
 }
 
-Status acquireClient(RedisPool& pool, std::chrono::milliseconds timeout, RedisConnectionGuard& guard) {
+// 从 Redis 连接池里拿一个连接
+Status acquireClient(RedisPool& pool, std::chrono::milliseconds timeout,
+                     RedisConnectionGuard& guard) {
     const auto status = pool.acquire(timeout, guard);
     if (!status.isOk()) {
         return status;
     }
     if (!guard) {
-        return Status::error(ErrorCode::InternalError, "Redis pool returned an empty connection guard");
+        return Status::error(ErrorCode::InternalError,
+                             "Redis pool returned an empty connection guard");
     }
     return Status::ok();
 }
 
+// 把 Redis value 里的字符串字段解析成数字
 Status parseUint64(const std::string& input, const std::string& field, std::uint64_t& value) {
     try {
         std::size_t parsed = 0;
@@ -110,6 +119,7 @@ Status parseInt64(const std::string& input, const std::string& field, std::int64
     }
 }
 
+// 从 value 里按冒号 : 读取下一段
 bool readToken(const std::string& value, std::size_t& offset, std::string& token) {
     const auto delimiter = value.find(':', offset);
     if (delimiter == std::string::npos) {
@@ -120,13 +130,16 @@ bool readToken(const std::string& value, std::size_t& offset, std::string& token
     return true;
 }
 
+// 把 OnlineSession 转成 Redis value 字符串
 std::string serializeSession(const OnlineSession& session) {
     std::ostringstream output;
-    output << kValuePrefix << session.user_id << ':' << session.session_id << ':' << session.last_active_time_ms << ':'
-           << session.server_id.size() << ':' << session.server_id;
+    output << kValuePrefix << session.user_id << ':' << session.session_id << ':'
+           << session.last_active_time_ms << ':' << session.server_id.size() << ':'
+           << session.server_id;
     return output.str();
 }
 
+// 把 Redis value 反解析回 OnlineSession
 Status parseSessionValue(const std::string& value, OnlineSession& session) {
     session = {};
 
@@ -137,7 +150,7 @@ Status parseSessionValue(const std::string& value, OnlineSession& session) {
     std::size_t offset = std::string(kValuePrefix).size();
     std::string token;
 
-    if (!readToken(value, offset, token)) {
+    if (!readToken(value, offset, token)) {  // 解析 user_id
         return parseStatus("user_id");
     }
     const auto user_status = parseUint64(token, "user_id", session.user_id);
@@ -145,7 +158,7 @@ Status parseSessionValue(const std::string& value, OnlineSession& session) {
         return user_status;
     }
 
-    if (!readToken(value, offset, token)) {
+    if (!readToken(value, offset, token)) {  // 解析 session_id
         return parseStatus("session_id");
     }
     const auto session_status = parseUint64(token, "session_id", session.session_id);
@@ -153,15 +166,16 @@ Status parseSessionValue(const std::string& value, OnlineSession& session) {
         return session_status;
     }
 
-    if (!readToken(value, offset, token)) {
+    if (!readToken(value, offset, token)) {  // 解析 last_active_time_ms
         return parseStatus("last_active_time_ms");
     }
-    const auto timestamp_status = parseInt64(token, "last_active_time_ms", session.last_active_time_ms);
+    const auto timestamp_status =
+        parseInt64(token, "last_active_time_ms", session.last_active_time_ms);
     if (!timestamp_status.isOk()) {
         return timestamp_status;
     }
 
-    if (!readToken(value, offset, token)) {
+    if (!readToken(value, offset, token)) {  // 解析 server_id 长度
         return parseStatus("server_id length");
     }
     std::uint64_t server_id_size = 0;
@@ -181,16 +195,13 @@ Status parseSessionValue(const std::string& value, OnlineSession& session) {
     return validateSession(session);
 }
 
-} // namespace
+}  // namespace
 
 OnlineStatusCache::OnlineStatusCache(RedisPool& pool, std::chrono::milliseconds acquire_timeout)
-    : pool_(pool), acquire_timeout_(acquire_timeout) {
-}
+    : pool_(pool), acquire_timeout_(acquire_timeout) {}
 
-Status OnlineStatusCache::setUserOnline(std::uint64_t user_id,
-                                        const std::string& server_id,
-                                        std::uint64_t session_id,
-                                        std::chrono::seconds ttl) {
+Status OnlineStatusCache::setUserOnline(std::uint64_t user_id, const std::string& server_id,
+                                        std::uint64_t session_id, std::chrono::seconds ttl) {
     OnlineSession session;
     session.user_id = user_id;
     session.session_id = session_id;
@@ -223,6 +234,7 @@ Status OnlineStatusCache::setUserOnline(const OnlineSession& session, std::chron
     return guard->setex(onlineKey(stored_session.user_id), serializeSession(stored_session), ttl);
 }
 
+// 刷新用户在线状态的 Redis TTL
 Status OnlineStatusCache::refreshUserOnline(std::uint64_t user_id, std::chrono::seconds ttl) {
     const auto user_status = validateUserId(user_id);
     if (!user_status.isOk()) {
@@ -250,6 +262,7 @@ Status OnlineStatusCache::refreshUserOnline(std::uint64_t user_id, std::chrono::
     return Status::ok();
 }
 
+// 用户下线，删除在线状态 key
 Status OnlineStatusCache::setUserOffline(std::uint64_t user_id) {
     const auto user_status = validateUserId(user_id);
     if (!user_status.isOk()) {
@@ -281,7 +294,7 @@ Status OnlineStatusCache::isUserOnline(std::uint64_t user_id, bool& online) {
     }
 
     std::optional<std::string> value;
-    const auto get_status = guard->get(onlineKey(user_id), value);
+    const auto get_status = guard->get(onlineKey(user_id), value);  // get查询key是否存在
     if (!get_status.isOk()) {
         return get_status;
     }
@@ -289,6 +302,7 @@ Status OnlineStatusCache::isUserOnline(std::uint64_t user_id, bool& online) {
         return Status::ok();
     }
 
+    // 如果key存在，解析value里的在线会话信息，如果解析失败也认为用户离线
     OnlineSession session;
     const auto parse_status = parseSessionValue(*value, session);
     if (!parse_status.isOk()) {
@@ -299,6 +313,7 @@ Status OnlineStatusCache::isUserOnline(std::uint64_t user_id, bool& online) {
     return Status::ok();
 }
 
+// 获取用户在线信息
 Status OnlineStatusCache::getOnlineSession(std::uint64_t user_id, OnlineSession& session) {
     session = {};
 
@@ -325,4 +340,4 @@ Status OnlineStatusCache::getOnlineSession(std::uint64_t user_id, OnlineSession&
     return parseSessionValue(*value, session);
 }
 
-} // namespace liteim
+}  // namespace liteim

@@ -39,6 +39,8 @@ add_executable(liteim_tests
     cache/online_status_cache_test.cpp
     cache/unread_login_cache_test.cpp
     cache/redis_cache_test.cpp
+    service/session_manager_test.cpp
+    service/online_service_test.cpp
     timer/timer_heap_header_test.cpp
     timer/timer_heap_test.cpp
     timer/timer_manager_header_test.cpp
@@ -52,7 +54,7 @@ add_executable(liteim_tests
 )
 
 target_compile_features(liteim_tests PRIVATE cxx_std_17)
-target_link_libraries(liteim_tests PRIVATE liteim_base liteim_net liteim_protocol liteim_concurrency liteim_storage liteim_cache GTest::gtest_main)
+target_link_libraries(liteim_tests PRIVATE liteim_base liteim_net liteim_protocol liteim_concurrency liteim_storage liteim_cache liteim_service GTest::gtest_main)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(liteim_tests PRIVATE -Wall -Wextra -Wpedantic)

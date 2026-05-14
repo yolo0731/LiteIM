@@ -86,9 +86,8 @@ TEST(EventLoopThreadPoolTest, ChildLoopsRunTasksOnDistinctThreads) {
 
     std::set<std::thread::id> unique_thread_ids(thread_ids.begin(), thread_ids.end());
     EXPECT_EQ(unique_thread_ids.size(), 2U);
-    EXPECT_TRUE(std::none_of(thread_ids.begin(), thread_ids.end(), [](const auto& id) {
-        return id == std::this_thread::get_id();
-    }));
+    EXPECT_TRUE(std::none_of(thread_ids.begin(), thread_ids.end(),
+                             [](const auto& id) { return id == std::this_thread::get_id(); }));
 
     pool.stop();
 }

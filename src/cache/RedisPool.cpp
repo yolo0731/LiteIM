@@ -8,14 +8,15 @@
 
 namespace liteim {
 
-struct RedisPoolState {
+struct RedisPoolState {  // 连接池内部状态
     explicit RedisPoolState(RedisConfig config_in) : config(std::move(config_in)) {}
 
     RedisConfig config;
     mutable std::mutex mutex;
     std::condition_variable condition;
-    std::vector<std::unique_ptr<RedisClient>> clients;
-    std::deque<RedisClient*> idle_clients;
+    std::vector<std::unique_ptr<RedisClient>>
+        clients;                            // 真正拥有所有 Redis 连接对象,负责掌管连接生命周期
+    std::deque<RedisClient*> idle_clients;  //空闲连接列表
     bool started{false};
     bool closed{false};
 };
@@ -34,6 +35,7 @@ Status acquireTimeoutStatus() {
     return Status::error(ErrorCode::IoError, "timed out waiting for a Redis connection");
 }
 
+// 确保连接可用，如果连接不可用则尝试重新连接
 Status ensureClientReady(const std::shared_ptr<RedisPoolState>& state, RedisClient& client) {
     if (!client.isConnected()) {
         return client.connect(state->config);
@@ -48,6 +50,7 @@ Status ensureClientReady(const std::shared_ptr<RedisPoolState>& state, RedisClie
     return client.connect(state->config);
 }
 
+// 借出去的 Redis 连接还回池子，通知等待的线程有连接可用
 void releaseClient(const std::shared_ptr<RedisPoolState>& state, RedisClient* client) noexcept {
     if (!state || client == nullptr) {
         return;
@@ -75,7 +78,7 @@ void closeIdleClients(const std::shared_ptr<RedisPoolState>& state) noexcept {
     }
 
     std::vector<RedisClient*> idle_clients;
-    {
+    {  // 锁只保护state队列操作
         std::lock_guard<std::mutex> lock(state->mutex);
         if (state->closed) {
             return;
@@ -94,15 +97,14 @@ void closeIdleClients(const std::shared_ptr<RedisPoolState>& state) noexcept {
     state->condition.notify_all();
 }
 
-} // namespace
+}  // namespace
 
 RedisConnectionGuard::~RedisConnectionGuard() {
     reset();
 }
 
 RedisConnectionGuard::RedisConnectionGuard(RedisConnectionGuard&& other) noexcept
-    : state_(std::move(other.state_)), client_(std::exchange(other.client_, nullptr)) {
-}
+    : state_(std::move(other.state_)), client_(std::exchange(other.client_, nullptr)) {}
 
 RedisConnectionGuard& RedisConnectionGuard::operator=(RedisConnectionGuard&& other) noexcept {
     if (this != &other) {
@@ -139,13 +141,15 @@ void RedisConnectionGuard::reset() noexcept {
     releaseClient(state, client);
 }
 
-void RedisConnectionGuard::reset(std::shared_ptr<RedisPoolState> state, RedisClient* client) noexcept {
+void RedisConnectionGuard::reset(std::shared_ptr<RedisPoolState> state,
+                                 RedisClient* client) noexcept {
     reset();
     state_ = std::move(state);
     client_ = client;
 }
 
-RedisPool::RedisPool(RedisConfig config) : state_(std::make_shared<RedisPoolState>(std::move(config))) {}
+RedisPool::RedisPool(RedisConfig config)
+    : state_(std::make_shared<RedisPoolState>(std::move(config))) {}
 
 RedisPool::~RedisPool() {
     close();
@@ -154,19 +158,22 @@ RedisPool::~RedisPool() {
 Status RedisPool::start() {
     std::lock_guard<std::mutex> lock(state_->mutex);
     if (state_->started) {
-        return Status::error(ErrorCode::InvalidArgument, "Redis connection pool has already started");
+        return Status::error(ErrorCode::InvalidArgument,
+                             "Redis connection pool has already started");
     }
     if (state_->closed) {
         return poolClosedStatus();
     }
     if (state_->config.pool_size == 0) {
-        return Status::error(ErrorCode::InvalidArgument, "Redis connection pool size must be greater than zero");
+        return Status::error(ErrorCode::InvalidArgument,
+                             "Redis connection pool size must be greater than zero");
     }
-
+    //临时变量，先创建连接对象，连接成功后再放入 state_->clients
     std::vector<std::unique_ptr<RedisClient>> clients;
     std::deque<RedisClient*> idle_clients;
     clients.reserve(state_->config.pool_size);
 
+    // 创建连接池对象
     for (std::uint32_t index = 0; index < state_->config.pool_size; ++index) {
         auto client = std::make_unique<RedisClient>();
         const auto status = client->connect(state_->config);
@@ -186,10 +193,12 @@ Status RedisPool::start() {
 
 Status RedisPool::acquire(std::chrono::milliseconds timeout, RedisConnectionGuard& guard) {
     if (timeout.count() < 0) {
-        return Status::error(ErrorCode::InvalidArgument, "Redis connection acquire timeout must not be negative");
+        return Status::error(ErrorCode::InvalidArgument,
+                             "Redis connection acquire timeout must not be negative");
     }
     if (guard) {
-        return Status::error(ErrorCode::InvalidArgument, "RedisConnectionGuard already owns a Redis connection");
+        return Status::error(ErrorCode::InvalidArgument,
+                             "RedisConnectionGuard already owns a Redis connection");
     }
 
     RedisClient* client = nullptr;
@@ -202,9 +211,8 @@ Status RedisPool::acquire(std::chrono::milliseconds timeout, RedisConnectionGuar
             return poolClosedStatus();
         }
 
-        const bool ready = state_->condition.wait_for(lock, timeout, [&]() {
-            return state_->closed || !state_->idle_clients.empty();
-        });
+        const bool ready = state_->condition.wait_for(
+            lock, timeout, [&]() { return state_->closed || !state_->idle_clients.empty(); });
         if (!ready) {
             return acquireTimeoutStatus();
         }
@@ -216,6 +224,7 @@ Status RedisPool::acquire(std::chrono::milliseconds timeout, RedisConnectionGuar
         state_->idle_clients.pop_front();
     }
 
+    //确保连接可用，如果连接不可用则尝试重新连接，如果连接池已关闭则释放连接并返回错误
     const auto status = ensureClientReady(state_, *client);
     if (!status.isOk()) {
         releaseClient(state_, client);
@@ -230,10 +239,11 @@ Status RedisPool::acquire(std::chrono::milliseconds timeout, RedisConnectionGuar
         }
     }
 
-    guard.reset(state_, client);
+    guard.reset(state_, client);  // 将连接交给 guard 管理
     return Status::ok();
 }
 
+// 提前释放连接
 void RedisPool::release(RedisConnectionGuard& guard) noexcept {
     guard.reset();
 }
@@ -252,9 +262,10 @@ bool RedisPool::closed() const noexcept {
     return state_->closed;
 }
 
+// 连接池中总连接数量
 std::size_t RedisPool::size() const noexcept {
     std::lock_guard<std::mutex> lock(state_->mutex);
     return state_->clients.size();
 }
 
-} // namespace liteim
+}  // namespace liteim

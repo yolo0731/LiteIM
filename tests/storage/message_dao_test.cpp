@@ -39,8 +39,8 @@ std::string uniqueMessageText(const std::string& label) {
 
 std::uint64_t uniqueConversationId() {
     static std::atomic<std::uint64_t> counter{0};
-    const auto ticks = static_cast<std::uint64_t>(
-        std::chrono::steady_clock::now().time_since_epoch().count());
+    const auto ticks =
+        static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
     return 6000000000ULL + (ticks % 1000000ULL) + counter.fetch_add(1);
 }
 
@@ -119,8 +119,7 @@ protected:
 
     liteim::MessageRecord makePrivateMessage(const liteim::UserRecord& sender,
                                              const liteim::UserRecord& receiver,
-                                             std::uint64_t conversation_id,
-                                             const std::string& text,
+                                             std::uint64_t conversation_id, const std::string& text,
                                              std::int64_t created_at_ms) {
         liteim::MessageRecord message;
         message.conversation = {liteim::ConversationType::kPrivate, conversation_id};
@@ -138,7 +137,7 @@ protected:
     std::unique_ptr<liteim::OfflineMessageDao> offline_message_dao;
 };
 
-} // namespace
+}  // namespace
 
 TEST(MessageDaoTest, HeadersAreSelfContained) {
     liteim::MySqlPool pool(testMySqlConfig());
@@ -193,11 +192,8 @@ TEST_F(MessageDaoIntegrationTest, SaveGroupMessagePersistsRecord) {
 TEST_F(MessageDaoIntegrationTest, OfflineMessageSaveFetchAndDeliveredFlow) {
     const auto sender = createUser();
     const auto receiver = createUser();
-    const auto message = makePrivateMessage(sender,
-                                            receiver,
-                                            uniqueConversationId(),
-                                            uniqueMessageText("offline"),
-                                            3001);
+    const auto message = makePrivateMessage(sender, receiver, uniqueConversationId(),
+                                            uniqueMessageText("offline"), 3001);
 
     liteim::MessageRecord saved_message;
     ASSERT_TRUE(message_dao->savePrivateMessage(message, saved_message).isOk());
@@ -233,11 +229,9 @@ TEST_F(MessageDaoIntegrationTest, HistoryReturnsNewestMessagesBeforeCursor) {
 
     std::vector<liteim::MessageRecord> saved_messages;
     for (int index = 0; index < 3; ++index) {
-        const auto message = makePrivateMessage(sender,
-                                                receiver,
-                                                conversation_id,
-                                                uniqueMessageText("history_" + std::to_string(index)),
-                                                4000 + index);
+        const auto message =
+            makePrivateMessage(sender, receiver, conversation_id,
+                               uniqueMessageText("history_" + std::to_string(index)), 4000 + index);
         liteim::MessageRecord saved;
         ASSERT_TRUE(message_dao->savePrivateMessage(message, saved).isOk());
         saved_messages.push_back(saved);
@@ -269,11 +263,9 @@ TEST_F(MessageDaoIntegrationTest, HistoryLimitIsCappedAtFifty) {
     const auto conversation_id = uniqueConversationId();
 
     for (int index = 0; index < 55; ++index) {
-        const auto message = makePrivateMessage(sender,
-                                                receiver,
-                                                conversation_id,
-                                                uniqueMessageText("limit_" + std::to_string(index)),
-                                                5000 + index);
+        const auto message =
+            makePrivateMessage(sender, receiver, conversation_id,
+                               uniqueMessageText("limit_" + std::to_string(index)), 5000 + index);
         liteim::MessageRecord saved;
         ASSERT_TRUE(message_dao->savePrivateMessage(message, saved).isOk());
     }
@@ -287,9 +279,8 @@ TEST_F(MessageDaoIntegrationTest, HistoryLimitIsCappedAtFifty) {
 
     ASSERT_TRUE(status.isOk()) << status.message();
     EXPECT_EQ(history.size(), 50U);
-    EXPECT_TRUE(std::is_sorted(history.begin(),
-                               history.end(),
-                               [](const auto& left, const auto& right) {
-                                   return left.message_id > right.message_id;
-                               }));
+    EXPECT_TRUE(
+        std::is_sorted(history.begin(), history.end(), [](const auto& left, const auto& right) {
+            return left.message_id > right.message_id;
+        }));
 }

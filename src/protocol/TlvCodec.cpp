@@ -37,7 +37,7 @@ const TlvValues* findValues(const TlvMap& map, TlvType type) {
     return &it->second;
 }
 
-} // namespace
+}  // namespace
 
 Status appendString(TlvType type, const std::string& value, Bytes& output) {
     return appendValue(type, reinterpret_cast<const Byte*>(value.data()), value.size(), output);
@@ -142,4 +142,4 @@ Status getRepeatedUint64(const TlvMap& map, TlvType type, std::vector<std::uint6
     return Status::ok();
 }
 
-} // namespace liteim
+}  // namespace liteim

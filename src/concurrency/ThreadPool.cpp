@@ -28,10 +28,9 @@ private:
     ThreadPool* previous_{nullptr};
 };
 
-} // namespace
+}  // namespace
 
-ThreadPool::ThreadPool(std::size_t worker_count) : worker_count_(worker_count) {
-}
+ThreadPool::ThreadPool(std::size_t worker_count) : worker_count_(worker_count) {}
 
 ThreadPool::~ThreadPool() {
     stop();
@@ -39,7 +38,8 @@ ThreadPool::~ThreadPool() {
 
 Status ThreadPool::start() {
     if (worker_count_ == 0) {
-        return Status::error(ErrorCode::InvalidArgument, "thread pool worker count must be greater than zero");
+        return Status::error(ErrorCode::InvalidArgument,
+                             "thread pool worker count must be greater than zero");
     }
 
     std::unique_lock<std::mutex> lock(mutex_);
@@ -52,11 +52,11 @@ Status ThreadPool::start() {
     try {
         workers_.reserve(worker_count_);
         for (std::size_t i = 0; i < worker_count_; ++i) {
-            workers_.emplace_back([this]() { workerLoop(); });
+            workers_.emplace_back(std::thread([this]() { workerLoop(); }));
         }
     } catch (...) {
         running_.store(false);
-        lock.unlock(); // 先解锁再通知，避免工作线程在 join 时死锁
+        lock.unlock();  // 先解锁再通知，避免工作线程在 join 时死锁
         condition_.notify_all();
 
         std::lock_guard<std::mutex> stop_lock(stop_mutex_);
@@ -84,7 +84,8 @@ Status ThreadPool::submit(Task task) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!running_.load()) {
-            return Status::error(ErrorCode::InvalidArgument, "thread pool is not accepting new tasks");
+            return Status::error(ErrorCode::InvalidArgument,
+                                 "thread pool is not accepting new tasks");
         }
         tasks_.push_back(std::move(task));
     }
@@ -164,4 +165,4 @@ void ThreadPool::workerLoop() noexcept {
     }
 }
 
-} // namespace liteim
+}  // namespace liteim

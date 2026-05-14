@@ -23,7 +23,7 @@ void TimerHeap::cancel(TimerId timer_id) {
 }
 
 std::size_t TimerHeap::popExpired(std::int64_t now_ms) {
-    std::size_t fired_count = 0;
+    std::size_t fired_count = 0;  // 实际处理了多少个“有效且已经过期”的定时器
 
     while (true) {
         removeStaleTopEntries();
@@ -35,7 +35,8 @@ std::size_t TimerHeap::popExpired(std::int64_t now_ms) {
         heap_.pop();
 
         auto timer_it = timers_.find(heap_entry.timer_id);
-        if (timer_it == timers_.end() || timer_it->second.expiration_ms != heap_entry.expiration_ms) {
+        if (timer_it == timers_.end() ||
+            timer_it->second.expiration_ms != heap_entry.expiration_ms) {
             continue;
         }
 
@@ -73,11 +74,12 @@ void TimerHeap::removeStaleTopEntries() {
     while (!heap_.empty()) {
         const auto& heap_entry = heap_.top();
         const auto timer_it = timers_.find(heap_entry.timer_id);
-        if (timer_it != timers_.end() && timer_it->second.expiration_ms == heap_entry.expiration_ms) {
+        if (timer_it != timers_.end() &&
+            timer_it->second.expiration_ms == heap_entry.expiration_ms) {
             return;
         }
         heap_.pop();
     }
 }
 
-} // namespace liteim
+}  // namespace liteim

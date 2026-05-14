@@ -9,9 +9,9 @@
 #include <cerrno>
 #include <stdexcept>
 #include <string>
-#include <vector>
 #include <unistd.h>
 #include <utility>
+#include <vector>
 
 namespace liteim {
 
@@ -19,7 +19,7 @@ namespace {
 
 constexpr std::size_t kReadBufferSize = 4096;
 
-} // namespace
+}  // namespace
 
 Session::Session(EventLoop* loop, UniqueFd fd, std::uint64_t id)
     : loop_(loop), fd_(std::move(fd)), id_(id), channel_(nullptr),
@@ -93,12 +93,14 @@ Status Session::sendPacket(const Packet& packet) {
     }
 
     auto self = shared_from_this();
-    if (loop_->isInLoopThread()) { // loop_是Session所在的EventLoop的指针
+    if (loop_->isInLoopThread()) {  // loop_是Session所在的EventLoop的指针
         self->sendEncodedInLoop(std::move(encoded));
         return Status::ok();
     }
 
-    loop_->queueInLoop([self, encoded = std::move(encoded)]() mutable { self->sendEncodedInLoop(std::move(encoded)); });
+    loop_->queueInLoop([self, encoded = std::move(encoded)]() mutable {
+        self->sendEncodedInLoop(std::move(encoded));
+    });
     return Status::ok();
 }
 
@@ -152,11 +154,9 @@ void Session::sendEncodedInLoop(Bytes encoded) {
     const auto pending_bytes = output_buffer_.readableBytes();
     if (encoded.size() > output_high_water_mark_ ||
         pending_bytes > output_high_water_mark_ - encoded.size()) {
-        Logger::get()->warn("Session {} output buffer high water mark exceeded: pending={}, incoming={}, limit={}",
-                            id_,
-                            pending_bytes,
-                            encoded.size(),
-                            output_high_water_mark_);
+        Logger::get()->warn(
+            "Session {} output buffer high water mark exceeded: pending={}, incoming={}, limit={}",
+            id_, pending_bytes, encoded.size(), output_high_water_mark_);
         closeInLoop();
         return;
     }
@@ -289,4 +289,4 @@ void Session::updateLastActiveTime() noexcept {
     last_active_time_ms_ = Timestamp::now().millisecondsSinceEpoch();
 }
 
-} // namespace liteim
+}  // namespace liteim

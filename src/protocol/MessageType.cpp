@@ -201,4 +201,4 @@ bool isPushType(MessageType type) noexcept {
     return false;
 }
 
-} // namespace liteim
+}  // namespace liteim

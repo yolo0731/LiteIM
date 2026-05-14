@@ -30,7 +30,7 @@ protected:
     }
 };
 
-} // namespace
+}  // namespace
 
 TEST(MySqlPoolTest, HeaderIsSelfContained) {
     liteim::MySqlPool pool(testMySqlConfig(1));

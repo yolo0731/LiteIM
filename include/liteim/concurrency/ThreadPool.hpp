@@ -43,4 +43,4 @@ private:
     std::atomic_bool running_{false};
 };
 
-} // namespace liteim
+}  // namespace liteim

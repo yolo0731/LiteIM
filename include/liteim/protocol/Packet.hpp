@@ -9,7 +9,7 @@
 
 namespace liteim {
 
-inline constexpr std::uint32_t kPacketMagic = 0x4C494D31; // "LIM1"
+inline constexpr std::uint32_t kPacketMagic = 0x4C494D31;  // "LIM1"
 inline constexpr std::uint8_t kPacketVersion = 1;
 inline constexpr std::uint8_t kPacketFlagsNone = 0;
 inline constexpr std::size_t kPacketHeaderSize = 20;
@@ -33,4 +33,4 @@ Status validateHeader(const PacketHeader& header);
 Status encodePacket(const Packet& packet, Bytes& output);
 Status parseHeader(const Byte* data, std::size_t len, PacketHeader& output);
 
-} // namespace liteim
+}  // namespace liteim

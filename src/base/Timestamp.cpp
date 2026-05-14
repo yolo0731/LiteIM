@@ -6,18 +6,17 @@
 
 namespace liteim {
 
-Timestamp::Timestamp() : time_point_(Clock::now()) {
-}
+Timestamp::Timestamp() : time_point_(Clock::now()) {}
 
-Timestamp::Timestamp(Clock::time_point time_point) : time_point_(time_point) {
-}
+Timestamp::Timestamp(Clock::time_point time_point) : time_point_(time_point) {}
 
 Timestamp Timestamp::now() {
     return Timestamp{Clock::now()};
 }
 
 std::int64_t Timestamp::millisecondsSinceEpoch() const {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(time_point_.time_since_epoch()).count();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(time_point_.time_since_epoch())
+        .count();
 }
 
 std::string Timestamp::toIso8601String() const {
@@ -30,4 +29,4 @@ std::string Timestamp::toIso8601String() const {
     return output.str();
 }
 
-} // namespace liteim
+}  // namespace liteim

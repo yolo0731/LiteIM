@@ -67,7 +67,7 @@ protected:
     }
 };
 
-} // namespace
+}  // namespace
 
 TEST(RedisClientTest, HeaderIsSelfContained) {
     liteim::RedisClient client;

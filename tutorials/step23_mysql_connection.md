@@ -346,7 +346,7 @@ Step 23 故意只做 thin wrapper：
 - 连接池放到 Step 24。
 - DAO 放到 Step 25-27。
 - Redis 放到 Step 28。
-- 网络业务接入放到 Step 31 以后。
+- 网络业务接入放到 Step 32 以后。
 
 使用 `pkg-config mysqlclient` 是为了稳定查找系统 MySQL client，而不是依赖当前 shell 里可能被 Anaconda 改写的 `mysql_config`。
 

@@ -23,16 +23,20 @@ public:
     virtual Status createGroup(const CreateGroupRequest& request, GroupRecord& created_group) = 0;
     virtual Status addGroupMember(std::uint64_t group_id, std::uint64_t user_id) = 0;
     virtual Status removeGroupMember(std::uint64_t group_id, std::uint64_t user_id) = 0;
-    virtual Status getGroupMembers(std::uint64_t group_id, std::vector<GroupMemberRecord>& members) = 0;
+    virtual Status getGroupMembers(std::uint64_t group_id,
+                                   std::vector<GroupMemberRecord>& members) = 0;
     // 消息相关接口
     virtual Status saveMessage(const MessageRecord& message, std::uint64_t& message_id) = 0;
-    virtual Status saveMessageWithOfflineRecipients(const MessageRecord& message,
-                                                    const std::vector<std::uint64_t>& offline_user_ids,
-                                                    MessageRecord& saved_message) = 0;
+    virtual Status
+    saveMessageWithOfflineRecipients(const MessageRecord& message,
+                                     const std::vector<std::uint64_t>& offline_user_ids,
+                                     MessageRecord& saved_message) = 0;
     virtual Status saveOfflineMessage(std::uint64_t user_id, std::uint64_t message_id) = 0;
-    virtual Status getOfflineMessages(std::uint64_t user_id, std::vector<OfflineMessageRecord>& messages) = 0;
-    virtual Status markOfflineDelivered(std::uint64_t user_id, const std::vector<std::uint64_t>& message_ids) = 0;
+    virtual Status getOfflineMessages(std::uint64_t user_id,
+                                      std::vector<OfflineMessageRecord>& messages) = 0;
+    virtual Status markOfflineDelivered(std::uint64_t user_id,
+                                        const std::vector<std::uint64_t>& message_ids) = 0;
     virtual Status getHistory(const HistoryQuery& query, std::vector<MessageRecord>& messages) = 0;
 };
 
-} // namespace liteim
+}  // namespace liteim

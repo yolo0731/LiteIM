@@ -31,10 +31,12 @@ The workspace documentation roles are now separated:
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Markdown contract alignment / doc drift fix | done | Markdown-only pass aligning tutorial structure with the current contract: tutorials now end at interview follow-up, omit tutorial commit-message sections, use concrete LiteIM data examples in runtime-flow section 5, and current docs reflect MySQL history index fields, HeartbeatService/session activity split, `saveMessageWithOfflineRecipients()` output semantics, and 254-test verification. Not Step31. |
-| Pre-Step31 storage/cache contract cleanup | done | Independent project refactor before Step31. Added `MySqlStorage : IStorage`, `RedisCache : ICache`, `UserProfileRecord`, unsigned MySQL `bindUInt64()`, one MySQL transaction for message + offline rows, unread delta signed-range validation, tests/docs sync, and kept default next step as Step31. |
+| Step 32 SessionManager and OnlineService | done | Added `liteim_service` with `SessionManager` and `OnlineService`, using a kick-old-keep-new repeated-login policy. Memory binding uses `user_id -> weak_ptr<Session>` and `session_id -> user_id`; OnlineService writes/refreshes/clears Redis-backed online state through `ICache` while stale old-session unbinds do not delete the new Redis online key. No AuthService, MessageRouter, ChatService, or TcpServer runtime protocol wiring introduced. |
+| Step 31 route documentation alignment | done | Markdown-only route adjustment: formalized the former storage/cache adapter cleanup as Step 31, shifted the business-service phase to Step 32-41, shifted later phase ranges to Step 42-46 / Step 47-54 / Step 55, added `tutorials/step31_storage_cache_adapters.md`, and updated affected README/tutorial/planning references. No C++ behavior changed. |
+| Markdown contract alignment / doc drift fix | done | Markdown-only pass aligning tutorial structure with the current contract: tutorials now end at interview follow-up, omit tutorial commit-message sections, use concrete LiteIM data examples in runtime-flow section 5, and current docs reflect MySQL history index fields, HeartbeatService/session activity split, `saveMessageWithOfflineRecipients()` output semantics, and 254-test verification. Not Step 31. |
+| Step 31 storage/cache adapters | done | Formal storage/cache adapter Step. Added `MySqlStorage : IStorage`, `RedisCache : ICache`, `UserProfileRecord`, unsigned MySQL `bindUInt64()`, one MySQL transaction for message + offline rows, unread delta signed-range validation, tests/docs sync, and kept business runtime wiring for Step 32. |
 | Step 30 UnreadCounter and LoginRateLimiter | done | Added Redis-backed `UnreadCounter` and `LoginRateLimiter` over `RedisPool`, with invalid-input unit tests, Docker-backed Redis integration tests, README/tutorial/planning docs, and full CTest verification. No AuthService, ChatService, TcpServer runtime wiring, SessionManager, OnlineService, Redis Cluster, Pub/Sub, Streams, or distributed locks introduced. |
-| Step 21-29 tutorial format alignment | done | Markdown-only pass rewriting `tutorials/step21_storage_cache_interfaces.md` through `tutorials/step29_online_status_cache.md` to follow the fixed teaching structure: concept, detailed interface/contract explanation, architecture position plus internal runtime flow, tests, verification, interview summary, and commit message. Did not modify `step20_backpressure.md` or C++/SQL behavior. |
+| Step 21-29 tutorial format alignment | done | Markdown-only pass rewriting `tutorials/step21_storage_cache_interfaces.md` through `tutorials/step29_online_status_cache.md` to follow the fixed teaching structure: concept, detailed interface/contract explanation, architecture position plus internal runtime flow, tests, verification, and interview follow-up. Did not modify `step20_backpressure.md` or C++/SQL behavior. |
 | Step 29 OnlineStatusCache | done | Added `OnlineStatusCache` over `RedisPool` for `online:user:<user_id>` TTL-backed online sessions, including set online, refresh TTL, set offline, online check, session lookup, value parsing, invalid-argument handling, missing-user `NotFound`, README/tutorial/planning docs, and Docker-backed Redis tests. No unread counter, login limiter, service layer, network runtime integration, SessionManager, OnlineService, Redis Cluster, Pub/Sub, Streams, or distributed locks introduced. |
 | Step 28 RedisClient and RedisPool | done | Added hiredis-backed blocking `RedisClient`, fixed-size `RedisPool`, move-only `RedisConnectionGuard`, Redis auth/db selection, `ping`, `setex`, `get`, `del`, `incr`, `expire`, `eval`, acquire timeout, explicit `release()`, close semantics, borrow-time ping/reconnect, and Docker-backed tests. No online-status cache, unread counter, login limiter, service layer, network runtime integration, key schema beyond test keys, Redis Cluster, Pub/Sub, Streams, or distributed locks introduced. |
 | Step 27 FriendDao and GroupDao | done | Added `FriendDao` / `GroupDao` for bidirectional idempotent friendships, friend listing through `users`, group creation with owner membership in one transaction, idempotent member join, normal-member removal, member listing, and `findGroupById()`. No Redis, service layer, network runtime integration, schema changes, group admin, mute, announcement, or approval workflow introduced. |
@@ -221,18 +223,19 @@ Current route status:
 - Step 28 `RedisClient and RedisPool` is complete.
 - Step 29 `OnlineStatusCache` is complete.
 - Step 30 `UnreadCounter and LoginRateLimiter` is complete.
-- Pre-Step31 storage/cache contract cleanup is complete as a standalone refactor, not Step31.
-- Default next implementation step is Step 31 `SessionManager and OnlineService`.
+- Step 31 `MySqlStorage and RedisCache adapters` is complete.
+- Step 32 `SessionManager and OnlineService` is complete.
+- Default next implementation step is Step 33 `MessageRouter async dispatch framework`.
 
 LiteIM phases:
 
 1. Step 0: reset workspace and keep only the minimal current-step files.
 2. Step 1-20: high-performance network base and multi-Reactor echo server.
-3. Step 21-30: MySQL / Redis storage and cache layer.
-4. Step 31-40: async IM business services and BotGateway.
-5. Step 41-45: CLI, Python E2E, benchmark, GoogleTest/gMock, ASan/UBSan, CI.
-6. Step 46-53: Qt Widgets demo client.
-7. Step 54: README, architecture diagrams, Qt screenshots, benchmark report, and interview docs.
+3. Step 21-31: MySQL / Redis storage and cache layer, ending with the `IStorage` / `ICache` adapters.
+4. Step 32-41: async IM business services and BotGateway.
+5. Step 42-46: CLI, Python E2E, benchmark, GoogleTest/gMock, ASan/UBSan, CI.
+6. Step 47-54: Qt Widgets demo client.
+7. Step 55: README, architecture diagrams, Qt screenshots, benchmark report, and interview docs.
 8. PersonaAgent Step 1-6: Python BotClient, protocol compatibility, FastAPI `/chat`, login/heartbeat/reconnect, Echo Bot.
 9. PersonaAgent Step 7-20: six-node LangGraph + Knowledge/Memory/Authorized Style RAG + Persona + Safety + Tool Calling + Checkpoint + Trace + Evaluation.
 

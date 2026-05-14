@@ -59,4 +59,4 @@ const char* toString(TlvType type) noexcept {
     return "UNKNOWN";
 }
 
-} // namespace liteim
+}  // namespace liteim

@@ -23,8 +23,7 @@ TEST(StatusTest, OkStatusHasOkCode) {
 }
 
 TEST(StatusTest, ErrorStatusCarriesCodeAndMessage) {
-    const auto status = liteim::Status::error(liteim::ErrorCode::ConfigError,
-                                             "invalid config");
+    const auto status = liteim::Status::error(liteim::ErrorCode::ConfigError, "invalid config");
 
     EXPECT_FALSE(status.isOk());
     EXPECT_EQ(status.code(), liteim::ErrorCode::ConfigError);

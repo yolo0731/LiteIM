@@ -43,7 +43,7 @@ spdlog::level::level_enum toSpdlogLevel(LogLevel level) {
     return spdlog::level::info;
 }
 
-} // namespace
+}  // namespace
 
 LogLevel parseLogLevel(const std::string& level) {
     if (level == "trace") {
@@ -85,4 +85,4 @@ void Logger::setLevel(LogLevel level) {
     g_logger->set_level(toSpdlogLevel(level));
 }
 
-} // namespace liteim
+}  // namespace liteim

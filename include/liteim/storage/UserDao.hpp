@@ -25,4 +25,4 @@ private:
     std::chrono::milliseconds acquire_timeout_;
 };
 
-} // namespace liteim
+}  // namespace liteim

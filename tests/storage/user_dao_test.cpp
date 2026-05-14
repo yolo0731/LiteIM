@@ -88,7 +88,7 @@ protected:
     std::unique_ptr<liteim::AuthDao> auth_dao;
 };
 
-} // namespace
+}  // namespace
 
 TEST(UserDaoTest, HeadersAreSelfContained) {
     liteim::MySqlPool pool(testMySqlConfig());

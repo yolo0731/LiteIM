@@ -67,7 +67,8 @@ Status parseConversationType(const std::string& text, ConversationType& type) {
     return malformedMessageRowStatus();
 }
 
-Status bindConversationType(PreparedStatement& statement, std::size_t index, ConversationType type) {
+Status bindConversationType(PreparedStatement& statement, std::size_t index,
+                            ConversationType type) {
     return statement.bindInt64(index, static_cast<std::int64_t>(type));
 }
 
@@ -118,7 +119,8 @@ Status rowToMessageRecord(const MySqlRow& row, MessageRecord& message) {
     if (!id_status.isOk()) {
         return id_status;
     }
-    const auto type_status = parseConversationType(*conversation_type, parsed_message.conversation.type);
+    const auto type_status =
+        parseConversationType(*conversation_type, parsed_message.conversation.type);
     if (!type_status.isOk()) {
         return type_status;
     }
@@ -145,7 +147,8 @@ Status rowToMessageRecord(const MySqlRow& row, MessageRecord& message) {
 }
 
 Status validateConversationKey(const ConversationKey& conversation) {
-    if (conversation.type != ConversationType::kPrivate && conversation.type != ConversationType::kGroup) {
+    if (conversation.type != ConversationType::kPrivate &&
+        conversation.type != ConversationType::kGroup) {
         return Status::error(ErrorCode::InvalidArgument, "conversation type is invalid");
     }
     if (conversation.id == 0U) {
@@ -154,8 +157,8 @@ Status validateConversationKey(const ConversationKey& conversation) {
     return Status::ok();
 }
 
-Status normalizeMessageForInsert(const MessageRecord& input,
-                                 std::uint64_t& receiver_id,
+// 把准备插入 messages 表的数据补齐，根据 conversation type 确定 receiver_id，设置 created_at_ms 。
+Status normalizeMessageForInsert(const MessageRecord& input, std::uint64_t& receiver_id,
                                  std::int64_t& created_at_ms) {
     const auto conversation_status = validateConversationKey(input.conversation);
     if (!conversation_status.isOk()) {
@@ -167,13 +170,15 @@ Status normalizeMessageForInsert(const MessageRecord& input,
 
     receiver_id = input.receiver_id;
     if (input.conversation.type == ConversationType::kPrivate && receiver_id == 0U) {
-        return Status::error(ErrorCode::InvalidArgument, "private message receiver id must not be zero");
+        return Status::error(ErrorCode::InvalidArgument,
+                             "private message receiver id must not be zero");
     }
     if (input.conversation.type == ConversationType::kGroup && receiver_id == 0U) {
         receiver_id = input.conversation.id;
     }
 
-    created_at_ms = input.created_at_ms > 0 ? input.created_at_ms : Timestamp::now().millisecondsSinceEpoch();
+    created_at_ms =
+        input.created_at_ms > 0 ? input.created_at_ms : Timestamp::now().millisecondsSinceEpoch();
     return Status::ok();
 }
 
@@ -194,10 +199,10 @@ Status querySingleMessage(PreparedStatement& statement, MessageRecord& message) 
 
 Status queryLastInsertedMessage(MySqlConnection& connection, MessageRecord& message) {
     PreparedStatement query(connection);
-    const auto prepare_status =
-        query.prepare("SELECT message_id, conversation_type, conversation_id, sender_id, receiver_id, "
-                      "message_text, created_at_ms "
-                      "FROM messages WHERE message_id = LAST_INSERT_ID() LIMIT 1");
+    const auto prepare_status = query.prepare(
+        "SELECT message_id, conversation_type, conversation_id, sender_id, receiver_id, "
+        "message_text, created_at_ms "
+        "FROM messages WHERE message_id = LAST_INSERT_ID() LIMIT 1");
     if (!prepare_status.isOk()) {
         return prepare_status;
     }
@@ -213,12 +218,13 @@ Status rollbackAndReturn(MySqlConnection& connection, const Status& status) {
     return status;
 }
 
-Status rollbackClearAndReturn(MySqlConnection& connection, MessageRecord& saved_message, const Status& status) {
+Status rollbackClearAndReturn(MySqlConnection& connection, MessageRecord& saved_message,
+                              const Status& status) {
     rollbackSilently(connection);
     saved_message = {};
     return status;
 }
-
+// 验证离线消息的接收者列表是否合法，要求列表中的 user_id 都不为零，并且去重。
 Status validateOfflineRecipients(const std::vector<std::uint64_t>& offline_user_ids,
                                  std::vector<std::uint64_t>& unique_user_ids) {
     unique_user_ids.clear();
@@ -226,19 +232,19 @@ Status validateOfflineRecipients(const std::vector<std::uint64_t>& offline_user_
 
     for (const auto user_id : offline_user_ids) {
         if (user_id == 0U) {
-            return Status::error(ErrorCode::InvalidArgument, "offline recipient user_id must not be zero");
+            return Status::error(ErrorCode::InvalidArgument,
+                                 "offline recipient user_id must not be zero");
         }
-        if (std::find(unique_user_ids.begin(), unique_user_ids.end(), user_id) == unique_user_ids.end()) {
+        if (std::find(unique_user_ids.begin(), unique_user_ids.end(), user_id) ==
+            unique_user_ids.end()) {
             unique_user_ids.push_back(user_id);
         }
     }
     return Status::ok();
 }
-
-Status insertOfflineMessage(MySqlConnection& connection,
-                            std::uint64_t user_id,
-                            std::uint64_t message_id,
-                            std::int64_t created_at_ms) {
+// 往 offline_messages 表插入一条记录
+Status insertOfflineMessage(MySqlConnection& connection, std::uint64_t user_id,
+                            std::uint64_t message_id, std::int64_t created_at_ms) {
     PreparedStatement statement(connection);
     const auto prepare_status =
         statement.prepare("INSERT INTO offline_messages "
@@ -266,22 +272,18 @@ Status insertOfflineMessage(MySqlConnection& connection,
         return insert_status;
     }
     if (affected_rows != 1U) {
-        return Status::error(ErrorCode::InternalError, "save offline message affected unexpected row count");
+        return Status::error(ErrorCode::InternalError,
+                             "save offline message affected unexpected row count");
     }
     return Status::ok();
 }
 
-} // namespace
+}  // namespace
 
 MySqlStorage::MySqlStorage(MySqlPool& pool, std::chrono::milliseconds acquire_timeout)
-    : pool_(pool),
-      acquire_timeout_(acquire_timeout),
-      user_dao_(pool, acquire_timeout),
-      friend_dao_(pool, acquire_timeout),
-      group_dao_(pool, acquire_timeout),
-      message_dao_(pool, acquire_timeout),
-      offline_message_dao_(pool, acquire_timeout) {
-}
+    : pool_(pool), acquire_timeout_(acquire_timeout), user_dao_(pool, acquire_timeout),
+      friend_dao_(pool, acquire_timeout), group_dao_(pool, acquire_timeout),
+      message_dao_(pool, acquire_timeout), offline_message_dao_(pool, acquire_timeout) {}
 
 Status MySqlStorage::createUser(const CreateUserRequest& request, UserRecord& created_user) {
     return user_dao_.createUser(request, created_user);
@@ -315,10 +317,12 @@ Status MySqlStorage::removeGroupMember(std::uint64_t group_id, std::uint64_t use
     return group_dao_.removeGroupMember(group_id, user_id);
 }
 
-Status MySqlStorage::getGroupMembers(std::uint64_t group_id, std::vector<GroupMemberRecord>& members) {
+Status MySqlStorage::getGroupMembers(std::uint64_t group_id,
+                                     std::vector<GroupMemberRecord>& members) {
     return group_dao_.getGroupMembers(group_id, members);
 }
 
+// 保存一条普通消息，但没有离线接收者
 Status MySqlStorage::saveMessage(const MessageRecord& message, std::uint64_t& message_id) {
     message_id = 0;
 
@@ -331,9 +335,10 @@ Status MySqlStorage::saveMessage(const MessageRecord& message, std::uint64_t& me
     return Status::ok();
 }
 
-Status MySqlStorage::saveMessageWithOfflineRecipients(const MessageRecord& message,
-                                                      const std::vector<std::uint64_t>& offline_user_ids,
-                                                      MessageRecord& saved_message) {
+Status
+MySqlStorage::saveMessageWithOfflineRecipients(const MessageRecord& message,
+                                               const std::vector<std::uint64_t>& offline_user_ids,
+                                               MessageRecord& saved_message) {
     saved_message = {};
 
     std::uint64_t receiver_id = 0;
@@ -344,7 +349,8 @@ Status MySqlStorage::saveMessageWithOfflineRecipients(const MessageRecord& messa
     }
 
     std::vector<std::uint64_t> unique_offline_user_ids;
-    const auto recipients_status = validateOfflineRecipients(offline_user_ids, unique_offline_user_ids);
+    const auto recipients_status =
+        validateOfflineRecipients(offline_user_ids, unique_offline_user_ids);
     if (!recipients_status.isOk()) {
         return recipients_status;
     }
@@ -361,10 +367,10 @@ Status MySqlStorage::saveMessageWithOfflineRecipients(const MessageRecord& messa
     }
 
     PreparedStatement statement(*guard);
-    const auto prepare_status =
-        statement.prepare("INSERT INTO messages "
-                          "(conversation_type, conversation_id, sender_id, receiver_id, message_text, created_at_ms) "
-                          "VALUES (?, ?, ?, ?, ?, ?)");
+    const auto prepare_status = statement.prepare(
+        "INSERT INTO messages "
+        "(conversation_type, conversation_id, sender_id, receiver_id, message_text, created_at_ms) "
+        "VALUES (?, ?, ?, ?, ?, ?)");
     if (!prepare_status.isOk()) {
         return rollbackAndReturn(*guard, prepare_status);
     }
@@ -400,9 +406,9 @@ Status MySqlStorage::saveMessageWithOfflineRecipients(const MessageRecord& messa
         return rollbackAndReturn(*guard, insert_status);
     }
     if (affected_rows != 1U) {
-        return rollbackAndReturn(*guard,
-                                 Status::error(ErrorCode::InternalError,
-                                               "save message affected unexpected row count"));
+        return rollbackAndReturn(
+            *guard,
+            Status::error(ErrorCode::InternalError, "save message affected unexpected row count"));
     }
 
     const auto query_status = queryLastInsertedMessage(*guard, saved_message);
@@ -412,7 +418,8 @@ Status MySqlStorage::saveMessageWithOfflineRecipients(const MessageRecord& messa
 
     const auto offline_created_at_ms = Timestamp::now().millisecondsSinceEpoch();
     for (const auto user_id : unique_offline_user_ids) {
-        const auto offline_status = insertOfflineMessage(*guard, user_id, saved_message.message_id, offline_created_at_ms);
+        const auto offline_status =
+            insertOfflineMessage(*guard, user_id, saved_message.message_id, offline_created_at_ms);
         if (!offline_status.isOk()) {
             return rollbackClearAndReturn(*guard, saved_message, offline_status);
         }
@@ -431,7 +438,8 @@ Status MySqlStorage::saveOfflineMessage(std::uint64_t user_id, std::uint64_t mes
     return offline_message_dao_.saveOfflineMessage(user_id, message_id);
 }
 
-Status MySqlStorage::getOfflineMessages(std::uint64_t user_id, std::vector<OfflineMessageRecord>& messages) {
+Status MySqlStorage::getOfflineMessages(std::uint64_t user_id,
+                                        std::vector<OfflineMessageRecord>& messages) {
     return offline_message_dao_.getOfflineMessages(user_id, messages);
 }
 
@@ -444,4 +452,4 @@ Status MySqlStorage::getHistory(const HistoryQuery& query, std::vector<MessageRe
     return message_dao_.getHistoryByConversation(query, messages);
 }
 
-} // namespace liteim
+}  // namespace liteim

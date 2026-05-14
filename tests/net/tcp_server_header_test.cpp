@@ -21,18 +21,24 @@ TEST(ReactorInterfaceTest, TcpServerHeaderIsSelfContained) {
     using TcpServer = liteim::TcpServer;
     using MessageCallback = std::function<void(const liteim::Session::Ptr&, const liteim::Packet&)>;
     static_assert(std::is_same_v<TcpServer::MessageCallback, MessageCallback>);
-    static_assert(std::is_same_v<decltype(&TcpServer::setMessageCallback), void (TcpServer::*)(MessageCallback)>);
-    static_assert(std::is_same_v<decltype(&TcpServer::setHeartbeatOptions),
-                                 void (TcpServer::*)(std::chrono::milliseconds, std::chrono::milliseconds)>);
+    static_assert(std::is_same_v<decltype(&TcpServer::setMessageCallback),
+                                 void (TcpServer::*)(MessageCallback)>);
+    static_assert(
+        std::is_same_v<decltype(&TcpServer::setHeartbeatOptions),
+                       void (TcpServer::*)(std::chrono::milliseconds, std::chrono::milliseconds)>);
     static_assert(std::is_same_v<decltype(&TcpServer::setSessionOutputHighWaterMark),
                                  void (TcpServer::*)(std::size_t)>);
     static_assert(std::is_same_v<decltype(&TcpServer::start), void (TcpServer::*)()>);
     static_assert(std::is_same_v<decltype(&TcpServer::stop), void (TcpServer::*)() noexcept>);
-    static_assert(std::is_same_v<decltype(&TcpServer::port), std::uint16_t (TcpServer::*)() const noexcept>);
-    static_assert(std::is_same_v<decltype(&TcpServer::sessionCount), std::size_t (TcpServer::*)() const>);
-    static_assert(std::is_same_v<decltype(&TcpServer::started), bool (TcpServer::*)() const noexcept>);
-    static_assert(std::is_same_v<decltype(&TcpServer::sendToSession),
-                                 liteim::Status (TcpServer::*)(std::uint64_t, const liteim::Packet&)>);
+    static_assert(
+        std::is_same_v<decltype(&TcpServer::port), std::uint16_t (TcpServer::*)() const noexcept>);
+    static_assert(
+        std::is_same_v<decltype(&TcpServer::sessionCount), std::size_t (TcpServer::*)() const>);
+    static_assert(
+        std::is_same_v<decltype(&TcpServer::started), bool (TcpServer::*)() const noexcept>);
+    static_assert(
+        std::is_same_v<decltype(&TcpServer::sendToSession),
+                       liteim::Status (TcpServer::*)(std::uint64_t, const liteim::Packet&)>);
 
     SUCCEED();
 }

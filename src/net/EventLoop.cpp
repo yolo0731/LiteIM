@@ -43,10 +43,11 @@ int createEventFd() {
     return fd;
 }
 
-} // namespace
+}  // namespace
 
 EventLoop::EventLoop()
-    : thread_id_(std::this_thread::get_id()), epoller_(std::make_unique<Epoller>(this)), wakeup_fd_(createEventFd()),
+    : thread_id_(std::this_thread::get_id()), epoller_(std::make_unique<Epoller>(this)),
+      wakeup_fd_(createEventFd()),
       wakeup_channel_(std::make_unique<Channel>(this, wakeup_fd_.fd())) {
     wakeup_channel_->setReadCallback([this]() { handleWakeup(); });
     wakeup_channel_->enableReading();
@@ -84,7 +85,8 @@ void EventLoop::loop() {
                 } catch (const std::exception& ex) {
                     Logger::get()->error("EventLoop channel callback failed: {}", ex.what());
                 } catch (...) {
-                    Logger::get()->error("EventLoop channel callback failed with unknown exception");
+                    Logger::get()->error(
+                        "EventLoop channel callback failed with unknown exception");
                 }
             }
         }
@@ -123,7 +125,7 @@ void EventLoop::queueInLoop(Functor task) {
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        pending_tasks_.push_back(std::move(task)); // 放到自己eventloop的任务队列里
+        pending_tasks_.push_back(std::move(task));  // 放到自己eventloop的任务队列里
     }
 
     // 如果当前线程不是EventLoop所在的线程，或者正在调用pending任务，则需要唤醒EventLoop线程来处理新添加的任务
@@ -210,4 +212,4 @@ void EventLoop::doPendingTasks() {
     calling_pending_tasks_ = false;
 }
 
-} // namespace liteim
+}  // namespace liteim

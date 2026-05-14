@@ -11,6 +11,7 @@ namespace liteim {
 
 class MySqlPool;
 
+// 操作mysql里的两张表：chat_groups和group_members，分别存储群信息和群成员信息
 class GroupDao {
 public:
     explicit GroupDao(MySqlPool& pool,
@@ -27,4 +28,4 @@ private:
     std::chrono::milliseconds acquire_timeout_;
 };
 
-} // namespace liteim
+}  // namespace liteim

@@ -51,4 +51,4 @@ private:
     std::atomic_bool calling_pending_tasks_{false};
 };
 
-} // namespace liteim
+}  // namespace liteim

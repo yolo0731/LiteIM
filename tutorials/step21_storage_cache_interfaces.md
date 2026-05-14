@@ -44,7 +44,8 @@ Step 21: IStorage / ICache 接口
 Step 22: Docker MySQL / Redis 环境和 SQL schema
 Step 23-27: MySQL wrapper / pool / DAO
 Step 28-30: Redis wrapper / pool / cache
-Step 31+: AuthService / ChatService 通过接口或 DAO 接入业务线程池
+Step 31: MySqlStorage / RedisCache 聚合实现 IStorage / ICache
+Step 32+: OnlineService / AuthService / ChatService 通过接口接入业务线程池
 ```
 
 接口风格沿用 LiteIM 现有习惯：
@@ -410,7 +411,7 @@ ChatService 未来处理 Alice 发给离线 Bob 的私聊时，会构造 `Messag
 - Step 23-24 先实现 MySQL connection 和 pool。
 - Step 25-27 实现用户、消息、好友、群组 DAO。
 - Step 28-30 实现 Redis client、在线状态、未读计数和登录限制。
-- Pre-Step31 小重构补 `MySqlStorage : IStorage` 和 `RedisCache : ICache` 两个聚合适配层，让业务层可以注入统一接口，同时保留 DAO/cache 组件的可测试边界。
+- Step 31 补 `MySqlStorage : IStorage` 和 `RedisCache : ICache` 两个聚合适配层，让业务层可以注入统一接口，同时保留 DAO/cache 组件的可测试边界。
 
 这让每个 Step 都有明确边界，也便于测试单个 DAO/cache。
 
@@ -424,7 +425,7 @@ ChatService 未来处理 Alice 发给离线 Bob 的私聊时，会构造 `Messag
 - `CacheTypes.hpp` / `ICache.hpp` 头文件可以独立 include。
 - `FakeStorage` 可以实现 `IStorage`，证明接口可替换。
 - `NullCache` 可以实现 `ICache`，证明后续业务测试可以用轻量测试替身。
-- Pre-Step31 后新增 `MySqlStorage` / `RedisCache` 集成测试，证明真实 MySQL / Redis 适配层可以通过统一接口使用。
+- Step 31 新增 `MySqlStorage` / `RedisCache` 集成测试，证明真实 MySQL / Redis 适配层可以通过统一接口使用。
 - CMake target 能被测试目标链接。
 
 ## 验证命令
@@ -440,7 +441,7 @@ git diff --check
 
 可以这样说：
 
-> Step 21 先把 IM 业务需要的持久化和缓存能力抽象出来。持久化接口覆盖用户、好友公开资料、群组、消息、离线消息和历史查询，缓存接口覆盖在线状态、未读计数和登录失败限制。接口统一返回 `Status`，结果用输出参数，不暴露 MySQL / Redis 具体类型。Pre-Step31 小重构补上真实 `MySqlStorage` / `RedisCache` 聚合适配层，让后续业务 service 可以依赖稳定边界，真实阻塞 I/O 放到 business 线程池执行，网络 I/O 线程只负责 Reactor 和连接读写。
+> Step 21 先把 IM 业务需要的持久化和缓存能力抽象出来。持久化接口覆盖用户、好友公开资料、群组、消息、离线消息和历史查询，缓存接口覆盖在线状态、未读计数和登录失败限制。接口统一返回 `Status`，结果用输出参数，不暴露 MySQL / Redis 具体类型。Step 31 补上真实 `MySqlStorage` / `RedisCache` 聚合适配层，Step 32 开始让业务 service 依赖稳定边界。真实阻塞 I/O 放到 business 线程池执行，网络 I/O 线程只负责 Reactor 和连接读写。
 
 ## 面试常见追问
 

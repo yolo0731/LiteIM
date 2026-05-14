@@ -12,8 +12,7 @@ liteim::Bytes bytesFromString(const std::string& value) {
     return {value.begin(), value.end()};
 }
 
-liteim::Bytes makeEncodedPacket(liteim::MessageType type,
-                                std::uint64_t seq_id,
+liteim::Bytes makeEncodedPacket(liteim::MessageType type, std::uint64_t seq_id,
                                 const std::string& body_text) {
     liteim::Packet packet;
     packet.header.msg_type = type;

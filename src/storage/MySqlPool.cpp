@@ -8,6 +8,7 @@
 
 namespace liteim {
 
+// 连接池内部状态，使用 shared_ptr 共享给 ConnectionGuard
 struct MySqlPoolState {
     explicit MySqlPoolState(MySqlConfig config_in) : config(std::move(config_in)) {}
 
@@ -34,7 +35,9 @@ Status acquireTimeoutStatus() {
     return Status::error(ErrorCode::IoError, "timed out waiting for a MySQL connection");
 }
 
-Status ensureConnectionReady(const std::shared_ptr<MySqlPoolState>& state, MySqlConnection& connection) {
+// 确保连接可用，不可用则尝试重连
+Status ensureConnectionReady(const std::shared_ptr<MySqlPoolState>& state,
+                             MySqlConnection& connection) {
     if (!connection.isConnected()) {
         return connection.connect(state->config);
     }
@@ -48,7 +51,9 @@ Status ensureConnectionReady(const std::shared_ptr<MySqlPoolState>& state, MySql
     return connection.connect(state->config);
 }
 
-void releaseConnection(const std::shared_ptr<MySqlPoolState>& state, MySqlConnection* connection) noexcept {
+// 归还连接到连接池，如果连接池已关闭则直接关闭连接
+void releaseConnection(const std::shared_ptr<MySqlPoolState>& state,
+                       MySqlConnection* connection) noexcept {
     if (!state || connection == nullptr) {
         return;
     }
@@ -57,7 +62,7 @@ void releaseConnection(const std::shared_ptr<MySqlPoolState>& state, MySqlConnec
     {
         std::lock_guard<std::mutex> lock(state->mutex);
         if (state->started && !state->closed) {
-            state->idle_connections.push_back(connection);
+            state->idle_connections.push_back(connection);  // 连接放回空闲队列
             notify = true;
         } else {
             connection->close();
@@ -65,10 +70,11 @@ void releaseConnection(const std::shared_ptr<MySqlPoolState>& state, MySqlConnec
     }
 
     if (notify) {
-        state->condition.notify_one();
+        state->condition.notify_one();  // 唤醒一个正在acquire等待连接的线程
     }
 }
 
+// 关闭当前空闲队列里的连接，借出去的连接：等 guard 归还时再关闭
 void closeIdleConnections(const std::shared_ptr<MySqlPoolState>& state) noexcept {
     if (!state) {
         return;
@@ -81,28 +87,27 @@ void closeIdleConnections(const std::shared_ptr<MySqlPoolState>& state) noexcept
             return;
         }
 
-        state->closed = true;
+        state->closed = true;  // 锁内改状态、搬走指针
         while (!state->idle_connections.empty()) {
             idle_connections.push_back(state->idle_connections.front());
             state->idle_connections.pop_front();
         }
     }
-
+    // 锁外关闭连接
     for (auto* connection : idle_connections) {
         connection->close();
     }
     state->condition.notify_all();
 }
 
-} // namespace
+}  // namespace
 
 ConnectionGuard::~ConnectionGuard() {
     reset();
 }
 
 ConnectionGuard::ConnectionGuard(ConnectionGuard&& other) noexcept
-    : state_(std::move(other.state_)), connection_(std::exchange(other.connection_, nullptr)) {
-}
+    : state_(std::move(other.state_)), connection_(std::exchange(other.connection_, nullptr)) {}
 
 ConnectionGuard& ConnectionGuard::operator=(ConnectionGuard&& other) noexcept {
     if (this != &other) {
@@ -139,13 +144,15 @@ void ConnectionGuard::reset() noexcept {
     releaseConnection(state, connection);
 }
 
-void ConnectionGuard::reset(std::shared_ptr<MySqlPoolState> state, MySqlConnection* connection) noexcept {
+void ConnectionGuard::reset(std::shared_ptr<MySqlPoolState> state,
+                            MySqlConnection* connection) noexcept {
     reset();
     state_ = std::move(state);
     connection_ = connection;
 }
 
-MySqlPool::MySqlPool(MySqlConfig config) : state_(std::make_shared<MySqlPoolState>(std::move(config))) {}
+MySqlPool::MySqlPool(MySqlConfig config)
+    : state_(std::make_shared<MySqlPoolState>(std::move(config))) {}
 
 MySqlPool::~MySqlPool() {
     close();
@@ -154,13 +161,15 @@ MySqlPool::~MySqlPool() {
 Status MySqlPool::start() {
     std::lock_guard<std::mutex> lock(state_->mutex);
     if (state_->started) {
-        return Status::error(ErrorCode::InvalidArgument, "MySQL connection pool has already started");
+        return Status::error(ErrorCode::InvalidArgument,
+                             "MySQL connection pool has already started");
     }
     if (state_->closed) {
         return poolClosedStatus();
     }
     if (state_->config.pool_size == 0) {
-        return Status::error(ErrorCode::InvalidArgument, "MySQL connection pool size must be greater than zero");
+        return Status::error(ErrorCode::InvalidArgument,
+                             "MySQL connection pool size must be greater than zero");
     }
 
     std::vector<std::unique_ptr<MySqlConnection>> connections;
@@ -186,10 +195,12 @@ Status MySqlPool::start() {
 
 Status MySqlPool::acquire(std::chrono::milliseconds timeout, ConnectionGuard& guard) {
     if (timeout.count() < 0) {
-        return Status::error(ErrorCode::InvalidArgument, "MySQL connection acquire timeout must not be negative");
+        return Status::error(ErrorCode::InvalidArgument,
+                             "MySQL connection acquire timeout must not be negative");
     }
     if (guard) {
-        return Status::error(ErrorCode::InvalidArgument, "ConnectionGuard already owns a MySQL connection");
+        return Status::error(ErrorCode::InvalidArgument,
+                             "ConnectionGuard already owns a MySQL connection");
     }
 
     MySqlConnection* connection = nullptr;
@@ -202,9 +213,8 @@ Status MySqlPool::acquire(std::chrono::milliseconds timeout, ConnectionGuard& gu
             return poolClosedStatus();
         }
 
-        const bool ready = state_->condition.wait_for(lock, timeout, [&]() {
-            return state_->closed || !state_->idle_connections.empty();
-        });
+        const bool ready = state_->condition.wait_for(
+            lock, timeout, [&]() { return state_->closed || !state_->idle_connections.empty(); });
         if (!ready) {
             return acquireTimeoutStatus();
         }
@@ -212,7 +222,7 @@ Status MySqlPool::acquire(std::chrono::milliseconds timeout, ConnectionGuard& gu
             return poolClosedStatus();
         }
 
-        connection = state_->idle_connections.front();
+        connection = state_->idle_connections.front();  // 从空闲队列拿出一条连接
         state_->idle_connections.pop_front();
     }
 
@@ -253,4 +263,4 @@ std::size_t MySqlPool::size() const noexcept {
     return state_->connections.size();
 }
 
-} // namespace liteim
+}  // namespace liteim

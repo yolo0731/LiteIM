@@ -1,8 +1,60 @@
 # LiteIM Progress
 
+## 2026-05-14 Step 32 SessionManager / OnlineService
+
+本次按用户确认采用“踢旧保新”的重复登录策略，并同步相关 Markdown。
+
+TDD 过程：
+
+- RED：新增 `tests/service/session_manager_test.cpp` 和 `tests/service/online_service_test.cpp`，并把 `liteim_service` 加到测试链接；`cmake --build build --target liteim_tests -j2` 预期失败于缺失 `liteim/service/SessionManager.hpp`。
+- GREEN：新增 `include/liteim/service/SessionManager.hpp`、`src/service/SessionManager.cpp`、`include/liteim/service/OnlineService.hpp`、`src/service/OnlineService.cpp`、`src/service/CMakeLists.txt`，并在 `src/CMakeLists.txt` 注册 `service` 模块。
+
+已完成代码：
+
+- `SessionManager` 维护 `user_id -> weak_ptr<Session>` 和 `session_id -> user_id`，支持绑定、按用户查 session、按 session 查用户、匹配解绑、stale weak_ptr 清理。
+- 重复登录时，旧 session 从内存表移除后在锁外 `close()`，新 session 成为唯一当前绑定。
+- `OnlineService` 通过 `ICache` 写入、刷新、删除 Redis 在线状态，并保证旧 session 的延迟解绑不会删除新 session 的在线 key。
+
+已完成文档同步：
+
+- 更新 `/home/yolo/jianli/PROJECT_MEMORY.md`、README、`task_plan.md`、`findings.md`、本文件，以及 Step 21 / Step 29 / Step 31 相关教程中的 Step 32 边界描述。
+- 新增 `tutorials/step32_session_manager_online_service.md`。
+
+当前验证：
+
+- `ctest --test-dir build -R "SessionManagerTest|OnlineServiceTest|OnlineServiceRedisIntegrationTest" --output-on-failure`：10/10 通过，其中 Redis 集成项因本机 Redis 不可用按规则 skipped。
+- `cmake --build build -j2`：通过。
+- `ctest --test-dir build --output-on-failure`：264/264 通过；MySQL / Redis 相关集成项因本机服务不可用按规则 skipped。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，server 启动后收到 timeout SIGTERM 并通过 signalfd 退出。
+- `git diff --check`：通过。
+- `.gitkeep` 和旧路线 `server/net` / `server/protocol` / `SQLite` / `InMemory` 路径扫描：无输出。
+- 教程结构扫描：`tutorials/step00` 到 `tutorials/step32` 的最后一个主章节都是“面试常见追问”；教程内无 `提交信息` 主章节；Step 32 含“该项目代码在实际应用中的具体数据例子”。
+
+错误记录：
+
+- 一次文案扫描命令把带反引号的 pattern 放进双引号，shell 执行了命令替换并输出 `SessionManager: command not found`。已改用单引号重新执行，确认没有旧 Step 32 / Pre-Step 31 表述残留。
+
+## 2026-05-13 Step 31 Route Documentation Alignment
+
+本次按用户确认做 Markdown-only 路线调整，不修改 C++ 代码逻辑，不回滚现有 dirty diff。
+
+已完成文档修复：
+
+- 将原独立存储/缓存契约小重构正式纳入 `Step 31：MySqlStorage 和 RedisCache 聚合适配层`。
+- 将原 Step 31 `SessionManager and OnlineService` 后移为 Step 32，并把后续业务、CLI/测试/CI、Qt、最终文档阶段编号整体顺延为 Step 32-41、Step 42-46、Step 47-54、Step 55。
+- 新增 `tutorials/step31_storage_cache_adapters.md`，按固定教程结构讲解 `MySqlStorage : IStorage`、`RedisCache : ICache`、事务边界、Redis 缓存边界、测试和面试追问。
+- 更新 `/home/yolo/jianli/PROJECT_MEMORY.md`、README、`task_plan.md`、`findings.md`、本文件，以及 Step 21 / Step 23 / Step 26 教程里的旧编号和 Pre-Step 说法。
+
+当前验证：
+
+- 残留旧路线扫描：无旧 Pre-Step 表述、无旧 Step 31 业务层表述、无旧阶段区间编号命中。
+- 教程结构扫描：Step 00-31 的最后一个主章节都包含“面试常见追问”；教程内无提交信息章节。
+- `git -C /home/yolo/jianli/LiteIM diff --check -- README.md task_plan.md findings.md progress.md tutorials/step21_storage_cache_interfaces.md tutorials/step23_mysql_connection.md tutorials/step26_message_dao.md tutorials/step31_storage_cache_adapters.md`：通过。
+- 触碰文件 trailing whitespace 扫描：无命中。
+
 ## 2026-05-12 Markdown Contract Alignment / Doc Drift Fix
 
-本次只做 Markdown / 项目记忆同步，不修改 C++ 代码逻辑，不回滚现有 dirty diff，也不作为 Step31。
+本次只做 Markdown / 项目记忆同步，不修改 C++ 代码逻辑，不回滚现有 dirty diff，也不作为 Step 31。
 
 已完成文档修复：
 
@@ -12,7 +64,7 @@
 - 同步 MySQL history 索引字段名为 `(conversation_type, conversation_id, message_id)`。
 - 同步 HeartbeatService 与 `Session::last_active_time` 分工：完整合法入站 Packet 在 `Session` 读路径刷新连接活跃时间，HeartbeatService 只返回响应并为已登录用户刷新 Redis 在线 TTL。
 - 同步 `saveMessageWithOfflineRecipients()` 当前契约：重复离线用户先去重；`queryLastInsertedMessage()` 成功后、`COMMIT` 前失败会 `ROLLBACK` 并清空 `saved_message`。
-- 更新 `task_plan.md` 和 `findings.md`，把本轮记为 Markdown contract alignment / doc drift fix，不记成 Step31。
+- 更新 `task_plan.md` 和 `findings.md`，把本轮记为 Markdown contract alignment / doc drift fix，不记成 Step 31。
 
 当前验证：
 
@@ -22,9 +74,9 @@
 - `cmake --build build --target liteim_tests -j2`：通过。
 - `ctest --test-dir build --output-on-failure`：254/254 通过，其中新增通过项为 `SaveMessageWithOfflineRecipientsDeduplicatesOfflineUsers`。
 
-## 2026-05-12 Pre-Step31 Storage / Cache Contract Cleanup
+## 2026-05-12 Step 31 Storage / Cache Adapter Layer
 
-本次按用户确认开启 Step31 前的独立项目小重构，不把它记成 Step31，也不实现 `SessionManager` / `OnlineService`。
+本次按用户确认将原独立存储/缓存契约小重构纳入正式 Step 31 教学路线，不实现 `SessionManager` / `OnlineService`；业务层从 Step 32 开始。
 
 目标边界：
 
@@ -57,7 +109,7 @@
 
 已完成文档同步：
 
-- 更新 README、Step21/23/25/26/27/30 教程、`task_plan.md`、`findings.md`、本文件和 `/home/yolo/jianli/PROJECT_MEMORY.md`。
+- 更新 README、Step21/23/25/26/27/30/31 教程、`task_plan.md`、`findings.md`、本文件和 `/home/yolo/jianli/PROJECT_MEMORY.md`。
 - 明确 `LoginRateLimiter` 当前是滑动失败窗口，`allow()` / `recordFailure()` 分离，后续 AuthService 如需强原子登录门禁再扩展 Lua 脚本。
 - 明确当前 v1 MySQL schema 没有 `users.user_type`，BotGateway 前若需要数据库级 normal/bot 区分，应单独做迁移。
 
@@ -131,12 +183,12 @@
 - Step 21 补齐独立概念章节，扩写 `StorageTypes.hpp`、`IStorage.hpp`、`CacheTypes.hpp` 和 `ICache.hpp` 的 DTO、接口、失败语义、线程边界和后续实现边界。
 - Step 22 改成 Docker Compose / SQL 脚本契约说明，补 MySQL/Redis 服务契约、schema、seed 数据、Redis 空实例边界和标准运行流程。
 - Step 23-29 全部扩写到详细接口说明和两层运行流程：既说明它们在 LiteIM 业务架构里的上下游位置，也说明模块自身内部如何运行。
-- 每个 Step 都补齐测试设计、验证命令、面试说法和提交信息章节。
+- 每个 Step 都补齐测试设计、验证命令、面试说法和面试常见追问章节。
 - 本次只修改 Step 21-29 教程和 planning 记录，不修改 `tutorials/step20_backpressure.md`，也不改 C++/SQL 行为。
 
 当前验证：
 
-- 教程结构扫描：Step 21-29 均包含接口/契约说明、作用场景和运行流程、验证命令、提交信息；运行流程章节均包含 5 个固定小节。
+- 教程结构扫描：Step 21-29 均包含接口/契约说明、作用场景和运行流程、验证命令、面试常见追问；运行流程章节均包含 5 个固定小节。
 - `git diff --check`：通过。
 - `cmake --build build`：通过。
 - `ctest --test-dir build -R "StorageInterfaceTest|CacheInterfaceTest|MySql|UserDao|MessageDao|FriendGroupDao|Redis|OnlineStatusCache" --output-on-failure`：60/60 通过。

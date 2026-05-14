@@ -7,8 +7,7 @@
 
 namespace liteim {
 
-Buffer::Buffer(std::size_t initial_size) : buffer_(initial_size == 0 ? 1 : initial_size) {
-}
+Buffer::Buffer(std::size_t initial_size) : buffer_(initial_size == 0 ? 1 : initial_size) {}
 
 std::size_t Buffer::readableBytes() const noexcept {
     return write_index_ - read_index_;
@@ -92,4 +91,4 @@ void Buffer::ensureWritableBytes(std::size_t len) {
     buffer_.resize(write_index_ + len);
 }
 
-} // namespace liteim
+}  // namespace liteim

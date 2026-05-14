@@ -57,9 +57,8 @@ TEST(TlvCodecTest, MultipleFieldsCanBeEncodedAndDecoded) {
 TEST(TlvCodecTest, Utf8StringCanBeEncodedAndDecoded) {
     liteim::Bytes body;
 
-    const auto append_status = liteim::appendString(liteim::TlvType::MessageText,
-                                                    "你好，LiteIM 👋",
-                                                    body);
+    const auto append_status =
+        liteim::appendString(liteim::TlvType::MessageText, "你好，LiteIM 👋", body);
 
     ASSERT_TRUE(append_status.isOk()) << append_status.message();
 
@@ -108,9 +107,8 @@ TEST(TlvCodecTest, RepeatedUint64FieldsArePreserved) {
 TEST(TlvCodecTest, Uint64UsesNetworkByteOrder) {
     liteim::Bytes body;
 
-    const auto append_status = liteim::appendUint64(liteim::TlvType::MessageId,
-                                                    0x0102030405060708ULL,
-                                                    body);
+    const auto append_status =
+        liteim::appendUint64(liteim::TlvType::MessageId, 0x0102030405060708ULL, body);
 
     ASSERT_TRUE(append_status.isOk()) << append_status.message();
     ASSERT_EQ(body.size(), liteim::kTlvHeaderSize + 8U);

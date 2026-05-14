@@ -35,4 +35,4 @@ private:
     std::vector<EventLoop*> loops_;
 };
 
-} // namespace liteim
+}  // namespace liteim

@@ -64,25 +64,25 @@ void cleanupStep27Rows(const liteim::MySqlConfig& config) {
         return;
     }
 
-    executeCleanupSql(connection,
-                      "DELETE FROM group_members "
-                      "WHERE group_id IN (SELECT group_id FROM chat_groups WHERE group_name LIKE 'step27\\_%') "
-                      "OR user_id IN (SELECT user_id FROM users WHERE username LIKE 'step27\\_%')");
-    executeCleanupSql(connection,
-                      "DELETE FROM chat_groups "
-                      "WHERE group_name LIKE 'step27\\_%' "
-                      "OR owner_id IN (SELECT user_id FROM users WHERE username LIKE 'step27\\_%')");
-    executeCleanupSql(connection,
-                      "DELETE FROM friendships "
-                      "WHERE user_id IN (SELECT user_id FROM users WHERE username LIKE 'step27\\_%') "
-                      "OR friend_id IN (SELECT user_id FROM users WHERE username LIKE 'step27\\_%')");
+    executeCleanupSql(
+        connection,
+        "DELETE FROM group_members "
+        "WHERE group_id IN (SELECT group_id FROM chat_groups WHERE group_name LIKE 'step27\\_%') "
+        "OR user_id IN (SELECT user_id FROM users WHERE username LIKE 'step27\\_%')");
+    executeCleanupSql(
+        connection, "DELETE FROM chat_groups "
+                    "WHERE group_name LIKE 'step27\\_%' "
+                    "OR owner_id IN (SELECT user_id FROM users WHERE username LIKE 'step27\\_%')");
+    executeCleanupSql(
+        connection, "DELETE FROM friendships "
+                    "WHERE user_id IN (SELECT user_id FROM users WHERE username LIKE 'step27\\_%') "
+                    "OR friend_id IN (SELECT user_id FROM users WHERE username LIKE 'step27\\_%')");
     executeCleanupSql(connection, "DELETE FROM users WHERE username LIKE 'step27\\_%'");
 }
 
 bool containsUserId(const std::vector<liteim::GroupMemberRecord>& members, std::uint64_t user_id) {
-    return std::any_of(members.begin(), members.end(), [user_id](const auto& member) {
-        return member.user_id == user_id;
-    });
+    return std::any_of(members.begin(), members.end(),
+                       [user_id](const auto& member) { return member.user_id == user_id; });
 }
 
 class FriendGroupDaoIntegrationTest : public ::testing::Test {
@@ -138,7 +138,7 @@ protected:
     std::unique_ptr<liteim::GroupDao> group_dao;
 };
 
-} // namespace
+}  // namespace
 
 TEST(FriendGroupDaoTest, HeadersAreSelfContained) {
     liteim::MySqlPool pool(testMySqlConfig());

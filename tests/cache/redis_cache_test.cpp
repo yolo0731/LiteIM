@@ -33,7 +33,8 @@ std::string testName(const std::string& suffix) {
            test_info->test_suite_name() + "_" + test_info->name() + "_" + suffix;
 }
 
-liteim::UnreadKey unreadKey(std::uint64_t user_id, liteim::ConversationType type, std::uint64_t conversation_id) {
+liteim::UnreadKey unreadKey(std::uint64_t user_id, liteim::ConversationType type,
+                            std::uint64_t conversation_id) {
     liteim::UnreadKey key;
     key.user_id = user_id;
     key.conversation = {type, conversation_id};
@@ -85,7 +86,7 @@ protected:
     std::vector<liteim::LoginAttemptKey> login_keys;
 };
 
-} // namespace
+}  // namespace
 
 TEST(RedisCacheTest, HeaderIsSelfContained) {
     liteim::RedisPool pool(testRedisConfig());
@@ -114,7 +115,8 @@ TEST_F(RedisCacheIntegrationTest, ImplementsICacheForOnlineUnreadAndLoginFailure
     ASSERT_TRUE(interface.getOnlineSession(user_id, found_session).isOk());
     EXPECT_EQ(found_session.session_id, session.session_id);
 
-    const auto unread = rememberUnreadKey(unreadKey(user_id, liteim::ConversationType::kPrivate, 8001));
+    const auto unread =
+        rememberUnreadKey(unreadKey(user_id, liteim::ConversationType::kPrivate, 8001));
     std::uint64_t unread_count = 0;
     ASSERT_TRUE(interface.incrUnread(unread, 2, unread_count).isOk());
     EXPECT_EQ(unread_count, 2U);

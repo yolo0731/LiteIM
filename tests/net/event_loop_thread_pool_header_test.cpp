@@ -16,8 +16,10 @@ TEST(ReactorInterfaceTest, EventLoopThreadPoolHeaderIsSelfContained) {
     static_assert(std::is_same_v<decltype(&Pool::start), void (Pool::*)()>);
     static_assert(std::is_same_v<decltype(&Pool::stop), void (Pool::*)() noexcept>);
     static_assert(std::is_same_v<decltype(&Pool::getNextLoop), liteim::EventLoop* (Pool::*)()>);
-    static_assert(std::is_same_v<decltype(&Pool::loops), const LoopList& (Pool::*)() const noexcept>);
-    static_assert(std::is_same_v<decltype(&Pool::threadCount), std::size_t (Pool::*)() const noexcept>);
+    static_assert(
+        std::is_same_v<decltype(&Pool::loops), const LoopList& (Pool::*)() const noexcept>);
+    static_assert(
+        std::is_same_v<decltype(&Pool::threadCount), std::size_t (Pool::*)() const noexcept>);
     static_assert(std::is_same_v<decltype(&Pool::started), bool (Pool::*)() const noexcept>);
 
     SUCCEED();

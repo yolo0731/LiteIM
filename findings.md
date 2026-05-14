@@ -8,9 +8,46 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-14 Step 32 SessionManager / OnlineService Findings
+
+本次进入 `Step 32：实现 SessionManager 和 OnlineService`，只实现登录态绑定和在线状态同步基础能力，不实现 AuthService、MessageRouter、ChatService 或 `TcpServer` 运行时协议接入。
+
+已经确认并采用的设计：
+
+- 重复登录策略采用用户确认的“踢旧保新”：同一个 `user_id` 绑定新 session 时，内存绑定切到新 session，旧 session 在锁外关闭，Redis 在线状态指向新 session。
+- `SessionManager` 维护 `user_id -> weak_ptr<Session>` 和 `session_id -> user_id` 两张表；查询时如果 weak_ptr 过期或 session 已关闭，会清理 stale binding 并返回 `NotFound`。
+- `SessionManager::unbindUser(user_id, session_id, removed)` 只删除当前匹配的绑定；旧 session 延迟 close 回调不会误删新 session 的绑定。
+- `OnlineService` 在登录绑定时先写 `ICache::setUserOnline()`，再更新内存绑定；心跳刷新要求 `(user_id, session_id)` 仍是当前绑定，防止旧 session 刷新新登录的 Redis TTL。
+- `OnlineService::unbindUser()` 只有在 `SessionManager` 确认删除了当前绑定时才调用 `ICache::setUserOffline()`，避免旧 session close 回调删除新 session 的 `online:user:<user_id>`。
+- 新增 `liteim_service` 模块，链接 `liteim_net` 和 `liteim_cache`；它仍然是阻塞 cache 调用的上层 service，后续应由 business 线程调用，不进入 Reactor I/O 线程。
+
+本次不采用/不改：
+
+- 不实现注册、登录密码校验、登录限流业务组合、消息路由、私聊/群聊 service、BotGateway 或客户端协议响应。
+- 不把 `OnlineService` 接入 `TcpServer::setMessageCallback()`、`Session` close callback 或 server main。
+- 不做跨进程转发；Redis 在线状态只为状态展示和后续多进程扩展保留信息。
+
+## 2026-05-13 Step 31 Route Documentation Alignment Findings
+
+本次是 Markdown-only 路线调整，不修改 C++ 逻辑，不回滚现有 dirty diff。
+
+已经确认并采用的调整：
+
+- 原独立存储/缓存契约小重构适合作为正式 Step 31，因为它正好收束 Step 21 的 `IStorage` / `ICache` 抽象和 Step 23-30 的 MySQL / Redis 具体组件。
+- Step 31 的教学重点是 `MySqlStorage : IStorage` 和 `RedisCache : ICache` 如何实现抽象接口，不再把这部分只写成 Pre-Step。
+- 原 Step 31 `SessionManager and OnlineService` 后移为 Step 32；后续业务服务、CLI/测试/CI、Qt 客户端和最终文档 Step 编号整体顺延。
+- Step 31 仍不接入 `TcpServer` runtime，不实现 AuthService、ChatService、`SessionManager` 或 `OnlineService`；阻塞 MySQL / Redis 调用仍然只能给后续 business 线程使用。
+
+本次同步范围：
+
+- `/home/yolo/jianli/PROJECT_MEMORY.md` 的全局优先级、Step 31 内容、Phase 5-8 Step 编号。
+- README、`task_plan.md`、`findings.md`、`progress.md`。
+- Step 21 / Step 23 / Step 26 相关教程引用。
+- 新增 `tutorials/step31_storage_cache_adapters.md`。
+
 ## 2026-05-12 Markdown Contract Alignment Findings
 
-本次是 Markdown-only 同步修复，不修改 C++ 逻辑，不回滚现有 dirty diff，也不把它记成 Step31。
+本次是 Markdown-only 同步修复，不修改 C++ 逻辑，不回滚现有 dirty diff，也不把它记成 Step 31。
 
 确认并修正的文档契约：
 
@@ -21,13 +58,13 @@
 - `MySqlStorage::saveMessageWithOfflineRecipients()` 当前契约是：先对重复离线用户去重；如果 `queryLastInsertedMessage()` 成功后、`COMMIT` 前插入离线记录失败，会 `ROLLBACK` 并清空 `saved_message` 输出参数，避免半成功结果被上层误用。
 - 当前完整测试总数应记录为 `254/254`，新增通过项来自 `SaveMessageWithOfflineRecipientsDeduplicatesOfflineUsers`。
 
-## 2026-05-12 Pre-Step31 Storage / Cache Contract Cleanup Findings
+## 2026-05-12 Step 31 Storage / Cache Adapter Layer Findings
 
-本次是 Step31 之前的独立项目小重构，不开启 `SessionManager`、`OnlineService`、AuthService 或 ChatService。
+本次现在纳入正式 `Step 31：MySqlStorage / RedisCache 聚合适配层`，不开启 `SessionManager`、`OnlineService`、AuthService 或 ChatService。
 
 已经确认的重构目标：
 
-- Step21 的 `IStorage` / `ICache` 需要真实 MySQL / Redis 聚合适配层，否则 Step31 之后业务层会被迫依赖具体 DAO/cache 组件。
+- Step21 的 `IStorage` / `ICache` 需要真实 MySQL / Redis 聚合适配层，否则 Step 32 之后业务层会被迫依赖具体 DAO/cache 组件。
 - `FriendDao::getFriends()` 不应该返回带 `password_hash` / `password_salt` 的 `UserRecord`；好友列表应返回公开资料 DTO。
 - MySQL schema 使用 `BIGINT UNSIGNED`，`PreparedStatement` 需要提供 `bindUInt64()`，避免 DAO 长期用 signed bind 检查绕过类型不一致。
 - 私聊/群聊业务需要一个 MySQL 事务边界覆盖 `messages` + `offline_messages`，Redis 未读数仍放在业务层提交后处理，不做跨 MySQL/Redis 事务。
@@ -37,7 +74,7 @@
 
 本次明确不做：
 
-- 不推进 Step31，不接入 `TcpServer` runtime，不实现 `SessionManager` / `OnlineService`。
+- 不推进 Step 32，不接入 `TcpServer` runtime，不实现 `SessionManager` / `OnlineService`。
 - 不实现完整 AuthService、ChatService、业务协议处理或 Python/Qt 客户端。
 - 不引入 ORM、Redis 分布式锁、Pub/Sub、Streams 或跨资源事务。
 
@@ -68,7 +105,7 @@
 
 确认并采用的修正文档规则：
 
-- `tutorials/step21_storage_cache_interfaces.md` 到 `tutorials/step29_online_status_cache.md` 都按固定教学结构补齐：概念、新增/修改文件、详细接口或契约说明、作用场景和运行流程、后续边界、测试设计、验证命令、面试说法和提交信息。
+- `tutorials/step21_storage_cache_interfaces.md` 到 `tutorials/step29_online_status_cache.md` 都按固定教学结构补齐：概念、新增/修改文件、详细接口或契约说明、作用场景和运行流程、后续边界、测试设计、验证命令、面试说法和面试常见追问。
 - `作用场景和运行流程` 不再只写函数流水线；每个 Step 都拆成 5 个小节：在 LiteIM 里的具体使用场景、上下层调用连接、整体运行链路、自身内部运行流程、小例子和边界。
 - `hpp 接口说明` 需要覆盖 public API、关键成员变量、private helper、失败语义、线程边界和所有权边界；Step 22 没有 C++ header，所以写等价的 Docker Compose / SQL 脚本契约说明。
 - 本次明确避开已有未提交的 `tutorials/step20_backpressure.md`、net 源码/header 和 `scripts/seed_test_data.sql` 改动，避免把用户侧或其他任务改动混进本轮教程修正。
@@ -91,7 +128,7 @@
 本次不采用/不改：
 
 - 不实现 Step 30 的 `UnreadCounter`、`LoginRateLimiter` 或对应 Redis key。
-- 不实现 Step 31 的 `SessionManager`、`OnlineService`、登录成功写 Redis、心跳 runtime 续期或断开连接 runtime 清理。
+- 不实现 Step 32 的 `SessionManager`、`OnlineService`、登录成功写 Redis、心跳 runtime 续期或断开连接 runtime 清理。
 - 不接入 `ThreadPool`、`TcpServer`、`Session`、AuthService、ChatService 或任何运行时业务流程。
 - 不实现 Redis Cluster、Pub/Sub、Streams、分布式锁、pipeline 或异步 Redis。
 - 不修改 Docker Compose、Redis 初始化数据、MySQL schema、seed 数据或 Step 21 `ICache` 接口。

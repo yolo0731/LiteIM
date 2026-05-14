@@ -16,8 +16,8 @@ Status invalidFdStatus() {
 }
 
 Status errnoStatus(const char* action, int error_number) {
-    return Status::error(ErrorCode::IoError,
-                         std::string(action) + " failed with errno " + std::to_string(error_number));
+    return Status::error(ErrorCode::IoError, std::string(action) + " failed with errno " +
+                                                 std::to_string(error_number));
 }
 
 Status setSocketOption(int fd, int level, int option, bool enabled, const char* option_name) {
@@ -33,7 +33,7 @@ Status setSocketOption(int fd, int level, int option, bool enabled, const char* 
     return Status::ok();
 }
 
-} // namespace
+}  // namespace
 
 Status createNonBlockingSocket(int& fd) {
     fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
@@ -76,7 +76,8 @@ Status setReusePort(int fd, bool enabled) {
 #else
     (void)fd;
     (void)enabled;
-    return Status::error(ErrorCode::InternalError, "SO_REUSEPORT is not supported on this platform");
+    return Status::error(ErrorCode::InternalError,
+                         "SO_REUSEPORT is not supported on this platform");
 #endif
 }
 
@@ -116,4 +117,4 @@ Status getSocketError(int fd, int& error_code) {
     return Status::ok();
 }
 
-} // namespace liteim
+}  // namespace liteim
