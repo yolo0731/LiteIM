@@ -1,4 +1,5 @@
 add_library(liteim_service STATIC
+    MessageRouter.cpp
     OnlineService.cpp
     SessionManager.cpp
 )
@@ -15,6 +16,7 @@ target_link_libraries(liteim_service
         liteim_base
         liteim_net
         liteim_cache
+        liteim_concurrency
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

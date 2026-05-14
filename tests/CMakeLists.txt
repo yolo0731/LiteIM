@@ -41,6 +41,7 @@ add_executable(liteim_tests
     cache/redis_cache_test.cpp
     service/session_manager_test.cpp
     service/online_service_test.cpp
+    service/message_router_test.cpp
     timer/timer_heap_header_test.cpp
     timer/timer_heap_test.cpp
     timer/timer_manager_header_test.cpp

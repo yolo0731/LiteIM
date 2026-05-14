@@ -1,5 +1,37 @@
 # LiteIM Progress
 
+## 2026-05-14 Step 33 MessageRouter
+
+本次进入 `Step 33：MessageRouter 异步分发框架`，目标是在不实现 AuthService / ChatService 的前提下，把网络层收到的 Packet 接到 service 层路由骨架。
+
+TDD 过程：
+
+- RED：新增 `tests/service/message_router_test.cpp` 并注册到 `tests/CMakeLists.txt` 后，`cmake --build build --target liteim_tests -j2` 失败于缺少 `liteim/service/MessageRouter.hpp`。
+- GREEN：新增 `include/liteim/service/MessageRouter.hpp`、`src/service/MessageRouter.cpp`，更新 `src/service/CMakeLists.txt`、`server/CMakeLists.txt` 和 `server/main.cpp`。
+
+已完成代码：
+
+- `MessageRouter` 支持 `route(Session::Ptr, Packet)`、`registerHandler(MessageType, Handler, DispatchMode)`、`RouterRequest` 和 `DispatchMode::Inline / BusinessThread`。
+- 默认 `HeartbeatRequest` inline 返回 `HeartbeatResponse`，不启动或使用业务线程池。
+- 注册 handler 的请求会按 dispatch mode 执行；业务线程 handler 通过 `ThreadPool::submit()` 执行。
+- Router 统一解析 TLV，统一构造 `ErrorResponse`，并强制响应 `seq_id` 等于请求 `seq_id`。
+- 未知 / 非 request / 未注册 handler / TLV parse 失败 / handler 返回错误 / 线程池拒绝任务都会返回 `ErrorResponse`。
+- 异步任务通过 `weak_ptr<Session>` 做开始前和发送前检查，关闭后不发送、不崩溃。
+- `server/main.cpp` 启动业务 `ThreadPool`，创建 `MessageRouter`，并通过 `TcpServer::setMessageCallback()` 接入。
+
+当前验证：
+
+- `ctest --test-dir build -R "MessageRouter" --output-on-failure`：8/8 通过。
+- `ctest --test-dir build -R "MessageRouter|Service|Session|TcpServer" --output-on-failure`：49/49 通过。
+- `cmake --build build -j2`：通过。
+- 首次 `ctest --test-dir build --output-on-failure`：271/272 通过，`LiteIMServerSignalTest.TerminatesOnSigterm` 失败，server 在 SIGTERM 后以 143 退出。
+- 根因：`server/main.cpp` 先启动了业务 `ThreadPool`，后启动 `SignalWatcher`；`SignalWatcher::start()` 只阻塞当前线程信号，已创建的业务线程没有继承 SIGINT/SIGTERM 阻塞掩码，SIGTERM 可能落到业务线程按默认动作终止进程。
+- 修复：调整 `server/main.cpp` 启动顺序，先 `signal_watcher.start()`，再 `business_pool.start()`；退出时先 `business_pool.stop()`，再 `signal_watcher.stop()`。
+- `cmake --build build --target liteim_server -j2 && ctest --test-dir build -R "LiteIMServerSignal" --output-on-failure`：通过。
+- `ctest --test-dir build --output-on-failure`：272/272 通过。
+- `git diff --check`：通过。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，server 收到 SIGTERM 后通过 signalfd 退出。
+
 ## 2026-05-14 Step 32 SessionManager / OnlineService
 
 本次按用户确认采用“踢旧保新”的重复登录策略，并同步相关 Markdown。

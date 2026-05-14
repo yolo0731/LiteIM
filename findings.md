@@ -8,6 +8,31 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-14 Step 33 MessageRouter Findings
+
+本次进入 `Step 33：实现 MessageRouter 异步分发框架`，只实现业务入口骨架和 `TcpServer` 运行时接入，不实现 AuthService、ChatService、好友、群聊、历史消息或 BotGateway。
+
+已经确认并采用的设计：
+
+- `MessageRouter` 位于 `liteim_service`，`TcpServer` 不持有 Router，避免 `net` 模块反向依赖 `service`。
+- `MessageRouter::route(Session::Ptr, Packet)` 是 `TcpServer::setMessageCallback()` 的接入点。
+- Router 先校验 `msg_type` 是否为 request，再统一解析 TLV body；TLV parse 失败直接返回 `ErrorResponse`。
+- Handler 注册接口为 `registerHandler(MessageType, Handler, DispatchMode)`；`DispatchMode` 只有 `Inline` 和 `BusinessThread`。
+- `Handler` 接收 `RouterRequest { session, packet, fields }`，填写响应 `Packet`，返回 `Status`。
+- 默认 `HeartbeatRequest` 是 inline 轻量 handler，只返回 `HeartbeatResponse`，不访问 Redis；完整 HeartbeatService 留到 Step 40。
+- BusinessThread handler 通过 Step 17 的固定 `ThreadPool::submit()` 执行；submit 失败会回 `ErrorResponse`。
+- Router 强制响应 `seq_id` 等于请求 `seq_id`，不信任 handler 自己填写的 seq。
+- 异步任务捕获 `weak_ptr<Session>`，任务开始前和发送前都检查 session 是否还存在且未关闭；Router 不直接读写 fd、`Buffer` 或 `Channel`。
+- `server/main.cpp` 现在启动 `ThreadPool business_pool(config.business_threads)`，创建 `MessageRouter router(business_pool)`，并通过 `server.setMessageCallback()` 接入。
+- `SignalWatcher::start()` 必须早于 `ThreadPool::start()`，否则业务线程不会继承阻塞的 SIGINT/SIGTERM 掩码，`LiteIMServerSignalTest` 中的 SIGTERM 可能落到业务线程并按默认动作杀进程。
+
+本次不采用/不改：
+
+- 不实现注册、登录、密码哈希、登录限流、好友、私聊、群聊、离线消息、历史消息或 BotGateway。
+- 不把 MySQL / Redis 阻塞调用放进 Reactor I/O 线程。
+- 不修改 Step32 现有未提交的 `SessionManager`、`OnlineService`、`ThreadPool` 注释改动。
+- `/home/yolo/jianli/PROJECT_MEMORY.md` 只修正 PersonaAgent 依赖段的旧 Step 编号漂移，主路线 Step33/34 设计不变。
+
 ## 2026-05-14 Step 32 SessionManager / OnlineService Findings
 
 本次进入 `Step 32：实现 SessionManager 和 OnlineService`，只实现登录态绑定和在线状态同步基础能力，不实现 AuthService、MessageRouter、ChatService 或 `TcpServer` 运行时协议接入。

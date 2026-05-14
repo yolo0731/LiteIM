@@ -20,7 +20,7 @@ PersonaAgent is intentionally a separate Python service. LiteIM exposes the prot
 - High-performance C++ backend engineering with C++17, CMake, RAII, GoogleTest, and Linux system calls.
 - Nonblocking socket I/O with `epoll` LT mode, `eventfd` cross-thread wakeups, `timerfd` based timers, and `signalfd` graceful shutdown handling.
 - Main Reactor + sub Reactor thread pool. I/O threads handle fd events, Packet/TLV codec work, configurable output-buffer high-water-mark backpressure, and `Session` lifetime.
-- Business `ThreadPool` for future blocking work such as MySQL queries, Redis operations, password hashing, and history loading.
+- Business `ThreadPool` for dispatching heavier protocol handlers such as MySQL queries, Redis operations, password hashing, and history loading.
 - MySQL C API wrapper with RAII connection ownership, prepared statements, a fixed-size connection pool, and users-table DAO access.
 - Custom TLV binary protocol with TCP sticky-packet / half-packet handling.
 - Safe cross-thread connection access through `EventLoop::runInLoop()` and `EventLoop::queueInLoop()`.
@@ -79,7 +79,7 @@ Important boundaries:
 - `liteim/timer`: `TimerHeap` and `TimerManager`, linked into the network layer because `TimerManager` depends on `EventLoop` and `Channel`.
 - `liteim_storage`: storage DTOs, the `IStorage` interface, `MySqlConnection`, `PreparedStatement`, `MySqlQueryResult`, `MySqlPool`, `ConnectionGuard`, `UserDao`, `AuthDao`, `MessageDao`, `OfflineMessageDao`, `FriendDao`, `GroupDao`, and `MySqlStorage` for MySQL-backed users, public friend profiles, groups, messages, offline messages, and history.
 - `liteim_cache`: cache DTOs, the `ICache` interface, `RedisClient`, `RedisPool`, `RedisConnectionGuard`, `OnlineStatusCache`, `UnreadCounter`, `LoginRateLimiter`, and `RedisCache` for Redis-backed online sessions, unread counters, and login failure limiting.
-- `liteim_service`: `SessionManager` and `OnlineService` for in-process user/session binding plus Redis-backed online-state synchronization. Repeated login uses a kick-old-keep-new policy.
+- `liteim_service`: `SessionManager`, `OnlineService`, and `MessageRouter`. `SessionManager` / `OnlineService` provide in-process user/session binding plus Redis-backed online-state synchronization. `MessageRouter` parses request TLVs, dispatches handlers inline or through the business `ThreadPool`, and sends responses back through `Session::sendPacket()`. Repeated login uses a kick-old-keep-new policy.
 
 ## Build And Test
 
@@ -98,13 +98,13 @@ cmake -S . -B build
 cmake --build build
 ```
 
-Run the echo server executable:
+Run the server executable:
 
 ```bash
 ./build/server/liteim_server
 ```
 
-The server starts a real `EventLoop + TcpServer` echo server on the configured host and port. It handles `Ctrl-C` / `SIGTERM` through `signalfd`, stops `TcpServer` in the base loop thread, and exits cleanly. For a bounded smoke check, use:
+The server starts a real `EventLoop + TcpServer` on the configured host and port, starts the business `ThreadPool`, and wires incoming packets into `MessageRouter`. In the current Step 33 runtime, heartbeat requests get lightweight heartbeat responses, unknown or unsupported request types get `ErrorResponse`, and full register/login/chat handlers are intentionally left for later service steps. It handles `Ctrl-C` / `SIGTERM` through `signalfd`, stops `TcpServer` in the base loop thread, stops the business pool, and exits cleanly. For a bounded smoke check, use:
 
 ```bash
 timeout 1s ./build/server/liteim_server || test $? -eq 124
@@ -124,7 +124,7 @@ server.output_high_water_mark_bytes = 4194304
 
 ## Local MySQL And Redis
 
-Step 22 adds the local development database environment for storage/cache work. Step 23-27 use the MySQL side for storage tests, Step 28 adds a blocking hiredis-based Redis client/pool, Step 29 adds Redis online-status cache tests, and Step 30 adds Redis unread-counter and login-limiter tests. Step 31 adds `MySqlStorage : IStorage`, `RedisCache : ICache`, unsigned MySQL binding for `BIGINT UNSIGNED`, public friend-profile DTOs, and a single MySQL transaction for message + offline-message writes. Step 32 adds `SessionManager` and `OnlineService`; it uses `RedisCache` to write, refresh, and clear online status, but the C++ TCP server still does not call MySQL or Redis from Reactor I/O threads.
+Step 22 adds the local development database environment for storage/cache work. Step 23-27 use the MySQL side for storage tests, Step 28 adds a blocking hiredis-based Redis client/pool, Step 29 adds Redis online-status cache tests, and Step 30 adds Redis unread-counter and login-limiter tests. Step 31 adds `MySqlStorage : IStorage`, `RedisCache : ICache`, unsigned MySQL binding for `BIGINT UNSIGNED`, public friend-profile DTOs, and a single MySQL transaction for message + offline-message writes. Step 32 adds `SessionManager` and `OnlineService`; it uses `RedisCache` to write, refresh, and clear online status. Step 33 adds `MessageRouter` and connects `TcpServer` runtime packets to the service layer without calling MySQL or Redis from Reactor I/O threads.
 
 Start MySQL and Redis:
 
@@ -268,7 +268,7 @@ LiteIM is being built in phases:
 | --- | --- |
 | Network base | CMake, GoogleTest, base utilities, TLV protocol, frame decoder, Buffer, socket helpers, Reactor interfaces, `Epoller`, `Channel`, `EventLoop`, `Acceptor`, `Session`, multi-Reactor `TcpServer`, business `ThreadPool`, timerfd heartbeat cleanup, and signalfd shutdown. |
 | Storage and cache | MySQL C API wrapper, prepared statement wrapper with signed/unsigned 64-bit binding, MySQL connection pool, RAII connection guard, user/auth DAO layer, message/offline-message DAO layer, `MySqlStorage` adapter, Redis client/pool, online status cache, unread counters, login rate limiting, and `RedisCache` adapter. |
-| IM services | Session binding, online-state synchronization, register/login, friend list, private chat, group chat, offline messages, history loading, heartbeat protocol, graceful shutdown, and BotGateway routing. |
+| IM services | Session binding, online-state synchronization, async message routing, register/login, friend list, private chat, group chat, offline messages, history loading, heartbeat protocol, graceful shutdown, and BotGateway routing. |
 | Tooling and validation | CLI client, Python E2E tests, benchmark tooling, broader GoogleTest/gMock coverage, ASan/UBSan, and CI. |
 | Demo clients | Qt Widgets chat client with login, conversation list, message bubbles, group chat, AI Bot entry, heartbeat state, and disconnect feedback. |
 | PersonaAgent integration | Python BotClient and separate FastAPI / LangGraph AgentService using Knowledge, Memory, Authorized Style RAG, Persona, Safety, tracing, checkpointing, and evaluation. |
