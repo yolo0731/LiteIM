@@ -322,6 +322,14 @@ Status MySqlStorage::getGroupMembers(std::uint64_t group_id,
     return group_dao_.getGroupMembers(group_id, members);
 }
 
+Status MySqlStorage::findGroupById(std::uint64_t group_id, GroupRecord& group) {
+    return group_dao_.findGroupById(group_id, group);
+}
+
+Status MySqlStorage::getGroupsForUser(std::uint64_t user_id, std::vector<GroupRecord>& groups) {
+    return group_dao_.getGroupsForUser(user_id, groups);
+}
+
 // 保存一条普通消息，但没有离线接收者
 Status MySqlStorage::saveMessage(const MessageRecord& message, std::uint64_t& message_id) {
     message_id = 0;

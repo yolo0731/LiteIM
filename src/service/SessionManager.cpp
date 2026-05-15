@@ -128,6 +128,22 @@ Status SessionManager::getUserBySession(std::uint64_t session_id, std::uint64_t&
     return Status::ok();
 }
 
+Status SessionManager::getBoundUserBySession(std::uint64_t session_id, std::uint64_t& user_id) {
+    user_id = 0;
+    if (session_id == 0) {
+        return Status::error(ErrorCode::InvalidArgument, "session id must be positive");
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto session_it = sessions_.find(session_id);
+    if (session_it == sessions_.end()) {
+        return Status::error(ErrorCode::NotFound, "session is not bound to a user");
+    }
+
+    user_id = session_it->second;
+    return Status::ok();
+}
+
 std::size_t SessionManager::userCount() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return users_.size();

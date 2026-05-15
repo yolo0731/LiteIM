@@ -19,7 +19,10 @@ public:
                   std::chrono::seconds online_ttl);
     // 登录成功后，把用户绑定到这个 session，并写入在线缓存
     Status bindUser(std::uint64_t user_id, const Session::Ptr& session);
+    // 用户登出或连接断开时，解除绑定并删除在线缓存
     Status unbindUser(std::uint64_t user_id, std::uint64_t session_id);
+    // 连接关闭时只知道 session_id，先从绑定表查 user_id，再走防旧 session 误删的 unbindUser
+    Status unbindSession(std::uint64_t session_id);
     // 心跳或活跃时刷新 Redis 在线状态的过期时间
     Status refreshUserOnline(std::uint64_t user_id, std::uint64_t session_id);
 

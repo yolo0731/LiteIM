@@ -86,6 +86,7 @@ Status expectStatusOk(const redisReply& reply, const std::string& action) {
     return Status::ok();
 }
 
+// 期望 Redis 回复一个整数，返回值通过 value 输出，如果回复类型不对，返回错误状态
 Status expectIntegerReply(const redisReply& reply, const std::string& action, std::int64_t& value) {
     if (reply.type != REDIS_REPLY_INTEGER) {
         return Status::error(ErrorCode::IoError, action + ": expected integer Redis reply");

@@ -63,6 +63,21 @@ public:
         return liteim::Status::ok();
     }
 
+    liteim::Status findGroupById(std::uint64_t group_id,
+                                 liteim::GroupRecord& group) override {
+        group.group_id = group_id;
+        group.owner_id = 42;
+        group.group_name = "demo";
+        group.created_at_ms = 300;
+        return liteim::Status::ok();
+    }
+
+    liteim::Status getGroupsForUser(std::uint64_t,
+                                    std::vector<liteim::GroupRecord>& groups) override {
+        groups.push_back(liteim::GroupRecord{9, 42, "demo", 300});
+        return liteim::Status::ok();
+    }
+
     liteim::Status saveMessage(const liteim::MessageRecord&, std::uint64_t& message_id) override {
         message_id = 1001;
         return liteim::Status::ok();
@@ -129,6 +144,19 @@ TEST(StorageInterfaceTest, CanBeImplementedByFakeStorage) {
     ASSERT_TRUE(friends_status.isOk()) << friends_status.message();
     ASSERT_EQ(friends.size(), 1U);
     EXPECT_EQ(friends.front().user_id, 7U);
+
+    liteim::GroupRecord group;
+    const auto group_status = interface.findGroupById(9, group);
+    ASSERT_TRUE(group_status.isOk()) << group_status.message();
+    EXPECT_EQ(group.group_id, 9U);
+    EXPECT_EQ(group.group_name, "demo");
+
+    std::vector<liteim::GroupRecord> groups;
+    const auto groups_status = interface.getGroupsForUser(user.user_id, groups);
+    ASSERT_TRUE(groups_status.isOk()) << groups_status.message();
+    ASSERT_EQ(groups.size(), 1U);
+    EXPECT_EQ(groups.front().group_id, 9U);
+    EXPECT_EQ(groups.front().group_name, "demo");
 
     std::uint64_t message_id = 0;
     const auto save_status = interface.saveMessage(

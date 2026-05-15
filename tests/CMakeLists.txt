@@ -45,6 +45,7 @@ add_executable(liteim_tests
     service/auth_service_test.cpp
     service/friend_service_test.cpp
     service/chat_service_test.cpp
+    service/group_service_test.cpp
     service/offline_message_service_test.cpp
     timer/timer_heap_header_test.cpp
     timer/timer_heap_test.cpp

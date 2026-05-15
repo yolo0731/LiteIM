@@ -55,15 +55,30 @@ Status OnlineService::bindUser(std::uint64_t user_id, const Session::Ptr& sessio
 
 Status OnlineService::unbindUser(std::uint64_t user_id, std::uint64_t session_id) {
     bool removed = false;
+    // 调用另一个重载的unbindUser，真正执行解绑逻辑，并通过removed参数告知是否确实解绑了
     const auto unbind_status = sessions_.unbindUser(user_id, session_id, removed);
     if (!unbind_status.isOk()) {
         return unbind_status;
     }
+    //传进来的连接不是最新的绑定连接，说明用户已经重复登录了，当前连接已经被解绑了，不需要再更新 Redis 在线状态了
     if (!removed) {
         return Status::ok();
     }
     // 只有确实解绑了才去更新 Redis 在线状态
     return cache_.setUserOffline(user_id);
+}
+
+Status OnlineService::unbindSession(std::uint64_t session_id) {
+    std::uint64_t user_id = 0;
+    const auto bound_status = sessions_.getBoundUserBySession(session_id, user_id);
+    if (!bound_status.isOk()) {
+        if (bound_status.code() == ErrorCode::NotFound) {
+            return Status::ok();
+        }
+        return bound_status;
+    }
+
+    return unbindUser(user_id, session_id);
 }
 
 Status OnlineService::refreshUserOnline(std::uint64_t user_id, std::uint64_t session_id) {

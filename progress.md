@@ -1,5 +1,86 @@
 # LiteIM Progress
 
+## 2026-05-15 Step 38 GroupService
+
+本次进入 `Step 38：GroupService 群聊`，先完成概念和边界核对，再按用户确认的方案 A 进入实现。
+
+已确认：
+
+- `PROJECT_MEMORY.md` 的 Step 38 范围是基础群聊：建群、加群、列出我的群、发送群聊、在线 push、离线保存和未读 +1。
+- 现有协议枚举和 TLV 字段已经覆盖群聊 request/response/push 以及 `GroupId` / `GroupName`。
+- 现有 MySQL schema 和 `GroupDao` 已覆盖建群、加成员、查成员和按 id 查群。
+- 当前缺口是 `ListGroupsRequest`：service 层需要按当前登录 user_id 查询“我的群”，但 `IStorage` 还没有 `getGroupsForUser()` 或等价接口。
+
+实现前决策点：
+
+- 推荐扩展 `GroupDao` / `IStorage` / `MySqlStorage`，新增 `getGroupsForUser(user_id, groups)`，让 `GroupService` 继续只依赖 storage/cache/online service 抽象。
+- 该改动属于 public interface 扩展，已暂停等待用户确认后再进入 TDD RED。
+
+用户确认采用方案 A 后进入 TDD：
+
+- RED：新增 `StorageInterfaceTest` 对 `findGroupById()` / `getGroupsForUser()` 的接口期望。
+- RED：新增 `FriendGroupDaoIntegrationTest.GetGroupsForUserReturnsOwnedAndJoinedGroups`。
+- RED：新增 `tests/service/group_service_test.cpp`，覆盖建群、加群、列群、非成员发群消息失败、在线群成员 push、离线群成员 offline/unread，以及 unread 失败不导致发送方失败。
+- 首次 `cmake --build build --target liteim_tests -j2` 按预期失败于 `IStorage` 缺少 `findGroupById()` / `getGroupsForUser()`、`GroupDao` 缺少 `getGroupsForUser()`，证明测试先捕获了 Step38 storage API 缺口。
+- GREEN：扩展 `IStorage`、`GroupDao` 和 `MySqlStorage`，新增 `findGroupById()` / `getGroupsForUser()` storage facade，补齐所有测试 fake。
+- GREEN：新增 `GroupService`，注册四个 group request handler 到 business thread，接入 `server/main.cpp`。
+- 当前验证：`cmake --build build --target liteim_tests -j2` 通过；`ctest --test-dir build -R "GroupService|FriendGroupDao|StorageInterface" --output-on-failure` 18/18 通过。
+
+已完成代码：
+
+- `GroupDao::getGroupsForUser()` 通过 `group_members` join `chat_groups` 查询用户所在群。
+- `IStorage` / `MySqlStorage` 暴露 `findGroupById()` 和 `getGroupsForUser()`，保持 service 层不直接依赖 DAO。
+- `GroupService::registerHandlers()` 注册 `CreateGroupRequest`、`JoinGroupRequest`、`ListGroupsRequest` 和 `GroupMessageRequest`。
+- `handleCreateGroup()` 使用当前登录 user id 作为 owner，返回 `GroupId` / `GroupName`。
+- `handleJoinGroup()` 先查 group 存在，再把当前用户加入群。
+- `handleListGroups()` 按当前登录用户返回重复 `GroupId` / `GroupName`。
+- `handleGroupMessage()` 校验发送者是群成员，保存群消息，在线成员收到 `GroupMessagePush`，离线成员写 `offline_messages` 并 unread +1。
+- Redis unread 递增失败只记录 warning，不把 MySQL 已保存的群消息变成发送失败。
+
+已完成文档同步：
+
+- 新增 `tutorials/step38_group_service.md`。
+- 更新 README、`task_plan.md`、`findings.md` 和本文件。
+- 没有更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 的完成状态；它继续只作为长期路线/边界文件。
+
+最终验证：
+
+- `cmake --build build -j2`：通过。
+- `ctest --test-dir build -R "GroupService|FriendGroupDao|StorageInterface" --output-on-failure`：18/18 通过。
+- `ctest --test-dir build --output-on-failure`：312/312 通过。
+- `git diff --check`：通过。
+- `tutorials/step38_group_service.md` 保持固定 0-10 章节，最后主章节是 `## 10. 面试常见追问`。
+- `tutorials/step*.md` 最后主章节扫描：全部仍以 `## 10. 面试常见追问` 收尾。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：server 成功监听 `0.0.0.0:9000`，timeout 发送 SIGTERM 后 signalfd 路径退出。
+
+## 2026-05-15 Pre-Step38 Critical Hardening
+
+本次进入 Step 38 群聊前的独立 hardening，不开 `Step 36.1`，只修两个 runtime correctness 问题：
+
+- session close 后补上 `TcpServer -> business ThreadPool -> OnlineService::unbindSession(session_id)` 清理通道，避免只删除 `TcpServer::sessions_` 而遗留 `SessionManager` / Redis online。
+- ChatService 离线消息已经保存到 MySQL `messages` / `offline_messages` 后，Redis unread 递增失败只记录 warning，不再给发送方返回失败。
+
+TDD 过程：
+
+- RED：新增 `SessionManagerTest.ClosedSessionStillExposesBoundUserForCloseCleanup`、`OnlineServiceTest.UnbindSessionClearsClosedCurrentBindingAndCache`、`OnlineServiceTest.OldClosedSessionUnbindSessionDoesNotClearNewRedisOnlineKey`、`OnlineServiceRedisIntegrationTest.UnbindSessionCloseCleanupClearsRedisOnlineState`、`TcpServerTest.SessionCloseCallbackReceivesRemovedSessionId` 和 `ChatServiceFixture.OfflineUnreadFailureStillReturnsSenderSuccess`。
+- 首次运行 `cmake --build build --target liteim_tests -j2` 按预期失败于缺少 `TcpServer::SessionCloseCallback` / `setSessionCloseCallback()`，证明 close callback 新 API 测试先于生产代码。
+- GREEN：新增 `SessionManager::getBoundUserBySession()`、`OnlineService::unbindSession()`、`TcpServer::setSessionCloseCallback()`，并在 `server/main.cpp` 把 close cleanup 投递到 business pool。
+- GREEN：调整 `ChatService` unread 失败语义，MySQL 保存成功后 `cache_.incrUnread()` 失败只写 warning，仍返回 `PrivateMessageResponse`。
+
+当前验证：
+
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -R "SessionManager|OnlineService|TcpServer|ChatService" --output-on-failure`：37/37 通过。
+
+最终验证：
+
+- `cmake --build build -j2`：通过。
+- `ctest --test-dir build --output-on-failure`：303/303 通过，本机 Docker MySQL/Redis 集成路径也通过。
+- `git diff --check`：通过。
+- `rg -n "^## " tutorials/step32_session_manager_online_service.md tutorials/step36_chat_service.md`：两篇改过的教程仍保持固定 0-10 章节，最后主章节都是 `## 10. 面试常见追问`。
+- stale failure-semantics 扫描：README、Step36 教程和 planning 文件没有保留“Redis unread 失败导致发送失败”的旧说法。
+- `timeout 1s ./build/server/liteim_server`：server 成功监听 `0.0.0.0:9000`，timeout 发送 SIGTERM 后 signalfd 路径退出；退出码 124 属于该 bounded smoke 的预期结果。
+
 ## 2026-05-15 Step 37 OfflineMessageService
 
 本次进入 `Step 37：OfflineMessageService 离线消息拉取`，用户确认采用方案一：登录成功后客户端主动发送 `OfflineMessagesRequest`，服务端登录流程不额外发送 follow-up response。

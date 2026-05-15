@@ -206,6 +206,41 @@ TEST(OnlineServiceTest, DuplicateLoginKeepsNewSessionOnlineAndDoesNotOfflineNewR
     EXPECT_EQ(cache.set_offline_calls, 0);
 }
 
+TEST(OnlineServiceTest, UnbindSessionClearsClosedCurrentBindingAndCache) {
+    liteim::EventLoop loop;
+    FakeCache cache;
+    liteim::SessionManager sessions;
+    liteim::OnlineService service(sessions, cache, "server-a", 30s);
+    auto session = makeSession(loop, 7001);
+
+    ASSERT_TRUE(service.bindUser(42, session).isOk());
+    session->close();
+    ASSERT_TRUE(service.unbindSession(7001).isOk());
+
+    EXPECT_EQ(cache.set_offline_calls, 1);
+    EXPECT_EQ(cache.sessions.count(42), 0U);
+    std::uint64_t user_id = 0;
+    EXPECT_EQ(service.getUserBySession(7001, user_id).code(), liteim::ErrorCode::NotFound);
+}
+
+TEST(OnlineServiceTest, OldClosedSessionUnbindSessionDoesNotClearNewRedisOnlineKey) {
+    liteim::EventLoop loop;
+    FakeCache cache;
+    liteim::SessionManager sessions;
+    liteim::OnlineService service(sessions, cache, "server-a", 30s);
+    auto old_session = makeSession(loop, 7001);
+    auto new_session = makeSession(loop, 7002);
+
+    ASSERT_TRUE(service.bindUser(42, old_session).isOk());
+    ASSERT_TRUE(service.bindUser(42, new_session).isOk());
+    ASSERT_TRUE(service.unbindSession(7001).isOk());
+
+    EXPECT_TRUE(old_session->closed());
+    ASSERT_EQ(cache.sessions.count(42), 1U);
+    EXPECT_EQ(cache.sessions[42].session_id, 7002U);
+    EXPECT_EQ(cache.set_offline_calls, 0);
+}
+
 TEST(OnlineServiceTest, UnbindCurrentSessionClearsMemoryAndCache) {
     liteim::EventLoop loop;
     FakeCache cache;
@@ -260,6 +295,22 @@ TEST_F(OnlineServiceRedisIntegrationTest, SyncsOnlineStateToRedisCache) {
 
     ASSERT_TRUE(service.refreshUserOnline(user_id, 8001).isOk());
     ASSERT_TRUE(service.unbindUser(user_id, 8001).isOk());
+    ASSERT_TRUE(cache->isUserOnline(user_id, online).isOk());
+    EXPECT_FALSE(online);
+}
+
+TEST_F(OnlineServiceRedisIntegrationTest, UnbindSessionCloseCleanupClearsRedisOnlineState) {
+    liteim::EventLoop loop;
+    liteim::SessionManager sessions;
+    liteim::OnlineService service(sessions, *cache, testServerId(), 30s);
+    const auto user_id = testUserId(2);
+    user_ids.push_back(user_id);
+    auto session = makeSession(loop, 8002);
+
+    ASSERT_TRUE(service.bindUser(user_id, session).isOk());
+    ASSERT_TRUE(service.unbindSession(8002).isOk());
+
+    bool online = true;
     ASSERT_TRUE(cache->isUserOnline(user_id, online).isOk());
     EXPECT_FALSE(online);
 }

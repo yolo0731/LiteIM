@@ -16,6 +16,7 @@ Status validateHeader(const PacketHeader& header) {
     return Status::ok();
 }
 
+// 主要负责编码 PacketHeader，转化为大端序二进制字节，同时把已经编码好的 body 原样拼到后面。
 Status encodePacket(const Packet& packet, Bytes& output) {
     output.clear();
 
@@ -38,6 +39,7 @@ Status encodePacket(const Packet& packet, Bytes& output) {
     appendUint16BE(output, static_cast<std::uint16_t>(header.msg_type));
     appendUint64BE(output, header.seq_id);
     appendUint32BE(output, header.body_len);
+    // 把已经编码好的 TLV body 原样接到 Packet header 后面
     output.insert(output.end(), packet.body.begin(), packet.body.end());
     return Status::ok();
 }

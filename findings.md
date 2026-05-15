@@ -8,6 +8,59 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-15 Step 38 GroupService Findings
+
+本次按 `PROJECT_MEMORY.md` 进入 `Step 38：实现 GroupService 群聊`。长期边界已经确认：
+
+- 做：`CreateGroupRequest`、`JoinGroupRequest`、`ListGroupsRequest`、`GroupMessageRequest`、群成员查询、群消息 MySQL 保存、在线成员 `GroupMessagePush`、离线成员 `offline_messages` 和 Redis unread +1。
+- 不做：复杂群权限、群公告、群禁言、群消息已读回执、广播优化、可靠 ACK、跨节点路由或 BotGateway。
+
+代码核对结果：
+
+- `MessageType` 已经有 `CreateGroupRequest/Response`、`JoinGroupRequest/Response`、`ListGroupsRequest/Response`、`GroupMessageRequest/Response` 和 `GroupMessagePush`。
+- `TlvType` 已经有 `GroupId` 和 `GroupName`，消息字段可复用 `ConversationType`、`ConversationId`、`MessageId`、`SenderId`、`ReceiverId`、`MessageText` 和 `TimestampMs`。
+- MySQL schema 和 DAO 基础已经存在：`chat_groups`、`group_members`、`GroupDao::createGroup()`、`addGroupMember()`、`getGroupMembers()`、`findGroupById()`。
+- `IStorage` 原本已经暴露建群、加群、移除成员和查群成员，但还没有“按 user_id 列出我的群”的接口；`ListGroupsRequest` 不能在不破坏 service/storage 边界的情况下完整实现。
+- 用户已确认采用方案 A：扩展 `GroupDao` / `IStorage` / `MySqlStorage`，不让 `GroupService` 直接依赖具体 DAO。
+
+已经采用的设计：
+
+- 扩展 `GroupDao` / `IStorage` / `MySqlStorage`，新增 `getGroupsForUser(std::uint64_t user_id, std::vector<GroupRecord>& groups)`。
+- 同时暴露 `findGroupById(std::uint64_t group_id, GroupRecord& group)` 到 `IStorage`，让 `GroupService` 能区分 group 不存在与其他失败。
+- `GroupService` 继续只依赖 `IStorage`、`ICache` 和 `OnlineService`，不直接依赖 DAO。
+- `ListGroupsResponse` 第一版返回重复的 `GroupId` 和 `GroupName`；不新增协议字段。
+- `JoinGroupRequest` 先 `findGroupById()`，再 `addGroupMember()`，重复加入保持 DAO 幂等语义。
+- `GroupMessageRequest` 先校验当前 session 登录、group 存在、发送者在 `group_members` 中；发送者不再额外收到 push，只收到 `GroupMessageResponse`。
+- 群消息使用 `ConversationType::kGroup`，`conversation_id == group_id`，`receiver_id == group_id`。
+- 离线群成员在 MySQL message/offline row 已保存后执行 Redis unread +1；如果 Redis unread 失败，只记录 warning，不把发送方 response 变成失败，避免客户端重试产生重复消息。
+
+本次不采用/不改：
+
+- 不新增 TLV 字段，不修改 MySQL schema。
+- 不实现复杂群权限、群公告、群禁言、群已读回执、大群广播优化、可靠 ACK、跨节点路由或 BotGateway。
+- 不更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 的完成状态；该文件只保留长期设计路线和边界。
+
+## 2026-05-15 Pre-Step38 Critical Hardening Findings
+
+本次不是新功能 Step，也不命名为 `Step 36.1`。范围是 Step 38 群聊前的独立 runtime correctness hardening，只处理两个已确认问题：
+
+- session close 后需要清理 `SessionManager` 和 Redis online state。原代码里 `TcpServer` close callback 只删除 `TcpServer::sessions_`，不会通知 `OnlineService`。
+- 私聊离线分支里，MySQL `messages` 和 `offline_messages` 已成功保存后，如果 Redis unread 递增失败，不应给发送方返回失败；否则客户端重试会制造重复消息。
+
+已经确认并采用的设计：
+
+- `TcpServer` 新增轻量 `SessionCloseCallback`，close callback 顺序固定为先 `removeSession(session_id)`，再调用外部 callback。
+- `server/main.cpp` 把 close cleanup 投递到 business `ThreadPool`，业务任务调用 `OnlineService::unbindSession(session_id)`；I/O close callback 不直接做 Redis 阻塞调用。
+- `SessionManager::getBoundUserBySession(session_id, user_id)` 只查绑定表，不因为 `Session::closed()` 清理映射，专门服务 close cleanup。
+- `OnlineService::unbindSession(session_id)` 先反查 user id，再复用 `unbindUser(user_id, session_id)`，继续保留旧 session 不能误删新 Redis online key 的语义。
+- `ChatService` 保持 MySQL 为消息事实来源。离线消息保存成功后，`ICache::incrUnread()` 失败只记录 warning，仍向发送方返回 `PrivateMessageResponse`。
+
+本次明确不做：
+
+- 不实现可靠 ACK、pending delivery、好友关系强制校验、HeartbeatService Redis TTL 刷新、群聊、schema 变更或 client message id 去重。
+- 不把 `sendPacket()` 返回值当成可靠送达判断；当前跨线程发送只是排队到 owner loop，真正写出和后续关闭发生在之后。
+- 不扩大 `PROJECT_MEMORY.md` 体量；本次只同步 README、相关教程和 planning 文件的当前行为边界。
+
 ## 2026-05-15 Step 37 OfflineMessageService Findings
 
 本次进入 `Step 37：实现 OfflineMessageService`，采用用户确认的方案一：登录仍只返回 `LoginResponse`，客户端登录成功后主动发送 `OfflineMessagesRequest` 拉取离线消息。

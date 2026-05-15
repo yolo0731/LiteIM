@@ -25,6 +25,8 @@ public:
     virtual Status removeGroupMember(std::uint64_t group_id, std::uint64_t user_id) = 0;
     virtual Status getGroupMembers(std::uint64_t group_id,
                                    std::vector<GroupMemberRecord>& members) = 0;
+    virtual Status findGroupById(std::uint64_t group_id, GroupRecord& group) = 0;
+    virtual Status getGroupsForUser(std::uint64_t user_id, std::vector<GroupRecord>& groups) = 0;
     // 消息相关接口
     virtual Status saveMessage(const MessageRecord& message, std::uint64_t& message_id) = 0;
     virtual Status

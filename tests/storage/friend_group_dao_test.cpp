@@ -236,6 +236,26 @@ TEST_F(FriendGroupDaoIntegrationTest, AddGroupMemberIsIdempotent) {
     EXPECT_TRUE(containsUserId(members, member.user_id));
 }
 
+TEST_F(FriendGroupDaoIntegrationTest, GetGroupsForUserReturnsOwnedAndJoinedGroups) {
+    const auto alice = createUser();
+    const auto bob = createUser();
+    const auto alice_group = createGroup(alice.user_id);
+    const auto bob_group = createGroup(bob.user_id);
+    ASSERT_TRUE(group_dao->addGroupMember(alice_group.group_id, bob.user_id).isOk());
+
+    std::vector<liteim::GroupRecord> bob_groups;
+    const auto status = group_dao->getGroupsForUser(bob.user_id, bob_groups);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    ASSERT_EQ(bob_groups.size(), 2U);
+    EXPECT_EQ(bob_groups[0].group_id, alice_group.group_id);
+    EXPECT_EQ(bob_groups[0].owner_id, alice.user_id);
+    EXPECT_EQ(bob_groups[0].group_name, alice_group.group_name);
+    EXPECT_EQ(bob_groups[1].group_id, bob_group.group_id);
+    EXPECT_EQ(bob_groups[1].owner_id, bob.user_id);
+    EXPECT_EQ(bob_groups[1].group_name, bob_group.group_name);
+}
+
 TEST_F(FriendGroupDaoIntegrationTest, RemoveGroupMemberRemovesNormalMember) {
     const auto owner = createUser();
     const auto member = createUser();

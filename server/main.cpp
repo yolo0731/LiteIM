@@ -9,6 +9,7 @@
 #include "liteim/service/AuthService.hpp"
 #include "liteim/service/ChatService.hpp"
 #include "liteim/service/FriendService.hpp"
+#include "liteim/service/GroupService.hpp"
 #include "liteim/service/MessageRouter.hpp"
 #include "liteim/service/OfflineMessageService.hpp"
 #include "liteim/service/OnlineService.hpp"
@@ -61,6 +62,7 @@ int main() {
     liteim::AuthService auth_service(storage, cache, online_service);
     liteim::FriendService friend_service(storage, cache, online_service);
     liteim::ChatService chat_service(storage, cache, online_service);
+    liteim::GroupService group_service(storage, cache, online_service);
     liteim::OfflineMessageService offline_message_service(storage, cache, online_service);
     const auto auth_status = auth_service.registerHandlers(router);
     if (!auth_status.isOk()) {
@@ -96,12 +98,35 @@ int main() {
         signal_watcher.stop();
         return 1;
     }
+    const auto group_status = group_service.registerHandlers(router);
+    if (!group_status.isOk()) {
+        liteim::Logger::get()->error("Failed to register group handlers: {}",
+                                     group_status.message());
+        redis_pool.close();
+        mysql_pool.close();
+        signal_watcher.stop();
+        return 1;
+    }
 
     liteim::TcpServer server(&loop, config.server_host, config.server_port, config.io_threads);
     server.setSessionOutputHighWaterMark(config.session_output_high_water_mark);
     server.setMessageCallback([&router](const liteim::Session::Ptr& session,
                                          const liteim::Packet& packet) {
         router.route(session, packet);
+    });
+    server.setSessionCloseCallback([&business_pool, &online_service](std::uint64_t session_id) {
+        const auto submit_status = business_pool.submit([&online_service, session_id]() {
+            const auto unbind_status = online_service.unbindSession(session_id);
+            if (!unbind_status.isOk()) {
+                liteim::Logger::get()->warn("Failed to unbind session {} on close: {}",
+                                            session_id, unbind_status.message());
+            }
+        });
+        if (!submit_status.isOk()) {
+            liteim::Logger::get()->warn(
+                "Failed to submit session close cleanup for session {}: {}", session_id,
+                submit_status.message());
+        }
     });
 
     const auto business_pool_status = business_pool.start();

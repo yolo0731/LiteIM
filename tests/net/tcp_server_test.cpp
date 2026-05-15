@@ -312,6 +312,33 @@ TEST(TcpServerTest, RemovesSessionAfterClientDisconnects) {
     EXPECT_TRUE(waitUntil([&]() { return server.sessionCount() == 0; }, 2s));
 }
 
+TEST(TcpServerTest, SessionCloseCallbackReceivesRemovedSessionId) {
+    std::mutex mutex;
+    std::condition_variable close_ready;
+    std::uint64_t closed_session_id = 0;
+    std::size_t session_count_during_callback = 99;
+
+    RunningTcpServer server(1, [&](liteim::TcpServer& tcp_server, liteim::EventLoop&) {
+        tcp_server.setSessionCloseCallback([&](std::uint64_t session_id) {
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                closed_session_id = session_id;
+                session_count_during_callback = tcp_server.sessionCount();
+            }
+            close_ready.notify_one();
+        });
+    });
+    auto client = connectTo(server.port());
+    ASSERT_GE(client.fd(), 0);
+    ASSERT_TRUE(waitUntil([&]() { return server.sessionCount() == 1; }, 2s));
+
+    client.reset();
+
+    std::unique_lock<std::mutex> lock(mutex);
+    ASSERT_TRUE(close_ready.wait_for(lock, 2s, [&]() { return closed_session_id != 0; }));
+    EXPECT_EQ(session_count_during_callback, 0U);
+}
+
 TEST(TcpServerTest, SendToSessionFromOtherThreadDeliversPacket) {
     std::mutex mutex;
     std::condition_variable callback_ready;

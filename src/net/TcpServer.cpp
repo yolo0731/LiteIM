@@ -36,6 +36,11 @@ void TcpServer::setMessageCallback(MessageCallback callback) {
     message_callback_ = std::move(callback);
 }
 
+void TcpServer::setSessionCloseCallback(SessionCloseCallback callback) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    session_close_callback_ = std::move(callback);
+}
+
 void TcpServer::setHeartbeatOptions(std::chrono::milliseconds interval,
                                     std::chrono::milliseconds timeout) {
     base_loop_->assertInLoopThread();
@@ -197,8 +202,10 @@ void TcpServer::createSessionInLoop(EventLoop* io_loop, std::shared_ptr<UniqueFd
     session->setMessageCallback([this](const Session::Ptr& observed, const Packet& packet) {
         handleMessage(observed, packet);
     });
-    session->setCloseCallback(
-        [this, session_id](const Session::Ptr&) { removeSession(session_id); });
+    session->setCloseCallback([this, session_id](const Session::Ptr&) {
+        removeSession(session_id);
+        handleSessionClose(session_id);
+    });
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -227,6 +234,18 @@ void TcpServer::handleMessage(const Session::Ptr& session, const Packet& packet)
 void TcpServer::removeSession(std::uint64_t session_id) {
     std::lock_guard<std::mutex> lock(mutex_);
     sessions_.erase(session_id);
+}
+
+void TcpServer::handleSessionClose(std::uint64_t session_id) {
+    SessionCloseCallback callback;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        callback = session_close_callback_;
+    }
+
+    if (callback) {
+        callback(session_id);
+    }
 }
 
 void TcpServer::startHeartbeatTimer() {

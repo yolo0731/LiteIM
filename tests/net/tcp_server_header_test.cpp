@@ -20,9 +20,13 @@ TEST(ReactorInterfaceTest, TcpServerHeaderIsSelfContained) {
 
     using TcpServer = liteim::TcpServer;
     using MessageCallback = std::function<void(const liteim::Session::Ptr&, const liteim::Packet&)>;
+    using SessionCloseCallback = std::function<void(std::uint64_t)>;
     static_assert(std::is_same_v<TcpServer::MessageCallback, MessageCallback>);
+    static_assert(std::is_same_v<TcpServer::SessionCloseCallback, SessionCloseCallback>);
     static_assert(std::is_same_v<decltype(&TcpServer::setMessageCallback),
                                  void (TcpServer::*)(MessageCallback)>);
+    static_assert(std::is_same_v<decltype(&TcpServer::setSessionCloseCallback),
+                                 void (TcpServer::*)(SessionCloseCallback)>);
     static_assert(
         std::is_same_v<decltype(&TcpServer::setHeartbeatOptions),
                        void (TcpServer::*)(std::chrono::milliseconds, std::chrono::milliseconds)>);

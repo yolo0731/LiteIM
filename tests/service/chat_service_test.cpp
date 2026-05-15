@@ -276,6 +276,16 @@ public:
         return liteim::Status::ok();
     }
 
+    liteim::Status findGroupById(std::uint64_t,
+                                 liteim::GroupRecord&) override {
+        return liteim::Status::ok();
+    }
+
+    liteim::Status getGroupsForUser(std::uint64_t,
+                                    std::vector<liteim::GroupRecord>&) override {
+        return liteim::Status::ok();
+    }
+
     liteim::Status saveMessage(const liteim::MessageRecord&, std::uint64_t&) override {
         return liteim::Status::ok();
     }
@@ -375,6 +385,9 @@ public:
         ++incr_unread_calls;
         last_unread_key = key;
         last_unread_delta = delta;
+        if (fail_incr_unread) {
+            return liteim::Status::error(liteim::ErrorCode::IoError, "redis unread failed");
+        }
         unread_count += delta;
         return liteim::Status::ok();
     }
@@ -407,6 +420,7 @@ public:
     liteim::UnreadKey last_unread_key;
     std::uint64_t last_unread_delta{0};
     int incr_unread_calls{0};
+    bool fail_incr_unread{false};
 };
 
 class ChatServiceFixture : public ::testing::Test {
@@ -517,6 +531,26 @@ TEST_F(ChatServiceFixture, OfflineReceiverSavesMessageAndIncrementsUnread) {
     EXPECT_EQ(uint64Field(response, liteim::TlvType::ReceiverId), 1002U);
     EXPECT_EQ(stringField(response, liteim::TlvType::MessageText), "hello bob");
     EXPECT_EQ(uint64Field(response, liteim::TlvType::TimestampMs), 1700000000000ULL);
+}
+
+TEST_F(ChatServiceFixture, OfflineUnreadFailureStillReturnsSenderSuccess) {
+    cache.fail_incr_unread = true;
+    auto session = bindAlice();
+    auto request = requestFor(session, liteim::MessageType::PrivateMessageRequest,
+                              privateMessageBody(1002, "hello despite redis"));
+    liteim::Packet response;
+
+    const auto status = service.handlePrivateMessage(request, response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(response.header.msg_type, liteim::MessageType::PrivateMessageResponse);
+    EXPECT_EQ(storage.save_message_calls, 1);
+    ASSERT_EQ(storage.last_offline_user_ids.size(), 1U);
+    EXPECT_EQ(storage.last_offline_user_ids.front(), 1002U);
+    EXPECT_EQ(cache.incr_unread_calls, 1);
+    EXPECT_EQ(uint64Field(response, liteim::TlvType::MessageId), 5001U);
+    EXPECT_EQ(uint64Field(response, liteim::TlvType::ReceiverId), 1002U);
+    EXPECT_EQ(stringField(response, liteim::TlvType::MessageText), "hello despite redis");
 }
 
 TEST_F(ChatServiceFixture, OnlineReceiverGetsPushWithoutOfflineUnread) {

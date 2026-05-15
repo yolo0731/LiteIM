@@ -20,7 +20,7 @@ Status notLoggedInStatus() {
 Status invalidLimitStatus() {
     return Status::error(ErrorCode::InvalidArgument, "offline message limit must be positive");
 }
-
+// 把会话类型写进 TLV body
 Status appendConversationType(ConversationType type, Packet& packet) {
     return appendUint64(TlvType::ConversationType, static_cast<std::uint64_t>(type), packet.body);
 }
@@ -28,15 +28,15 @@ Status appendConversationType(ConversationType type, Packet& packet) {
 bool sameConversation(const ConversationKey& lhs, const ConversationKey& rhs) {
     return lhs.type == rhs.type && lhs.id == rhs.id;
 }
-
+// 只要 conversations 中有一个和 conversation 是同一个会话，就返回 true
 bool containsConversation(const std::vector<ConversationKey>& conversations,
                           const ConversationKey& conversation) {
-    return std::any_of(conversations.begin(), conversations.end(),
-                       [&](const ConversationKey& item) {
-                           return sameConversation(item, conversation);
-                       });
+    return std::any_of(
+        conversations.begin(), conversations.end(),
+        [&](const ConversationKey& item) { return sameConversation(item, conversation); });
 }
 
+// 把一条 MessageRecord 编码成多个 TLV 字段，写进 packet.body
 Status appendMessageFields(const MessageRecord& message, Packet& packet) {
     const auto message_status = appendUint64(TlvType::MessageId, message.message_id, packet.body);
     if (!message_status.isOk()) {
@@ -90,8 +90,8 @@ Status OfflineMessageService::registerHandlers(MessageRouter& router) {
         MessageRouter::DispatchMode::BusinessThread);
 }
 
-Status OfflineMessageService::handleOfflineMessages(
-    const MessageRouter::RouterRequest& request, Packet& response) {
+Status OfflineMessageService::handleOfflineMessages(const MessageRouter::RouterRequest& request,
+                                                    Packet& response) {
     std::uint64_t user_id = 0;
     const auto user_status = currentUserId(request, user_id);
     if (!user_status.isOk()) {
@@ -103,7 +103,7 @@ Status OfflineMessageService::handleOfflineMessages(
     if (!limit_status.isOk()) {
         return limit_status;
     }
-
+    // 从数据库拉取待投递消息记录
     std::vector<OfflineMessageRecord> messages;
     const auto fetch_status = storage_.getOfflineMessages(user_id, messages);
     if (!fetch_status.isOk()) {
@@ -119,12 +119,12 @@ Status OfflineMessageService::handleOfflineMessages(
     if (!append_status.isOk()) {
         return append_status;
     }
-
+    // 清 Redis 未读数
     const auto clear_status = clearUnreadForMessages(user_id, messages);
     if (!clear_status.isOk()) {
         return clear_status;
     }
-
+    // 将这些消息标记为已投递
     std::vector<std::uint64_t> message_ids;
     message_ids.reserve(messages.size());
     for (const auto& message : messages) {
@@ -149,7 +149,7 @@ Status OfflineMessageService::currentUserId(const MessageRouter::RouterRequest& 
     }
     return status;
 }
-
+// 解析请求中的 limit 参数，决定本次拉取的消息数量
 Status OfflineMessageService::requestLimit(const MessageRouter::RouterRequest& request,
                                            std::uint32_t& limit) const {
     limit = options_.max_messages_per_pull;
@@ -170,7 +170,7 @@ Status OfflineMessageService::requestLimit(const MessageRouter::RouterRequest& r
     }
     return Status::ok();
 }
-
+// 把消息列表写成 TLV response body
 Status OfflineMessageService::appendMessages(const std::vector<OfflineMessageRecord>& messages,
                                              Packet& response) {
     for (const auto& offline_message : messages) {
@@ -182,8 +182,11 @@ Status OfflineMessageService::appendMessages(const std::vector<OfflineMessageRec
     return Status::ok();
 }
 
-Status OfflineMessageService::clearUnreadForMessages(
-    std::uint64_t user_id, const std::vector<OfflineMessageRecord>& messages) {
+// 未读数是每条离线消息都会 +1；清未读时才是每个会话只清一次
+// 收集这批消息涉及哪些会话，并清理一个对话中的所有消息的未读数
+Status
+OfflineMessageService::clearUnreadForMessages(std::uint64_t user_id,
+                                              const std::vector<OfflineMessageRecord>& messages) {
     std::vector<ConversationKey> conversations;
     conversations.reserve(messages.size());
     for (const auto& message : messages) {

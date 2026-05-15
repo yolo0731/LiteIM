@@ -89,6 +89,7 @@ public:
     Status unbindUser(std::uint64_t user_id, std::uint64_t session_id, bool& removed);
     Status getSessionByUser(std::uint64_t user_id, Session::Ptr& session);
     Status getUserBySession(std::uint64_t session_id, std::uint64_t& user_id);
+    Status getBoundUserBySession(std::uint64_t session_id, std::uint64_t& user_id);
 
     std::size_t userCount() const;
     std::size_t sessionCount() const;
@@ -183,6 +184,16 @@ Packet 来自 session_id=43
     -> user_id=1002
 ```
 
+普通查询会检查 `weak_ptr<Session>` 是否还能 lock，以及 session 是否已经关闭。如果 session 已关闭或过期，会清理 stale binding 并返回 `NotFound`。
+
+#### `getBoundUserBySession()`
+
+```cpp
+Status getBoundUserBySession(std::uint64_t session_id, std::uint64_t& user_id);
+```
+
+这个接口只查 `session_id -> user_id` 绑定，不因为 `Session::closed()` 就清理映射。它给连接关闭清理使用：close callback 触发时，session 可能已经进入 closed 状态，但 service 仍然需要先知道这个 session 原来绑定哪个用户，才能调用 `OnlineService::unbindUser(user_id, session_id)` 做 Redis online 清理。
+
 #### 成员变量
 
 `users_` 是主表：
@@ -211,6 +222,7 @@ public:
 
     Status bindUser(std::uint64_t user_id, const Session::Ptr& session);
     Status unbindUser(std::uint64_t user_id, std::uint64_t session_id);
+    Status unbindSession(std::uint64_t session_id);
     Status refreshUserOnline(std::uint64_t user_id, std::uint64_t session_id);
 
     Status getSessionByUser(std::uint64_t user_id, Session::Ptr& session);
@@ -259,6 +271,20 @@ OnlineService::unbindUser(user_id, session_id)
 ```
 
 如果是旧 session 的延迟 close 回调，`removed=false`，不删 Redis。
+
+#### `unbindSession()`
+
+连接关闭时，`TcpServer` 只天然知道 `session_id`。因此 runtime close cleanup 走：
+
+```text
+TcpServer close callback
+    -> business ThreadPool
+    -> OnlineService::unbindSession(session_id)
+    -> SessionManager::getBoundUserBySession(session_id)
+    -> OnlineService::unbindUser(user_id, session_id)
+```
+
+这里不能用普通 `getUserBySession()`，因为 close callback 触发时 session 可能已经 closed。`getBoundUserBySession()` 保留了 close-safe 的绑定反查能力；真正删除 Redis online key 时仍复用 `unbindUser()` 的“只有当前匹配才删除”语义，避免旧 session 误删新登录的 Redis key。
 
 #### `refreshUserOnline()`
 
@@ -370,7 +396,9 @@ refreshUserOnline(1002, 43)
 断开下线：
 
 ```text
-unbindUser(1002, 43)
+unbindSession(43)
+    -> getBoundUserBySession(43) 得到 user_id=1002
+    -> unbindUser(1002, 43)
     -> SessionManager 删除当前绑定
     -> setUserOffline(1002)
 ```
@@ -452,12 +480,15 @@ tests/service/online_service_test.cpp
 - 用户和 session 双向绑定查询。
 - 重复登录踢旧保新。
 - stale 旧 session 解绑不会删除新绑定。
+- 连接已经 closed 时，close cleanup 仍能通过 `getBoundUserBySession()` 查到原 user id。
 - weak_ptr 过期时查询清理 stale binding。
 
 `OnlineServiceTest` 覆盖：
 
 - 登录绑定写 cache 并写内存表。
 - 重复登录后旧 session 关闭，新 session 的 Redis 在线状态不被旧解绑删除。
+- `unbindSession(session_id)` 能清理已关闭当前 session 的内存绑定和 Redis online key。
+- 旧 session 的 close cleanup 不会删除新 session 的 Redis online key。
 - 当前 session 解绑时同时清理内存和 cache。
 - 心跳刷新必须来自当前 session。
 - `RedisCache` 集成测试验证真实 Redis online key 的写入、刷新和删除；本地 Redis 不可用时按项目规则 skip。

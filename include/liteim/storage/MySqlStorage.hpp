@@ -33,6 +33,8 @@ public:
     Status removeGroupMember(std::uint64_t group_id, std::uint64_t user_id) override;
     Status getGroupMembers(std::uint64_t group_id,
                            std::vector<GroupMemberRecord>& members) override;
+    Status findGroupById(std::uint64_t group_id, GroupRecord& group) override;
+    Status getGroupsForUser(std::uint64_t user_id, std::vector<GroupRecord>& groups) override;
     // 保存一条普通消息，但没有离线接收者
     Status saveMessage(const MessageRecord& message, std::uint64_t& message_id) override;
     // 保存一条聊天消息，并且同时为离线用户生成离线待投递记录。

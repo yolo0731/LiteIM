@@ -22,6 +22,7 @@ public:
     Status removeGroupMember(std::uint64_t group_id, std::uint64_t user_id);
     Status getGroupMembers(std::uint64_t group_id, std::vector<GroupMemberRecord>& members);
     Status findGroupById(std::uint64_t group_id, GroupRecord& group);
+    Status getGroupsForUser(std::uint64_t user_id, std::vector<GroupRecord>& groups);
 
 private:
     MySqlPool* pool_;

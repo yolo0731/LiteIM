@@ -158,6 +158,16 @@ public:
         return liteim::Status::ok();
     }
 
+    liteim::Status findGroupById(std::uint64_t,
+                                 liteim::GroupRecord&) override {
+        return liteim::Status::ok();
+    }
+
+    liteim::Status getGroupsForUser(std::uint64_t,
+                                    std::vector<liteim::GroupRecord>&) override {
+        return liteim::Status::ok();
+    }
+
     liteim::Status saveMessage(const liteim::MessageRecord&, std::uint64_t&) override {
         return liteim::Status::ok();
     }

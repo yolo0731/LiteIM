@@ -1,6 +1,7 @@
 #include "liteim/service/ChatService.hpp"
 
 #include "liteim/base/ErrorCode.hpp"
+#include "liteim/base/Logger.hpp"
 #include "liteim/protocol/TlvCodec.hpp"
 
 #include <algorithm>
@@ -26,6 +27,7 @@ Status emptyMessageTextStatus() {
     return Status::error(ErrorCode::InvalidArgument, "message text must not be empty");
 }
 
+// 用两个用户 ID 生成一个私聊会话 ID
 Status privateConversationId(std::uint64_t sender_id, std::uint64_t receiver_id,
                              std::uint64_t& conversation_id) {
     conversation_id = 0;
@@ -36,7 +38,7 @@ Status privateConversationId(std::uint64_t sender_id, std::uint64_t receiver_id,
     const auto left = std::min(sender_id, receiver_id);
     const auto right = std::max(sender_id, receiver_id);
     if (left < kSmallUserIdConversationBase && right < kSmallUserIdConversationBase) {
-        conversation_id = left * kSmallUserIdConversationBase + right;
+        conversation_id = left * kSmallUserIdConversationBase + right;  // 生成私聊会话 ID
         return Status::ok();
     }
 
@@ -48,6 +50,7 @@ Status privateConversationId(std::uint64_t sender_id, std::uint64_t receiver_id,
     return Status::ok();
 }
 
+// 响应和 push 里都要用这个函数把 ConversationType 写进 TLV body
 Status appendConversationType(ConversationType type, Packet& packet) {
     return appendUint64(TlvType::ConversationType, static_cast<std::uint64_t>(type), packet.body);
 }
@@ -69,12 +72,14 @@ Status ChatService::registerHandlers(MessageRouter& router) {
 Status ChatService::handlePrivateMessage(const MessageRouter::RouterRequest& request,
                                          Packet& response) {
     std::uint64_t sender_id = 0;
+    //  根据 session 获取当前登录的 user_id
     const auto sender_status = currentUserId(request, sender_id);
     if (!sender_status.isOk()) {
         return sender_status;
     }
 
     std::uint64_t receiver_id = 0;
+    // 从 TLV 里读取 ReceiverId
     const auto receiver_status = getUint64(request.fields, TlvType::ReceiverId, receiver_id);
     if (!receiver_status.isOk()) {
         return receiver_status;
@@ -84,6 +89,7 @@ Status ChatService::handlePrivateMessage(const MessageRouter::RouterRequest& req
     }
 
     std::string message_text;
+    // 从 TLV 里读取 MessageText
     const auto text_status = getString(request.fields, TlvType::MessageText, message_text);
     if (!text_status.isOk()) {
         return text_status;
@@ -98,13 +104,13 @@ Status ChatService::handlePrivateMessage(const MessageRouter::RouterRequest& req
         return find_status;
     }
 
+    //生成私聊会话 ID
     std::uint64_t conversation_id = 0;
-    const auto conversation_status =
-        privateConversationId(sender_id, receiver_id, conversation_id);
+    const auto conversation_status = privateConversationId(sender_id, receiver_id, conversation_id);
     if (!conversation_status.isOk()) {
         return conversation_status;
     }
-
+    // 检查接收用户是否在线，如果在线就直接发消息，否则就存离线消息和未读计数
     Session::Ptr receiver_session;
     const auto session_status = online_service_.getSessionByUser(receiver_id, receiver_session);
     const bool receiver_online = session_status.isOk();
@@ -112,15 +118,18 @@ Status ChatService::handlePrivateMessage(const MessageRouter::RouterRequest& req
         return session_status;
     }
 
+    // 构建消息
     MessageRecord message;
     message.conversation = {ConversationType::kPrivate, conversation_id};
     message.sender_id = sender_id;
     message.receiver_id = receiver_id;
     message.text = std::move(message_text);
 
+    // 如果离线，offline_user_ids数组里放 receiver_id，然后在 saveMessageWithOfflineRecipients 里插入到offline_messages表里
     const std::vector<std::uint64_t> offline_user_ids =
         receiver_online ? std::vector<std::uint64_t>{} : std::vector<std::uint64_t>{receiver_id};
 
+    // 保存消息记录，如果接收用户离线就同时保存离线消息记录，然后把数据库生成/补齐后的完整消息信息放到 saved_message 里返回（包括 message_id 和 created_at_ms）
     MessageRecord saved_message;
     const auto save_status =
         storage_.saveMessageWithOfflineRecipients(message, offline_user_ids, saved_message);
@@ -128,6 +137,7 @@ Status ChatService::handlePrivateMessage(const MessageRouter::RouterRequest& req
         return save_status;
     }
 
+    // 在线：直接把消息推送给接收用户
     if (receiver_online) {
         Packet push;
         push.header.msg_type = MessageType::PrivateMessagePush;
@@ -135,19 +145,24 @@ Status ChatService::handlePrivateMessage(const MessageRouter::RouterRequest& req
         if (!append_status.isOk()) {
             return append_status;
         }
-        const auto send_status = receiver_session->sendPacket(push);
+        const auto send_status = receiver_session->sendPacket(push);  //push是非相应包不带 seq_id
         if (!send_status.isOk()) {
             return send_status;
         }
-    } else {
+    } else {  // 离线：把未读计数加一
         std::uint64_t unread_count = 0;
         const auto unread_status =
             cache_.incrUnread(UnreadKey{receiver_id, saved_message.conversation}, 1, unread_count);
         if (!unread_status.isOk()) {
-            return unread_status;
+            Logger::get()->warn(
+                "Failed to increment unread for user {} conversation {} after message {} was "
+                "saved: {}",
+                receiver_id, saved_message.conversation.id, saved_message.message_id,
+                unread_status.message());
         }
     }
 
+    // 把消息字段写进响应包的 TLV body，之后MessageRouter会统一设置响应头并发回发送用户
     response.header.msg_type = MessageType::PrivateMessageResponse;
     response.header.seq_id = request.packet.header.seq_id;
     return appendMessageFields(saved_message, response);
@@ -167,6 +182,7 @@ Status ChatService::currentUserId(const MessageRouter::RouterRequest& request,
     return status;
 }
 
+// 把消息记录的字段写进响应包的 TLV body，响应和 push 都会用到这个函数
 Status ChatService::appendMessageFields(const MessageRecord& message, Packet& packet) {
     const auto message_status = appendUint64(TlvType::MessageId, message.message_id, packet.body);
     if (!message_status.isOk()) {

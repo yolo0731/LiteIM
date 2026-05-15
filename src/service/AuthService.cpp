@@ -136,6 +136,7 @@ Status appendLoginFields(const UserRecord& user, std::uint64_t session_id, Packe
     return appendUint64(TlvType::SessionId, session_id, response.body);
 }
 
+// 记录登录失败
 Status recordLoginFailure(ICache& cache, const LoginAttemptKey& key,
                           std::chrono::seconds failure_ttl, const Status& login_status) {
     const auto record_status = cache.recordLoginFailure(key, failure_ttl);
@@ -162,6 +163,7 @@ AuthService::AuthService(IStorage& storage, ICache& cache, OnlineService& online
     }
 }
 
+// 注册 登录/注册handler
 Status AuthService::registerHandlers(MessageRouter& router) {
     const auto register_status = router.registerHandler(
         MessageType::RegisterRequest,
@@ -181,6 +183,7 @@ Status AuthService::registerHandlers(MessageRouter& router) {
         MessageRouter::DispatchMode::BusinessThread);
 }
 
+// 处理注册请求,从 TLV 里取用户名和密码，生成盐和哈希，保存到数据库，构建响应包
 Status AuthService::handleRegister(const MessageRouter::RouterRequest& request, Packet& response) {
     std::string username;
     const auto username_status =
@@ -231,6 +234,7 @@ Status AuthService::handleRegister(const MessageRouter::RouterRequest& request, 
     return appendUserFields(created_user, response);
 }
 
+// 处理登录请求,从 TLV 里取用户名和密码，检查登录限制，验证密码，绑定在线session，构建响应包
 Status AuthService::handleLogin(const MessageRouter::RouterRequest& request, Packet& response) {
     std::string username;
     const auto username_status =

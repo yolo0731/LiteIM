@@ -59,7 +59,7 @@ std::string conversationTypeToken(ConversationType type) {
     return std::to_string(static_cast<std::uint32_t>(type));
 }
 
-// 拼 Redis key
+// 拼 unread的Redis key
 std::string unreadKey(const UnreadKey& key) {
     return std::string(kUnreadKeyPrefix) + std::to_string(key.user_id) +
            ":conversation:" + conversationTypeToken(key.conversation.type) + ':' +

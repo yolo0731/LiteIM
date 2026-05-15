@@ -1,0 +1,335 @@
+#include "liteim/service/GroupService.hpp"
+
+#include "liteim/base/ErrorCode.hpp"
+#include "liteim/base/Logger.hpp"
+#include "liteim/protocol/TlvCodec.hpp"
+
+#include <algorithm>
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace liteim {
+namespace {
+
+Status notLoggedInStatus() {
+    return Status::error(ErrorCode::InvalidArgument, "session is not logged in");
+}
+
+Status invalidGroupIdStatus() {
+    return Status::error(ErrorCode::InvalidArgument, "group id must be positive");
+}
+
+Status emptyGroupNameStatus() {
+    return Status::error(ErrorCode::InvalidArgument, "group name must not be empty");
+}
+
+Status emptyMessageTextStatus() {
+    return Status::error(ErrorCode::InvalidArgument, "message text must not be empty");
+}
+
+Status notGroupMemberStatus() {
+    return Status::error(ErrorCode::InvalidArgument, "sender is not a group member");
+}
+
+Status appendConversationType(ConversationType type, Packet& packet) {
+    return appendUint64(TlvType::ConversationType, static_cast<std::uint64_t>(type), packet.body);
+}
+
+bool containsMember(const std::vector<GroupMemberRecord>& members, std::uint64_t user_id) {
+    return std::any_of(members.begin(), members.end(),
+                       [user_id](const GroupMemberRecord& member) {
+                           return member.user_id == user_id;
+                       });
+}
+
+}  // namespace
+
+GroupService::GroupService(IStorage& storage, ICache& cache, OnlineService& online_service)
+    : storage_(storage), cache_(cache), online_service_(online_service) {}
+
+Status GroupService::registerHandlers(MessageRouter& router) {
+    const auto create_status = router.registerHandler(
+        MessageType::CreateGroupRequest,
+        [this](const MessageRouter::RouterRequest& request, Packet& response) {
+            return handleCreateGroup(request, response);
+        },
+        MessageRouter::DispatchMode::BusinessThread);
+    if (!create_status.isOk()) {
+        return create_status;
+    }
+
+    const auto join_status = router.registerHandler(
+        MessageType::JoinGroupRequest,
+        [this](const MessageRouter::RouterRequest& request, Packet& response) {
+            return handleJoinGroup(request, response);
+        },
+        MessageRouter::DispatchMode::BusinessThread);
+    if (!join_status.isOk()) {
+        return join_status;
+    }
+
+    const auto list_status = router.registerHandler(
+        MessageType::ListGroupsRequest,
+        [this](const MessageRouter::RouterRequest& request, Packet& response) {
+            return handleListGroups(request, response);
+        },
+        MessageRouter::DispatchMode::BusinessThread);
+    if (!list_status.isOk()) {
+        return list_status;
+    }
+
+    return router.registerHandler(
+        MessageType::GroupMessageRequest,
+        [this](const MessageRouter::RouterRequest& request, Packet& response) {
+            return handleGroupMessage(request, response);
+        },
+        MessageRouter::DispatchMode::BusinessThread);
+}
+
+Status GroupService::handleCreateGroup(const MessageRouter::RouterRequest& request,
+                                       Packet& response) {
+    std::uint64_t owner_id = 0;
+    const auto user_status = currentUserId(request, owner_id);
+    if (!user_status.isOk()) {
+        return user_status;
+    }
+
+    std::string group_name;
+    const auto name_status = getString(request.fields, TlvType::GroupName, group_name);
+    if (!name_status.isOk()) {
+        return name_status;
+    }
+    if (group_name.empty()) {
+        return emptyGroupNameStatus();
+    }
+
+    GroupRecord created_group;
+    const auto create_status =
+        storage_.createGroup(CreateGroupRequest{owner_id, group_name}, created_group);
+    if (!create_status.isOk()) {
+        return create_status;
+    }
+
+    response.header.msg_type = MessageType::CreateGroupResponse;
+    response.header.seq_id = request.packet.header.seq_id;
+    return appendGroupFields(created_group, response);
+}
+
+Status GroupService::handleJoinGroup(const MessageRouter::RouterRequest& request,
+                                     Packet& response) {
+    std::uint64_t user_id = 0;
+    const auto user_status = currentUserId(request, user_id);
+    if (!user_status.isOk()) {
+        return user_status;
+    }
+
+    std::uint64_t group_id = 0;
+    const auto group_status = getUint64(request.fields, TlvType::GroupId, group_id);
+    if (!group_status.isOk()) {
+        return group_status;
+    }
+    if (group_id == 0U) {
+        return invalidGroupIdStatus();
+    }
+
+    GroupRecord group;
+    const auto find_status = storage_.findGroupById(group_id, group);
+    if (!find_status.isOk()) {
+        return find_status;
+    }
+
+    const auto add_status = storage_.addGroupMember(group_id, user_id);
+    if (!add_status.isOk()) {
+        return add_status;
+    }
+
+    response.header.msg_type = MessageType::JoinGroupResponse;
+    response.header.seq_id = request.packet.header.seq_id;
+    return appendGroupFields(group, response);
+}
+
+Status GroupService::handleListGroups(const MessageRouter::RouterRequest& request,
+                                      Packet& response) {
+    std::uint64_t user_id = 0;
+    const auto user_status = currentUserId(request, user_id);
+    if (!user_status.isOk()) {
+        return user_status;
+    }
+
+    std::vector<GroupRecord> groups;
+    const auto groups_status = storage_.getGroupsForUser(user_id, groups);
+    if (!groups_status.isOk()) {
+        return groups_status;
+    }
+
+    response.header.msg_type = MessageType::ListGroupsResponse;
+    response.header.seq_id = request.packet.header.seq_id;
+    for (const auto& group : groups) {
+        const auto append_status = appendGroupFields(group, response);
+        if (!append_status.isOk()) {
+            return append_status;
+        }
+    }
+    return Status::ok();
+}
+
+Status GroupService::handleGroupMessage(const MessageRouter::RouterRequest& request,
+                                        Packet& response) {
+    std::uint64_t sender_id = 0;
+    const auto user_status = currentUserId(request, sender_id);
+    if (!user_status.isOk()) {
+        return user_status;
+    }
+
+    std::uint64_t group_id = 0;
+    const auto group_status = getUint64(request.fields, TlvType::GroupId, group_id);
+    if (!group_status.isOk()) {
+        return group_status;
+    }
+    if (group_id == 0U) {
+        return invalidGroupIdStatus();
+    }
+
+    std::string message_text;
+    const auto text_status = getString(request.fields, TlvType::MessageText, message_text);
+    if (!text_status.isOk()) {
+        return text_status;
+    }
+    if (message_text.empty()) {
+        return emptyMessageTextStatus();
+    }
+
+    GroupRecord group;
+    const auto find_status = storage_.findGroupById(group_id, group);
+    if (!find_status.isOk()) {
+        return find_status;
+    }
+
+    std::vector<GroupMemberRecord> members;
+    const auto members_status = storage_.getGroupMembers(group_id, members);
+    if (!members_status.isOk()) {
+        return members_status;
+    }
+    if (!containsMember(members, sender_id)) {
+        return notGroupMemberStatus();
+    }
+
+    std::vector<Session::Ptr> online_sessions;
+    std::vector<std::uint64_t> offline_user_ids;
+    for (const auto& member : members) {
+        if (member.user_id == sender_id) {
+            continue;
+        }
+
+        Session::Ptr member_session;
+        const auto session_status = online_service_.getSessionByUser(member.user_id, member_session);
+        if (session_status.isOk()) {
+            online_sessions.push_back(std::move(member_session));
+            continue;
+        }
+        if (session_status.code() == ErrorCode::NotFound) {
+            offline_user_ids.push_back(member.user_id);
+            continue;
+        }
+        return session_status;
+    }
+
+    MessageRecord message;
+    message.conversation = {ConversationType::kGroup, group.group_id};
+    message.sender_id = sender_id;
+    message.receiver_id = group.group_id;
+    message.text = std::move(message_text);
+
+    MessageRecord saved_message;
+    const auto save_status =
+        storage_.saveMessageWithOfflineRecipients(message, offline_user_ids, saved_message);
+    if (!save_status.isOk()) {
+        return save_status;
+    }
+
+    for (const auto& user_id : offline_user_ids) {
+        std::uint64_t unread_count = 0;
+        const auto unread_status =
+            cache_.incrUnread(UnreadKey{user_id, saved_message.conversation}, 1, unread_count);
+        if (!unread_status.isOk()) {
+            Logger::get()->warn(
+                "Failed to increment group unread for user {} conversation {} after message {} "
+                "was saved: {}",
+                user_id, saved_message.conversation.id, saved_message.message_id,
+                unread_status.message());
+        }
+    }
+
+    for (const auto& session : online_sessions) {
+        Packet push;
+        push.header.msg_type = MessageType::GroupMessagePush;
+        const auto append_status = appendMessageFields(saved_message, push);
+        if (!append_status.isOk()) {
+            return append_status;
+        }
+        const auto send_status = session->sendPacket(push);
+        if (!send_status.isOk()) {
+            return send_status;
+        }
+    }
+
+    response.header.msg_type = MessageType::GroupMessageResponse;
+    response.header.seq_id = request.packet.header.seq_id;
+    return appendMessageFields(saved_message, response);
+}
+
+Status GroupService::currentUserId(const MessageRouter::RouterRequest& request,
+                                   std::uint64_t& user_id) {
+    user_id = 0;
+    if (request.session == nullptr || request.session->closed()) {
+        return notLoggedInStatus();
+    }
+
+    const auto status = online_service_.getUserBySession(request.session->id(), user_id);
+    if (!status.isOk() && status.code() == ErrorCode::NotFound) {
+        return notLoggedInStatus();
+    }
+    return status;
+}
+
+Status GroupService::appendGroupFields(const GroupRecord& group, Packet& packet) {
+    const auto id_status = appendUint64(TlvType::GroupId, group.group_id, packet.body);
+    if (!id_status.isOk()) {
+        return id_status;
+    }
+    return appendString(TlvType::GroupName, group.group_name, packet.body);
+}
+
+Status GroupService::appendMessageFields(const MessageRecord& message, Packet& packet) {
+    const auto message_status = appendUint64(TlvType::MessageId, message.message_id, packet.body);
+    if (!message_status.isOk()) {
+        return message_status;
+    }
+    const auto type_status = appendConversationType(message.conversation.type, packet);
+    if (!type_status.isOk()) {
+        return type_status;
+    }
+    const auto conversation_status =
+        appendUint64(TlvType::ConversationId, message.conversation.id, packet.body);
+    if (!conversation_status.isOk()) {
+        return conversation_status;
+    }
+    const auto sender_status = appendUint64(TlvType::SenderId, message.sender_id, packet.body);
+    if (!sender_status.isOk()) {
+        return sender_status;
+    }
+    const auto receiver_status =
+        appendUint64(TlvType::ReceiverId, message.receiver_id, packet.body);
+    if (!receiver_status.isOk()) {
+        return receiver_status;
+    }
+    const auto text_status = appendString(TlvType::MessageText, message.text, packet.body);
+    if (!text_status.isOk()) {
+        return text_status;
+    }
+    return appendUint64(TlvType::TimestampMs, static_cast<std::uint64_t>(message.created_at_ms),
+                        packet.body);
+}
+
+}  // namespace liteim

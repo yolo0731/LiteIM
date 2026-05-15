@@ -10,16 +10,20 @@
 #include <unordered_map>
 
 namespace liteim {
+//当前进程内存里的用户 <-> TCP Session 绑定表
 
 class SessionManager {
 public:
     // 登录成功后，把这个用户和当前连接绑定起来
     Status bindUser(std::uint64_t user_id, const Session::Ptr& session);
+    // 解绑两张map中用户和连接的绑定关系，通常在连接断开时调用
     Status unbindUser(std::uint64_t user_id, std::uint64_t session_id);
     // 解绑用户和连接的绑定关系，只有当提供的session_id和当前绑定的一致时才会解绑，避免重复登录时把新连接解绑了
     Status unbindUser(std::uint64_t user_id, std::uint64_t session_id, bool& removed);
     Status getSessionByUser(std::uint64_t user_id, Session::Ptr& session);
     Status getUserBySession(std::uint64_t session_id, std::uint64_t& user_id);
+    // 只查 session_id -> user_id 绑定，不因为 Session 已关闭而清理映射，供 close cleanup 使用
+    Status getBoundUserBySession(std::uint64_t session_id, std::uint64_t& user_id);
 
     std::size_t userCount() const;
     std::size_t sessionCount() const;

@@ -99,6 +99,24 @@ TEST(SessionManagerTest, UnbindRemovesOnlyMatchingCurrentSession) {
     EXPECT_EQ(manager.sessionCount(), 0U);
 }
 
+TEST(SessionManagerTest, ClosedSessionStillExposesBoundUserForCloseCleanup) {
+    liteim::EventLoop loop;
+    liteim::SessionManager manager;
+    auto session = makeSession(loop, 1001);
+
+    ASSERT_TRUE(manager.bindUser(42, session).isOk());
+    session->close();
+
+    std::uint64_t bound_user = 0;
+    ASSERT_TRUE(manager.getBoundUserBySession(1001, bound_user).isOk());
+    EXPECT_EQ(bound_user, 42U);
+
+    std::uint64_t found_user = 0;
+    EXPECT_EQ(manager.getUserBySession(1001, found_user).code(), liteim::ErrorCode::NotFound);
+    EXPECT_EQ(manager.userCount(), 0U);
+    EXPECT_EQ(manager.sessionCount(), 0U);
+}
+
 TEST(SessionManagerTest, ExpiredWeakSessionIsCleanedDuringLookup) {
     liteim::EventLoop loop;
     liteim::SessionManager manager;

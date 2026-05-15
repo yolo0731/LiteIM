@@ -12,21 +12,21 @@
 
 namespace liteim {
 
-class ChatService {
+class GroupService {
 public:
-    ChatService(IStorage& storage, ICache& cache, OnlineService& online_service);
-    // 注册私聊消息到 MessageRouter
+    GroupService(IStorage& storage, ICache& cache, OnlineService& online_service);
+
     Status registerHandlers(MessageRouter& router);
-    // 真正处理私聊消息
-    Status handlePrivateMessage(const MessageRouter::RouterRequest& request, Packet& response);
+    Status handleCreateGroup(const MessageRouter::RouterRequest& request, Packet& response);
+    Status handleJoinGroup(const MessageRouter::RouterRequest& request, Packet& response);
+    Status handleListGroups(const MessageRouter::RouterRequest& request, Packet& response);
+    Status handleGroupMessage(const MessageRouter::RouterRequest& request, Packet& response);
 
 private:
-    // 从 session 获取当前登录的 user_id
     Status currentUserId(const MessageRouter::RouterRequest& request, std::uint64_t& user_id);
-    // 把消息字段写进响应包,push到接收客户端和对发送客户端response都会用到，因为客户端需要知道消息 ID 和时间戳等信息
+    Status appendGroupFields(const GroupRecord& group, Packet& packet);
     Status appendMessageFields(const MessageRecord& message, Packet& packet);
 
-    // 三个依赖
     IStorage& storage_;
     ICache& cache_;
     OnlineService& online_service_;

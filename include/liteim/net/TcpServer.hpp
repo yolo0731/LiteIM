@@ -25,6 +25,7 @@ class UniqueFd;
 class TcpServer {
 public:
     using MessageCallback = std::function<void(const Session::Ptr&, const Packet&)>;
+    using SessionCloseCallback = std::function<void(std::uint64_t)>;
 
     TcpServer(EventLoop* base_loop, std::string listen_ip, std::uint16_t port,
               std::size_t io_thread_count);
@@ -34,6 +35,7 @@ public:
     TcpServer& operator=(const TcpServer&) = delete;
 
     void setMessageCallback(MessageCallback callback);
+    void setSessionCloseCallback(SessionCloseCallback callback);
     void setHeartbeatOptions(std::chrono::milliseconds interval, std::chrono::milliseconds timeout);
     void setSessionOutputHighWaterMark(std::size_t high_water_mark);
 
@@ -52,6 +54,7 @@ private:
     void createSessionInLoop(EventLoop* io_loop, std::shared_ptr<UniqueFd> accepted_fd);
     void handleMessage(const Session::Ptr& session, const Packet& packet);
     void removeSession(std::uint64_t session_id);
+    void handleSessionClose(std::uint64_t session_id);
     void startHeartbeatTimer();     // 启动心跳定时器
     void scheduleHeartbeatCheck();  // 安排下一次心跳检查
     void closeIdleSessions();       // 关闭所有超过 heartbeat_timeout_ 没有活动的 Session
@@ -65,6 +68,7 @@ private:
     mutable std::mutex mutex_;
     std::unordered_map<std::uint64_t, Session::Ptr> sessions_;
     MessageCallback message_callback_;
+    SessionCloseCallback session_close_callback_;
     std::chrono::milliseconds heartbeat_interval_{std::chrono::seconds(5)};
     std::chrono::milliseconds heartbeat_timeout_{std::chrono::seconds(90)};
     std::size_t session_output_high_water_mark_{kSessionDefaultOutputHighWaterMark};

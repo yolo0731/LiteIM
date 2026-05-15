@@ -141,7 +141,7 @@ Status handlePrivateMessage(const MessageRouter::RouterRequest& request, Packet&
 | `MessageText` 缺失或为空 | `NotFound` / `InvalidArgument` |
 | 接收方用户不存在 | `NotFound` |
 | MySQL 保存失败 | 原始 `IStorage` 错误 |
-| Redis 未读递增失败 | 原始 `ICache` 错误 |
+| Redis 未读递增失败 | 记录 warning；消息和 offline row 已保存时仍返回成功 response |
 | 在线 push 编码或发送失败 | 原始 `Session::sendPacket()` 错误 |
 
 ### 生命周期和线程边界
@@ -270,7 +270,7 @@ push 只使用 `saved_message`，这样 response/push 中的 `MessageId` 和 `Ti
 
 ### Redis 未读不是消息真相
 
-消息正文和离线投递记录在 MySQL。Redis 未读数只是 UI 状态和查询加速。离线分支里 MySQL commit 成功后再递增 Redis；如果 Redis 失败，本 Step 返回错误，但 MySQL 中已经有消息真相，这也是没有跨 MySQL/Redis 分布式事务时必须在面试里说清楚的边界。
+消息正文和离线投递记录在 MySQL。Redis 未读数只是 UI 状态和查询加速。离线分支里 MySQL commit 成功后再递增 Redis；如果 Redis 失败，当前 hardening 只记录 warning，不把发送方响应改成失败。原因是消息和 offline row 已经保存成功，继续返回失败会诱导客户端重试并产生重复消息。未读数可以后续根据 MySQL offline/history 数据修复或重算。
 
 ## 7. 测试设计
 
@@ -279,6 +279,7 @@ push 只使用 `saved_message`，这样 response/push 中的 `MessageId` 和 `Ti
 | 未登录连接伪造私聊 | `PrivateMessageRequiresLoggedInSession` 校验未绑定 session 返回错误且不落库、不递增未读 |
 | 接收方不存在导致脏消息 | `PrivateMessageRequiresExistingReceiver` 校验 `findUserById()` 失败时不保存消息 |
 | 离线消息没有进入 offline/unread | `OfflineReceiverSavesMessageAndIncrementsUnread` 校验 offline recipient 为 `{1002}`，Redis unread +1 |
+| Redis unread 失败诱导发送方重试 | `OfflineUnreadFailureStillReturnsSenderSuccess` 校验消息和 offline row 已保存时仍返回 `PrivateMessageResponse` |
 | 在线接收者没有收到 push | `OnlineReceiverGetsPushWithoutOfflineUnread` 用真实 running `Session` 读取 `PrivateMessagePush` |
 | sender response 没经过 router | `RegisteredHandlerSendsSenderResponseThroughRouter` 注册 handler 后通过 `MessageRouter::route()` 读取发送方 response |
 | response/push 字段不完整 | 所有成功路径都校验 `MessageId`、会话字段、发送方、接收方、文本和时间戳 |
@@ -315,7 +316,7 @@ docker compose -f docker/docker-compose.yml up -d --wait
 
 ### 展开说
 
-`ChatService` 不信任客户端传 `SenderId`，而是从 `SessionManager` / `OnlineService` 查当前 session 绑定的 user id。私聊请求只需要 `ReceiverId` 和 `MessageText`。服务端生成私聊会话 id，构造 `MessageRecord`，调用 `IStorage::saveMessageWithOfflineRecipients()` 保存消息。接收方在线时，通过 `Session::sendPacket()` 把 `PrivateMessagePush` 投递回接收方 owner loop；离线时把接收方写进 offline recipient，并调用 `ICache::incrUnread()`。这些 handler 都通过 `MessageRouter` 跑在 business thread pool，避免 Reactor I/O 线程被 MySQL / Redis 阻塞。
+`ChatService` 不信任客户端传 `SenderId`，而是从 `SessionManager` / `OnlineService` 查当前 session 绑定的 user id。私聊请求只需要 `ReceiverId` 和 `MessageText`。服务端生成私聊会话 id，构造 `MessageRecord`，调用 `IStorage::saveMessageWithOfflineRecipients()` 保存消息。接收方在线时，通过 `Session::sendPacket()` 把 `PrivateMessagePush` 投递回接收方 owner loop；离线时把接收方写进 offline recipient，并调用 `ICache::incrUnread()`。如果 unread 递增失败，消息事实仍以 MySQL 为准，服务端记录 warning 并给发送方成功响应，避免客户端重试制造重复消息。这些 handler 都通过 `MessageRouter` 跑在 business thread pool，避免 Reactor I/O 线程被 MySQL / Redis 阻塞。
 
 ### 容易被追问
 
@@ -341,7 +342,7 @@ IM 消息的 source of truth 是 MySQL。先落库可以保证消息有持久化
 
 ### Q4：离线分支为什么既写 MySQL 又写 Redis？
 
-MySQL `offline_messages` 保存可靠的待拉取记录；Redis 未读数用于会话列表显示和快速查询。Redis 不是消息真相，丢了可以从 MySQL 重新计算或修复，但正常路径仍要递增，保证用户体验。
+MySQL `offline_messages` 保存可靠的待拉取记录；Redis 未读数用于会话列表显示和快速查询。Redis 不是消息真相，丢了可以从 MySQL 重新计算或修复，但正常路径仍要递增，保证用户体验。若 MySQL 已保存成功而 Redis unread 递增失败，服务端只记录 warning 并返回发送成功，避免客户端重试产生重复消息。
 
 ### Q5：business 线程调用 `receiver_session->sendPacket()` 会不会跨线程直接写 fd？
 

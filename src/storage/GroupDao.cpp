@@ -482,4 +482,54 @@ Status GroupDao::findGroupById(std::uint64_t group_id, GroupRecord& group) {
     return querySingleGroup(statement, group);
 }
 
+Status GroupDao::getGroupsForUser(std::uint64_t user_id, std::vector<GroupRecord>& groups) {
+    groups.clear();
+
+    const auto user_status = validateId(user_id, "user_id");
+    if (!user_status.isOk()) {
+        return user_status;
+    }
+
+    ConnectionGuard guard;
+    const auto acquire_status = pool_->acquire(acquire_timeout_, guard);
+    if (!acquire_status.isOk()) {
+        return acquire_status;
+    }
+
+    PreparedStatement statement(*guard);
+    const auto prepare_status =
+        statement.prepare("SELECT cg.group_id, cg.owner_id, cg.group_name, cg.created_at_ms "
+                          "FROM group_members gm "
+                          "JOIN chat_groups cg ON cg.group_id = gm.group_id "
+                          "WHERE gm.user_id = ? "
+                          "ORDER BY cg.group_id ASC");
+    if (!prepare_status.isOk()) {
+        return prepare_status;
+    }
+    const auto bind_status = bindId(statement, 0, user_id, "user_id");
+    if (!bind_status.isOk()) {
+        return bind_status;
+    }
+
+    MySqlQueryResult result;
+    const auto query_status = statement.executeQuery(result);
+    if (!query_status.isOk()) {
+        return query_status;
+    }
+
+    std::vector<GroupRecord> parsed_groups;
+    parsed_groups.reserve(result.rows().size());
+    for (const auto& row : result.rows()) {
+        GroupRecord group;
+        const auto row_status = rowToGroupRecord(row, group);
+        if (!row_status.isOk()) {
+            return row_status;
+        }
+        parsed_groups.push_back(std::move(group));
+    }
+
+    groups = std::move(parsed_groups);
+    return Status::ok();
+}
+
 }  // namespace liteim
