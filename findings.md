@@ -8,6 +8,25 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-15 Step 37 OfflineMessageService Findings
+
+本次进入 `Step 37：实现 OfflineMessageService`，采用用户确认的方案一：登录仍只返回 `LoginResponse`，客户端登录成功后主动发送 `OfflineMessagesRequest` 拉取离线消息。
+
+已经确认并采用的设计：
+
+- `OfflineMessageService` 位于 `liteim_service`，依赖 `IStorage`、`ICache` 和 `OnlineService`，不直接依赖具体 DAO 或 Redis 组件。
+- `OfflineMessagesRequest` 通过 `MessageRouter::DispatchMode::BusinessThread` 执行，MySQL / Redis 阻塞调用不进入 Reactor I/O 线程。
+- 当前登录用户身份来自 `OnlineService::getUserBySession(session_id)`，请求 body 不信任客户端传入的 `UserId`。
+- 请求 body 可选 `TlvType::Limit`；未提供时使用默认上限，超过 Step 37 上限时截断，第一版每次最多返回 100 条。
+- `OfflineMessagesResponse` 使用重复 TLV 字段返回每条消息的 `MessageId`、`ConversationType`、`ConversationId`、`SenderId`、`ReceiverId`、`MessageText` 和 `TimestampMs`。
+- 本批响应构造成功后，先清理本批涉及会话的 Redis 未读计数，再把本批 message_id 标记 delivered，避免 delivered 成功后还有后续失败路径导致客户端只收到错误响应。
+
+本次不采用/不改：
+
+- 不修改 `AuthService` 登录响应模型，不让登录 handler 额外发送 `OfflineMessagesResponse`。
+- 不修改 `MessageRouter` 支持多 response 或 follow-up response。
+- 不实现可靠投递 ACK、ACK 重试、离线消息删除、历史分页、群聊、跨节点路由或 BotGateway。
+
 ## 2026-05-14 Step 36 ChatService Findings
 
 本次进入 `Step 36：实现 ChatService 私聊`，只实现单进程私聊发送闭环，不推进群聊、离线消息拉取、历史查询、跨节点路由、可靠 ACK、好友策略校验或 BotGateway。

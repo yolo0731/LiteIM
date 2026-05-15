@@ -10,6 +10,7 @@
 #include "liteim/service/ChatService.hpp"
 #include "liteim/service/FriendService.hpp"
 #include "liteim/service/MessageRouter.hpp"
+#include "liteim/service/OfflineMessageService.hpp"
 #include "liteim/service/OnlineService.hpp"
 #include "liteim/service/SessionManager.hpp"
 #include "liteim/storage/MySqlPool.hpp"
@@ -60,6 +61,7 @@ int main() {
     liteim::AuthService auth_service(storage, cache, online_service);
     liteim::FriendService friend_service(storage, cache, online_service);
     liteim::ChatService chat_service(storage, cache, online_service);
+    liteim::OfflineMessageService offline_message_service(storage, cache, online_service);
     const auto auth_status = auth_service.registerHandlers(router);
     if (!auth_status.isOk()) {
         liteim::Logger::get()->error("Failed to register auth handlers: {}", auth_status.message());
@@ -80,6 +82,15 @@ int main() {
     const auto chat_status = chat_service.registerHandlers(router);
     if (!chat_status.isOk()) {
         liteim::Logger::get()->error("Failed to register chat handlers: {}", chat_status.message());
+        redis_pool.close();
+        mysql_pool.close();
+        signal_watcher.stop();
+        return 1;
+    }
+    const auto offline_status = offline_message_service.registerHandlers(router);
+    if (!offline_status.isOk()) {
+        liteim::Logger::get()->error("Failed to register offline message handlers: {}",
+                                     offline_status.message());
         redis_pool.close();
         mysql_pool.close();
         signal_watcher.stop();

@@ -1,5 +1,47 @@
 # LiteIM Progress
 
+## 2026-05-15 Step 37 OfflineMessageService
+
+本次进入 `Step 37：OfflineMessageService 离线消息拉取`，用户确认采用方案一：登录成功后客户端主动发送 `OfflineMessagesRequest`，服务端登录流程不额外发送 follow-up response。
+
+TDD 过程：
+
+- RED：新增 `tests/service/offline_message_service_test.cpp` 并接入 `tests/CMakeLists.txt`。
+- 首次运行 `cmake --build build --target liteim_tests -j2` 按预期失败于缺少 `liteim/service/OfflineMessageService.hpp`，证明测试覆盖了当前 Step 缺失的服务接口。
+- GREEN：新增 `include/liteim/service/OfflineMessageService.hpp`、`src/service/OfflineMessageService.cpp`，更新 `src/service/CMakeLists.txt` 和 `server/main.cpp`，让 `OfflineMessagesRequest` 通过 `MessageRouter` 进入 business `ThreadPool` handler。
+
+当前边界：
+
+- 本 Step 只做主动离线消息拉取、`OfflineMessagesResponse`、delivered 标记和未读清理。
+- 不修改 `AuthService` / `MessageRouter` 的一请求一响应模型。
+- 不实现可靠 ACK、重试、群聊、历史分页、跨节点路由或 BotGateway。
+
+已完成代码：
+
+- `OfflineMessageService::registerHandlers()` 注册 `OfflineMessagesRequest` 为 `BusinessThread` handler。
+- `handleOfflineMessages()` 从当前 session 查登录用户，读取可选 `Limit`，调用 `IStorage::getOfflineMessages()` 获取 pending rows，并按 service 上限截断。
+- `OfflineMessagesResponse` 对每条消息重复写入 `MessageId`、`ConversationType`、`ConversationId`、`SenderId`、`ReceiverId`、`MessageText` 和 `TimestampMs`。
+- 对返回批次按会话去重调用 `ICache::clearUnread()`，随后调用 `IStorage::markOfflineDelivered()` 标记本批 message_id。
+- server runtime 创建 `OfflineMessageService` 并注册到同一个 `MessageRouter`。
+
+已完成文档同步：
+
+- 新增 `tutorials/step37_offline_message_service.md`。
+- 更新 README、`task_plan.md`、`findings.md`、本文件和 `/home/yolo/jianli/PROJECT_MEMORY.md`。
+- 没有更新 AGENTS/CLAUDE 的进度状态；它们仍只保留约束和读取顺序。
+
+最终验证：
+
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -R "OfflineMessageService" --output-on-failure`：启动本地 Docker MySQL/Redis 后 6/6 通过，集成用例未跳过。
+- `cmake --build build -j2`：通过。
+- `ctest --test-dir build --output-on-failure`：297/297 通过。
+- `git diff --check`：通过。
+- 教程模板扫描：`tutorials/step00` 到 `tutorials/step37` 都符合固定 0-10 模板，最后主章节是 `## 10. 面试常见追问`。
+- 旧教程章节、`Current Status`、旧面试章节名、行号锚点扫描：无输出。
+- 真实数据例子扫描：38/38 篇教程都有“该项目代码在实际应用中的具体数据例子”。
+- `timeout 1s ./build/server/liteim_server || test $? -eq 124`：通过，server 启动 MySQL / Redis pool 后监听 `0.0.0.0:9000`，收到 SIGTERM 后通过 signalfd 退出。
+
 ## 2026-05-14 Step 36 ChatService
 
 本次进入 `Step 36：ChatService 私聊业务`，目标是在 Step 33-35 的 service runtime 基础上补齐私聊发送闭环。
