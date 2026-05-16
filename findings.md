@@ -1590,3 +1590,32 @@ Step 13 只实现 `Acceptor` 非阻塞监听器。
 - 不要求 seed 中 `mira_bot` 的 `dev_hash_mira_bot` 当前能通过 `AuthService` 的 PBKDF2 密码校验登录；Step 41 只做 C++ EchoBot 识别和路由占位。
 - 不伪造 bot session，不递归调用 `handlePrivateMessage()` 或 `handleGroupMessage()`。
 - 不接入 Python BotClient、FastAPI、LangGraph、LLM SDK、RAG 或 PersonaAgent。
+
+## 2026-05-16 Step 42 CLI Client Findings
+
+本次进入 `Step 42：实现 CLI 测试客户端`。
+
+当前采用的 CLI 边界：
+
+- 新增 `client_cli/` 作为命令行测试客户端入口，不把 CLI helper 暴露为 LiteIM 服务端公共模块。
+- CLI 第一版是协议调试工具，不做 curses/TUI、不做联系人列表 UI、不做本地持久化。
+- 默认连接 `127.0.0.1:9000`，支持 `--host` / `--port` 覆盖。
+- 从交互 stdin 或管道 stdin 读取命令，构造普通 TLV `Packet` 后发送。
+- 后台接收线程持续读取服务器 response / push 并打印解码后的字段。
+- 后台心跳线程每 30 秒发送 `HeartbeatRequest`；手动 `heartbeat` 命令也可直接发一次。
+- 命令覆盖 register/login/add-friend/friends/private/create-group/join-group/groups/group/history/offline/heartbeat/help/quit。
+
+TDD RED：
+
+- 新增 `tests/client_cli/cli_protocol_test.cpp`。
+- 更新根 `CMakeLists.txt` 增加 `add_subdirectory(client_cli)`，更新 `tests/CMakeLists.txt` 链接 `liteim_client_cli` 并编译 CLI 测试。
+- `cmake --build build --target liteim_tests -j2` 按预期失败于 `add_subdirectory given source "client_cli" which is not an existing directory`。
+
+实现确认：
+
+- `liteim_client_cli` 是 CLI helper 库，不被服务端 runtime 依赖；`liteim_cli` 是单独可执行入口。
+- `history private|group <conversation_id> [limit] [before_message_id]` 复用现有 `HistoryRequest` TLV：`ConversationType`、`ConversationId`、可选 `Limit`、可选 `MessageId`。
+- `offline [limit]` 复用 `OfflineMessagesRequest`，只在传入 limit 时写 `TlvType::Limit`。
+- `ProtocolClient` 第一版使用阻塞 socket；这是 CLI 调试工具的实现选择，不改变服务端非阻塞 Reactor 路线。
+- loopback 发送测试最初失败不是生产发送逻辑问题，而是测试在 server accept/read 线程 join 前读取 `packet_`；修正为先 `server.wait()` 再断言。
+- Step 42 不增加新的协议枚举、TLV 字段、MySQL schema、Redis key 或服务端 handler。

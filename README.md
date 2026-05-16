@@ -24,7 +24,7 @@ PersonaAgent is intentionally a separate Python service. LiteIM exposes the prot
 - MySQL C API wrapper with RAII connection ownership, prepared statements, a fixed-size connection pool, and users-table DAO access.
 - Custom TLV binary protocol with TCP sticky-packet / half-packet handling.
 - Safe cross-thread connection access through `EventLoop::runInLoop()` and `EventLoop::queueInLoop()`.
-- Future demo clients: CLI, Python E2E client, and Qt Widgets three-column chat client.
+- Command-line protocol debug client, future Python E2E client, and Qt Widgets three-column chat client.
 
 ## Architecture
 
@@ -81,6 +81,7 @@ Important boundaries:
 - `liteim_storage`: storage DTOs, the `IStorage` interface, `MySqlConnection`, `PreparedStatement`, `MySqlQueryResult`, `MySqlPool`, `ConnectionGuard`, `UserDao`, `AuthDao`, `MessageDao`, `OfflineMessageDao`, `FriendDao`, `GroupDao`, and `MySqlStorage` for MySQL-backed users, public friend profiles, groups, messages, offline messages, and history.
 - `liteim_cache`: cache DTOs, the `ICache` interface, `RedisClient`, `RedisPool`, `RedisConnectionGuard`, `OnlineStatusCache`, `UnreadCounter`, `LoginRateLimiter`, and `RedisCache` for Redis-backed online sessions, unread counters, and login failure limiting.
 - `liteim_service`: `SessionManager`, `OnlineService`, `MessageRouter`, `AuthService`, `FriendService`, `ChatService`, `GroupService`, `OfflineMessageService`, `HistoryService`, `HeartbeatService`, `BotGateway`, and `BotService`. `SessionManager` / `OnlineService` provide in-process user/session binding plus Redis-backed online-state synchronization, and runtime session close cleanup removes current online state through the business pool. `MessageRouter` parses request TLVs, dispatches handlers inline or through the business `ThreadPool`, and sends responses back through `Session::sendPacket()`. `AuthService` handles register/login with MySQL users, Redis login-failure limiting, PBKDF2-HMAC-SHA256 password hashing, and login-time session binding. `FriendService` handles add-friend and friend-list requests with MySQL friendships plus Redis-backed online-status fields. `ChatService` handles private-message requests by validating the logged-in sender, saving the message through `IStorage`, pushing to an in-process online receiver, or recording offline delivery plus unread count for an offline receiver. `GroupService` handles basic create/join/list group flows and group-message routing, saving group messages through `IStorage`, pushing to in-process online members, and recording offline delivery plus unread counts for offline members. If the message and offline row are already saved, Redis unread increment failure is logged but does not turn the sender response into a failure. `OfflineMessageService` handles client-triggered `OfflineMessagesRequest`, returns pending offline messages, marks the delivered batch, and clears Redis unread counters for the returned conversations. `HistoryService` handles `HistoryRequest`, validates that the logged-in user can read the private or group conversation, applies default/max cursor pagination limits, and returns repeated TLV message fields from `IStorage::getHistory()`. `HeartbeatService` handles `HeartbeatRequest` in the business pool, returns `HeartbeatResponse` for valid heartbeats, and refreshes Redis online TTL only for logged-in sessions. `BotService` recognizes the seed user `mira_bot` as a normal IM bot identity, filters bot offline/unread rows, and uses `EchoBotGateway` to create ordinary private/group echo replies. Redis TTL or unread refresh failure is logged as a degraded cache update when the message source of truth is already saved. Repeated login uses a kick-old-keep-new policy.
+- `liteim_client_cli`: command parsing, TLV `Packet` construction, debug packet formatting, and a blocking TCP protocol client used by the `liteim_cli` executable.
 
 ## Build And Test
 
@@ -105,14 +106,40 @@ Run the server executable:
 ./build/server/liteim_server
 ```
 
-The server starts a real `EventLoop + TcpServer` on the configured host and port, starts MySQL / Redis pools, starts the business `ThreadPool`, and wires incoming packets into `MessageRouter`. In the current Step 41 runtime, heartbeat requests are handled by `HeartbeatService`; register/login requests are handled by `AuthService`; add-friend and friend-list requests are handled by `FriendService`; private-message requests are handled by `ChatService`; group create/join/list/message requests are handled by `GroupService`; offline-message pull requests are handled by `OfflineMessageService`; history requests are handled by `HistoryService`; messages to or mentioning `mira_bot` are bridged to `BotService` / `EchoBotGateway`; and unknown or unsupported request types get `ErrorResponse`. Business handlers run in the business pool. Session close cleanup submits `OnlineService::unbindSession(session_id)` into the business pool so Redis online-state cleanup does not run in an I/O callback. The server handles `Ctrl-C` / `SIGTERM` through `signalfd`, stops `TcpServer` in the base loop thread, stops the business pool, closes MySQL / Redis pools, and exits cleanly.
+The server starts a real `EventLoop + TcpServer` on the configured host and port, starts MySQL / Redis pools, starts the business `ThreadPool`, and wires incoming packets into `MessageRouter`. In the current Step 42 runtime, heartbeat requests are handled by `HeartbeatService`; register/login requests are handled by `AuthService`; add-friend and friend-list requests are handled by `FriendService`; private-message requests are handled by `ChatService`; group create/join/list/message requests are handled by `GroupService`; offline-message pull requests are handled by `OfflineMessageService`; history requests are handled by `HistoryService`; messages to or mentioning `mira_bot` are bridged to `BotService` / `EchoBotGateway`; and unknown or unsupported request types get `ErrorResponse`. Business handlers run in the business pool. Session close cleanup submits `OnlineService::unbindSession(session_id)` into the business pool so Redis online-state cleanup does not run in an I/O callback. The server handles `Ctrl-C` / `SIGTERM` through `signalfd`, stops `TcpServer` in the base loop thread, stops the business pool, closes MySQL / Redis pools, and exits cleanly.
 
-Because Step 41 runtime starts real MySQL / Redis pools, start local dependencies before a bounded server smoke check:
+Because Step 42 runtime starts real MySQL / Redis pools, start local dependencies before a bounded server smoke check:
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d --wait
 timeout 1s ./build/server/liteim_server || test $? -eq 124
 ```
+
+Run the command-line protocol client:
+
+```bash
+./build/client_cli/liteim_cli --host 127.0.0.1 --port 9000
+```
+
+Useful CLI commands:
+
+```text
+register cli_alice secret CLI Alice
+login cli_alice secret
+add-friend 1002
+friends
+private 1002 hello bob
+create-group project room
+join-group 2001
+groups
+group 2001 hi @mira_bot
+history group 2001 20
+offline 20
+heartbeat
+quit
+```
+
+`liteim_cli` is a protocol debugging tool: it sends ordinary TLV requests, prints decoded response/push packets, and sends a background `HeartbeatRequest` every 30 seconds after connecting. It does not provide a curses UI, local persistence, or automatic reconnect in the first version.
 
 Configuration keys are parsed by `liteim::Config::loadFromFile()`. Network-facing defaults include:
 
@@ -135,6 +162,8 @@ Step 39 adds `HistoryService`, registers `HistoryRequest`, reads `ConversationTy
 Step 40 adds `HeartbeatService`, registers `HeartbeatRequest` on the business thread pool, returns `HeartbeatResponse` for valid heartbeats, and refreshes Redis `online:user:<user_id>` TTL only when the session is logged in. `HeartbeatResponse` means the server successfully received and processed a legal heartbeat packet; it does not guarantee Redis online TTL refresh succeeded. When Redis refresh fails, LiteIM logs a warning and relies on later heartbeats to recover the online-state TTL.
 
 Step 41 adds `BotGateway`, `EchoBotGateway`, and `BotService` for the seed user `mira_bot` (`user_id=9001`). The first C++ version keeps bot traffic on ordinary `PrivateMessageRequest` / `GroupMessageRequest`: private messages to `mira_bot` are saved, do not create bot offline/unread rows, and receive an ordinary `PrivateMessagePush` echo from `mira_bot`; group messages trigger a bot echo only when the text contains `@mira_bot` and `mira_bot` is a member of that group. Bot group replies are saved as ordinary group messages, pushed to online human members, and written as offline/unread only for offline human members.
+
+Step 42 adds `liteim_cli`, a command-line protocol debug client. It connects to `127.0.0.1:9000` by default, supports `--host` / `--port`, builds normal TLV packets for register/login/friend/private/group/history/offline/heartbeat commands, prints decoded server responses and push packets, and sends a periodic heartbeat every 30 seconds.
 
 Start MySQL and Redis:
 
@@ -198,7 +227,7 @@ The Step 23-27 MySQL integration tests, Step 31 `MySqlStorage` tests, Step 28-32
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d --wait
-ctest --test-dir build -R "MySql|UserDao|MessageDao|FriendGroupDao|MySqlStorage|Redis|OnlineStatusCache|UnreadCounter|LoginRateLimiter|RedisCache|SessionManager|OnlineService|AuthService|FriendService|ChatService|GroupService|OfflineMessageService|HistoryService|HeartbeatService|Bot" --output-on-failure
+ctest --test-dir build -R "MySql|UserDao|MessageDao|FriendGroupDao|MySqlStorage|Redis|OnlineStatusCache|UnreadCounter|LoginRateLimiter|RedisCache|SessionManager|OnlineService|AuthService|FriendService|ChatService|GroupService|OfflineMessageService|HistoryService|HeartbeatService|Bot|ClientCli" --output-on-failure
 ```
 
 Useful repository checks:
@@ -236,12 +265,14 @@ LiteIM/
 │   ├── storage/
 │   └── timer/
 ├── server/
+├── client_cli/
 ├── scripts/
 │   ├── init_mysql.sql
 │   └── seed_test_data.sql
 ├── tests/
 │   ├── base/
 │   ├── cache/
+│   ├── client_cli/
 │   ├── concurrency/
 │   ├── net/
 │   ├── protocol/
@@ -257,7 +288,7 @@ Directory conventions:
 
 - Public headers live under `include/liteim/<module>/`.
 - Library implementations live under `src/<module>/`.
-- Executable entry points live under `server/`, and future clients/tools belong in `client_cli/`, `client_qt/`, or `bench/`.
+- Executable entry points live under `server/` and `client_cli/`; future GUI clients/tools belong in `client_qt/` or `bench/`.
 - `tutorials/` contains per-step teaching notes.
 - `docs/debug_cases/` contains internal postmortems for useful bug and review hardening cases.
 

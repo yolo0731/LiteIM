@@ -2919,6 +2919,73 @@ TDD GREEN：
 
 - Step 41 提交需要排除进入本 Step 前已有的用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。其中 `GroupService` 文件同时包含 Step 41 必要行为改动，提交时必须精确 staging。
 
+收尾完成：
+
+- 提交完成：`feat(bot): add bot gateway and echo assistant user`。
+
+## 2026-05-16 Step 42 CLI Client
+
+本次进入 `Step 42：实现 CLI 测试客户端`。
+
+开始状态：
+
+- Step 41 已提交：`feat(bot): add bot gateway and echo assistant user`。
+- 工作区仍保留 Step 41 前已有的用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。本 Step 不应把这些注释改动混入提交。
+- Step 42 目标是先提供协议调试 CLI，不提前实现 Python E2E、bench、Qt 或 PersonaAgent。
+
+概念计划：
+
+- 新增 `client_cli/` 目录。
+- `liteim_client_cli` 静态 helper 库承载命令解析、TLV Packet 构造、Packet 描述和阻塞 TCP client。
+- `liteim_cli` 可执行文件负责解析 `--host` / `--port`，启动接收线程、心跳线程，并从 stdin 读取命令。
+- 第一版 CLI 采用普通文本命令和调试输出，不做 curses/TUI、本地状态数据库或复杂重连。
+
+TDD RED：
+
+- 新增 `tests/client_cli/cli_protocol_test.cpp`，覆盖 login/private/history 命令解析、push 描述输出，以及 `ProtocolClient` 连接本地 fake TCP server 并发送 heartbeat packet。
+- 更新根 `CMakeLists.txt` 和 `tests/CMakeLists.txt`。
+- `cmake --build build --target liteim_tests -j2` 按预期失败：`add_subdirectory given source "client_cli" which is not an existing directory`。
+
+代码完成：
+
+- 新增 `client_cli/CMakeLists.txt`，生成 `liteim_client_cli` 静态库和 `liteim_cli` 可执行文件。
+- 新增 `buildPacketFromLine()`，支持 register/login/add-friend/friends/private/create-group/join-group/groups/group/history/offline/heartbeat 命令构造普通 TLV `Packet`。
+- 新增 `describePacket()`，把 response / push 中常见 TLV 字段打印成人可读调试文本。
+- 新增 `ProtocolClient`，提供阻塞 TCP connect/send/read/close，`close()` 使用 `shutdown()` 方便退出时打断接收线程。
+- 新增 `client_cli/main.cpp`，支持 `--host` / `--port`、交互/stdin 命令、后台接收线程和 30 秒心跳线程。
+
+TDD GREEN：
+
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `./build/tests/liteim_tests --gtest_filter='ClientCli*'`：5/5 通过。
+- `cmake --build build --target liteim_cli -j2`：通过。
+- `./build/client_cli/liteim_cli --help`：通过，输出用法。
+
+文档完成：
+
+- 更新 `README.md`：记录 `liteim_cli`、命令示例、Step 42 runtime 和测试命令。
+- 新增 `tutorials/step42_cli_client.md`，按固定 0-10 模板讲解 CLI 边界、接口、运行流程、测试设计和面试追问。
+- 更新 `task_plan.md` / `findings.md` / `progress.md` 记录 Step 42 过程。
+
+最终验证：
+
+- `cmake --build build -j2`：通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：通过，MySQL / Redis healthy。
+- `ctest --test-dir build --output-on-failure`：通过，338/338 tests passed。
+- `git diff --check`：通过。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" tutorials/step42_cli_client.md README.md`：无输出。
+- `rg -n "^## " tutorials/step42_cli_client.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
+- `.gitkeep` 和旧 `server/net`、`server/protocol`、SQLite、`InMemoryStorage`、`step15_sqlite` 路径扫描无输出。
+- `timeout 2s ./build/server/liteim_server || test $? -eq 124`：通过，server 监听 `0.0.0.0:9000` 后收到 SIGTERM 并通过 signalfd 退出。
+
+收尾注意：
+
+- Step 42 提交需要继续排除进入本 Step 前已有的用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。
+
+收尾完成：
+
+- 提交完成：`feat(client): add command line im client`。
+
 ## 2026-05-16 Step 39 HistoryService
 
 本次进入 `Step 39: implement HistoryService recent history pagination`。

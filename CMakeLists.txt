@@ -36,4 +36,5 @@ FetchContent_MakeAvailable(spdlog)
 
 add_subdirectory(src)
 add_subdirectory(server)
+add_subdirectory(client_cli)
 add_subdirectory(tests)
