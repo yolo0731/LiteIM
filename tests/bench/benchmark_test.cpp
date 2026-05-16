@@ -37,6 +37,26 @@ TEST(BenchmarkOptionsTest, RejectsSingleConnectionPrivateBenchmark) {
     EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
 }
 
+TEST(BenchmarkOptionsTest, RejectsUsernamePrefixThatCanExceedMysqlUsernameLimit) {
+    const char* argv[] = {"liteim_bench", "--username-prefix", "abcdefghijklmnopqrstuvwxyz"};
+    liteim::bench::BenchmarkOptions options;
+
+    const auto status = liteim::bench::parseBenchmarkOptions(3, argv, options);
+
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
+}
+
+TEST(BenchmarkOptionsTest, RejectsMessageSizeAboveServiceTextLimit) {
+    const char* argv[] = {"liteim_bench", "--message-size", "8193"};
+    liteim::bench::BenchmarkOptions options;
+
+    const auto status = liteim::bench::parseBenchmarkOptions(3, argv, options);
+
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
+}
+
 TEST(BenchmarkStatsTest, ComputesNearestRankPercentiles) {
     std::vector<std::chrono::microseconds> latencies;
     for (std::uint64_t value = 1; value <= 100; ++value) {

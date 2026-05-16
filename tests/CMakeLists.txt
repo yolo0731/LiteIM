@@ -49,6 +49,7 @@ add_executable(liteim_tests
     service/offline_message_service_test.cpp
     service/history_service_test.cpp
     service/heartbeat_service_test.cpp
+    service/bot_service_test.cpp
     service/service_mock_boundary_test.cpp
     client_cli/cli_protocol_test.cpp
     bench/benchmark_test.cpp
@@ -87,19 +88,30 @@ set(LITEIM_INTEGRATION_TEST_FILTER
 
 gtest_discover_tests(liteim_tests
     TEST_FILTER "*-${LITEIM_INTEGRATION_TEST_FILTER}"
+    TEST_LIST LITEIM_UNIT_TESTS
     PROPERTIES LABELS unit
 )
+
 gtest_discover_tests(liteim_tests
     TEST_FILTER "${LITEIM_MYSQL_INTEGRATION_TEST_FILTER}"
-    PROPERTIES LABELS integration_mysql_docker
+    TEST_LIST LITEIM_MYSQL_INTEGRATION_TESTS
+    PROPERTIES LABELS integration
 )
+
 gtest_discover_tests(liteim_tests
     TEST_FILTER "${LITEIM_REDIS_INTEGRATION_TEST_FILTER}"
-    PROPERTIES LABELS integration_redis_docker
+    TEST_LIST LITEIM_REDIS_INTEGRATION_TESTS
+    PROPERTIES LABELS integration
 )
+
 gtest_discover_tests(liteim_tests
     TEST_FILTER "${LITEIM_MYSQL_REDIS_INTEGRATION_TEST_FILTER}"
-    PROPERTIES LABELS integration_mysql_redis_docker
+    TEST_LIST LITEIM_MYSQL_REDIS_INTEGRATION_TESTS
+    PROPERTIES LABELS integration
+)
+
+set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/ctest_gtest_labels.cmake
 )
 
 add_test(
@@ -118,6 +130,7 @@ if(Python3_Interpreter_FOUND)
         test_offline
         test_heartbeat
         test_backpressure
+        test_bot
     )
 
     foreach(e2e_test IN LISTS LITEIM_E2E_TESTS)

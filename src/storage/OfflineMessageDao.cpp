@@ -242,9 +242,15 @@ Status OfflineMessageDao::saveOfflineMessage(std::uint64_t user_id, std::uint64_
     return Status::ok();
 }
 
-Status OfflineMessageDao::getOfflineMessages(std::uint64_t user_id,
+Status OfflineMessageDao::getOfflineMessages(std::uint64_t user_id, std::uint32_t limit,
                                              std::vector<OfflineMessageRecord>& messages) {
     messages.clear();
+    if (user_id == 0U) {
+        return Status::error(ErrorCode::InvalidArgument, "user_id is invalid");
+    }
+    if (limit == 0U) {
+        return Status::error(ErrorCode::InvalidArgument, "offline message limit must be positive");
+    }
 
     ConnectionGuard guard;
     const auto acquire_status = pool_->acquire(acquire_timeout_, guard);
@@ -260,13 +266,18 @@ Status OfflineMessageDao::getOfflineMessages(std::uint64_t user_id,
                           "FROM offline_messages om "
                           "JOIN messages m ON m.message_id = om.message_id "
                           "WHERE om.user_id = ? AND om.delivered = 0 "
-                          "ORDER BY om.offline_message_id ASC");
+                          "ORDER BY om.offline_message_id ASC "
+                          "LIMIT ?");
     if (!prepare_status.isOk()) {
         return prepare_status;
     }
     const auto user_status = bindUint64(statement, 0, user_id, "user_id");
     if (!user_status.isOk()) {
         return user_status;
+    }
+    const auto limit_status = bindUint64(statement, 1, limit, "limit");
+    if (!limit_status.isOk()) {
+        return limit_status;
     }
 
     MySqlQueryResult result;

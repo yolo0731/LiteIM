@@ -38,7 +38,9 @@ public:
     MOCK_METHOD(Status, saveOfflineMessage, (std::uint64_t user_id, std::uint64_t message_id),
                 (override));
     MOCK_METHOD(Status, getOfflineMessages,
-                (std::uint64_t user_id, std::vector<OfflineMessageRecord>& messages), (override));
+                (std::uint64_t user_id, std::uint32_t limit,
+                 std::vector<OfflineMessageRecord>& messages),
+                (override));
     MOCK_METHOD(Status, markOfflineDelivered,
                 (std::uint64_t user_id, const std::vector<std::uint64_t>& message_ids),
                 (override));

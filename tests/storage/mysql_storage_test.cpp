@@ -190,7 +190,7 @@ TEST_F(MySqlStorageIntegrationTest, SaveMessageWithOfflineRecipientsCommitsBothT
     EXPECT_EQ(history.front().message_id, saved.message_id);
 
     std::vector<liteim::OfflineMessageRecord> pending;
-    ASSERT_TRUE(storage->getOfflineMessages(receiver.user_id, pending).isOk());
+    ASSERT_TRUE(storage->getOfflineMessages(receiver.user_id, 100, pending).isOk());
     ASSERT_EQ(pending.size(), 1U);
     EXPECT_EQ(pending.front().message.message_id, saved.message_id);
 }
@@ -233,7 +233,7 @@ TEST_F(MySqlStorageIntegrationTest, SaveMessageWithOfflineRecipientsDeduplicates
     EXPECT_GE(saved.message_id, 10000U);
 
     std::vector<liteim::OfflineMessageRecord> pending;
-    const auto offline_status = storage->getOfflineMessages(receiver.user_id, pending);
+    const auto offline_status = storage->getOfflineMessages(receiver.user_id, 100, pending);
     ASSERT_TRUE(offline_status.isOk()) << offline_status.message();
     ASSERT_EQ(pending.size(), 1U);
     EXPECT_EQ(pending.front().message.message_id, saved.message_id);

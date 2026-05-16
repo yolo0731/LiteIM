@@ -26,6 +26,20 @@
 
 namespace {
 
+bool addressSanitizerEnabled() {
+#if defined(__SANITIZE_ADDRESS__)
+    return true;
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+    return true;
+#else
+    return false;
+#endif
+#else
+    return false;
+#endif
+}
+
 class SoftFdLimitGuard {
 public:
     SoftFdLimitGuard() = default;
@@ -291,6 +305,10 @@ TEST(AcceptorTest, CloseFromNonOwnerThreadTerminates) {
 }
 
 TEST(AcceptorTest, FdExhaustionRejectsPendingConnectionWithoutLaterCallback) {
+    if (addressSanitizerEnabled()) {
+        GTEST_SKIP() << "ASan runtime keeps extra fds open; fd-exhaustion limit test is unstable";
+    }
+
     constexpr rlim_t kSoftFdLimit = 64;
     LoopThreadHandle handle;
     std::atomic_int accepted_count{0};

@@ -26,8 +26,6 @@ public:
 private:
     // 从 session 获取当前登录的 user_id
     Status currentUserId(const MessageRouter::RouterRequest& request, std::uint64_t& user_id);
-    // 把消息字段写进响应包,push到接收客户端和对发送客户端response都会用到，因为客户端需要知道消息 ID 和时间戳等信息
-    Status appendMessageFields(const MessageRecord& message, Packet& packet);
 
     // 三个依赖
     IStorage& storage_;

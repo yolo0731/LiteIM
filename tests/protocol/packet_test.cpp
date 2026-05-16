@@ -135,6 +135,16 @@ TEST(PacketTest, InvalidVersionReturnsError) {
     EXPECT_EQ(status.code(), liteim::ErrorCode::ParseError);
 }
 
+TEST(PacketTest, UnsupportedFlagsReturnError) {
+    auto header = liteim::PacketHeader{};
+    header.flags = 1;
+
+    const auto status = liteim::validateHeader(header);
+
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::ParseError);
+}
+
 TEST(PacketTest, OversizedBodyLengthReturnsError) {
     auto header = liteim::PacketHeader{};
     header.body_len = liteim::kMaxPacketBodyLength + 1;

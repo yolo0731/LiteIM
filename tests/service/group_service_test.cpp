@@ -403,7 +403,7 @@ public:
         return liteim::Status::ok();
     }
 
-    liteim::Status getOfflineMessages(std::uint64_t,
+    liteim::Status getOfflineMessages(std::uint64_t, std::uint32_t,
                                       std::vector<liteim::OfflineMessageRecord>&) override {
         return liteim::Status::ok();
     }
@@ -705,6 +705,39 @@ TEST_F(GroupServiceFixture, GroupMentionTriggersBotReplyWhenBotIsMemberAndFilter
     EXPECT_EQ(uint64Field(*alice_reply, liteim::TlvType::SenderId), 9001U);
 }
 
+TEST_F(GroupServiceFixture, GroupMentionDeliversToOnlineBotWithoutEchoFallback) {
+    const auto group = storage.addGroup(1001, "team");
+    storage.addMember(group.group_id, 1002);
+    storage.addMember(group.group_id, 9001);
+
+    auto alice = bindAlice();
+    RunningSession bot(7191);
+    ASSERT_TRUE(online.bindUser(9001, bot.session()).isOk());
+
+    auto request = requestFor(alice, liteim::MessageType::GroupMessageRequest,
+                              groupMessageBody(group.group_id, "hi @mira_bot online"));
+    liteim::Packet response;
+
+    const auto status = service_with_bot.handleGroupMessage(request, response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(response.header.msg_type, liteim::MessageType::GroupMessageResponse);
+    EXPECT_EQ(storage.save_message_calls, 1);
+    ASSERT_EQ(storage.saved_messages.size(), 1U);
+    EXPECT_EQ(storage.saved_messages.front().sender_id, 1001U);
+    EXPECT_EQ(storage.saved_messages.front().text, "hi @mira_bot online");
+    ASSERT_EQ(storage.last_offline_user_ids.size(), 1U);
+    EXPECT_EQ(storage.last_offline_user_ids.front(), 1002U);
+
+    const auto bot_push = readPacket(bot.peerFd(), 2s);
+    ASSERT_TRUE(bot_push.has_value());
+    EXPECT_EQ(bot_push->header.msg_type, liteim::MessageType::GroupMessagePush);
+    EXPECT_EQ(uint64Field(*bot_push, liteim::TlvType::MessageId), 9001U);
+    EXPECT_EQ(uint64Field(*bot_push, liteim::TlvType::SenderId), 1001U);
+    EXPECT_EQ(uint64Field(*bot_push, liteim::TlvType::ReceiverId), group.group_id);
+    EXPECT_EQ(stringField(*bot_push, liteim::TlvType::MessageText), "hi @mira_bot online");
+}
+
 TEST_F(GroupServiceFixture, GroupMentionDoesNotTriggerWhenBotIsNotGroupMember) {
     const auto group = storage.addGroup(1001, "team");
     storage.addMember(group.group_id, 1003);
@@ -779,6 +812,19 @@ TEST_F(GroupServiceFixture, CreateGroupUsesLoggedInUserAndReturnsGroupFields) {
     EXPECT_EQ(stringField(response, liteim::TlvType::GroupName), "project room");
 }
 
+TEST_F(GroupServiceFixture, CreateGroupRejectsNameAboveSchemaLimit) {
+    auto session = bindAlice();
+    auto request = requestFor(session, liteim::MessageType::CreateGroupRequest,
+                              createGroupBody(std::string(129, 'g')));
+    liteim::Packet response;
+
+    const auto status = service.handleCreateGroup(request, response);
+
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
+    EXPECT_EQ(storage.create_group_calls, 0);
+}
+
 TEST_F(GroupServiceFixture, JoinGroupAddsCurrentUserAndReturnsGroupFields) {
     const auto group = storage.addGroup(1001, "backend");
     auto session = bindUser(1002, 7102);
@@ -831,6 +877,21 @@ TEST_F(GroupServiceFixture, GroupMessageRejectsNonMember) {
     auto session = bindUser(1002, 7102);
     auto request = requestFor(session, liteim::MessageType::GroupMessageRequest,
                               groupMessageBody(group.group_id, "hello group"));
+    liteim::Packet response;
+
+    const auto status = service.handleGroupMessage(request, response);
+
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
+    EXPECT_EQ(storage.save_message_calls, 0);
+    EXPECT_EQ(cache.incr_unread_calls, 0);
+}
+
+TEST_F(GroupServiceFixture, GroupMessageRejectsTextAboveServiceLimit) {
+    const auto group = storage.addGroup(1001, "team");
+    auto sender = bindAlice();
+    auto request = requestFor(sender, liteim::MessageType::GroupMessageRequest,
+                              groupMessageBody(group.group_id, std::string(8193, 'x')));
     liteim::Packet response;
 
     const auto status = service.handleGroupMessage(request, response);

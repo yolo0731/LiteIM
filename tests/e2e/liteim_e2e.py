@@ -19,6 +19,13 @@ PACKET_HEADER = struct.Struct("!IBBHQI")
 TLV_HEADER = struct.Struct("!HI")
 MAX_PACKET_BODY = 1024 * 1024
 SMALL_USER_ID_CONVERSATION_BASE = 10000
+STRICT_E2E = os.environ.get("LITEIM_E2E_STRICT") == "1"
+
+
+def _skip_or_fail(message: str) -> None:
+    if STRICT_E2E:
+        raise AssertionError(message)
+    raise unittest.SkipTest(message)
 
 
 class MessageType(enum.IntEnum):
@@ -231,10 +238,15 @@ class LiteIMServer:
             return
 
         if not self.server_bin.exists():
-            raise unittest.SkipTest(f"liteim_server was not found: {self.server_bin}")
+            _skip_or_fail(f"liteim_server was not found: {self.server_bin}")
+
+        command = [str(self.server_bin)]
+        config_path = os.environ.get("LITEIM_E2E_SERVER_CONFIG")
+        if config_path:
+            command.extend(["--config", config_path])
 
         self.process = subprocess.Popen(
-            [str(self.server_bin)],
+            command,
             cwd=str(Path(__file__).resolve().parents[2]),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -258,13 +270,13 @@ class LiteIMServer:
         while time.monotonic() < deadline:
             if self.process is not None and self.process.poll() is not None:
                 output = self.process.stdout.read() if self.process.stdout is not None else ""
-                raise unittest.SkipTest(f"liteim_server exited before accepting connections: {output}")
+                _skip_or_fail(f"liteim_server exited before accepting connections: {output}")
             try:
                 with socket.create_connection((self.host, self.port), timeout=0.2):
                     return
             except OSError:
                 time.sleep(0.05)
-        raise unittest.SkipTest("liteim_server did not become ready on the default E2E port")
+        _skip_or_fail("liteim_server did not become ready on the default E2E port")
 
 
 class LiteIMClient:

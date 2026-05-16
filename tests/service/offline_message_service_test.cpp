@@ -183,11 +183,15 @@ public:
         return liteim::Status::ok();
     }
 
-    liteim::Status getOfflineMessages(std::uint64_t user_id,
+    liteim::Status getOfflineMessages(std::uint64_t user_id, std::uint32_t limit,
                                       std::vector<liteim::OfflineMessageRecord>& messages) override {
         ++get_offline_calls;
         last_get_user_id = user_id;
+        last_get_limit = limit;
         messages = pending[user_id];
+        if (messages.size() > limit) {
+            messages.resize(limit);
+        }
         return liteim::Status::ok();
     }
 
@@ -228,6 +232,7 @@ public:
     std::vector<std::uint64_t> last_mark_message_ids;
     std::uint64_t last_get_user_id{0};
     std::uint64_t last_mark_user_id{0};
+    std::uint32_t last_get_limit{0};
     int get_offline_calls{0};
     int mark_delivered_calls{0};
 };
@@ -281,6 +286,9 @@ public:
     liteim::Status clearUnread(const liteim::UnreadKey& key) override {
         ++clear_unread_calls;
         cleared_unread_keys.push_back(key);
+        if (fail_clear_unread) {
+            return liteim::Status::error(liteim::ErrorCode::IoError, "redis clear failed");
+        }
         return liteim::Status::ok();
     }
 
@@ -302,6 +310,7 @@ public:
     std::unordered_map<std::uint64_t, liteim::OnlineSession> online_users;
     std::vector<liteim::UnreadKey> cleared_unread_keys;
     int clear_unread_calls{0};
+    bool fail_clear_unread{false};
 };
 
 class OfflineMessageServiceFixture : public ::testing::Test {
@@ -512,6 +521,7 @@ TEST_F(OfflineMessageServiceFixture, OfflineMessagesReturnPendingRowsMarkDeliver
     EXPECT_EQ(response.header.msg_type, liteim::MessageType::OfflineMessagesResponse);
     EXPECT_EQ(storage.get_offline_calls, 1);
     EXPECT_EQ(storage.last_get_user_id, 1001U);
+    EXPECT_EQ(storage.last_get_limit, 100U);
     EXPECT_EQ(storage.mark_delivered_calls, 1);
     EXPECT_EQ(storage.last_mark_user_id, 1001U);
     EXPECT_EQ(storage.last_mark_message_ids, (std::vector<std::uint64_t>{5001, 5002}));
@@ -559,10 +569,30 @@ TEST_F(OfflineMessageServiceFixture, OfflineMessagesLimitIsCappedByServiceOption
     const auto status = limited_service.handleOfflineMessages(request, response);
 
     ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(storage.last_get_limit, 2U);
     EXPECT_EQ(uint64Fields(response, liteim::TlvType::MessageId),
               (std::vector<std::uint64_t>{5001, 5002}));
     EXPECT_EQ(storage.last_mark_message_ids, (std::vector<std::uint64_t>{5001, 5002}));
     EXPECT_EQ(cache.clear_unread_calls, 1);
+}
+
+TEST_F(OfflineMessageServiceFixture, ClearUnreadFailureDoesNotBlockDeliveredMark) {
+    cache.fail_clear_unread = true;
+    auto session = bindAlice();
+    storage.pending[1001] = {
+        makeOfflineRecord(1, 1001, liteim::ConversationType::kPrivate, 10011002, 5001, 1002, 1001,
+                          "hello alice", 1700000000000LL),
+    };
+
+    auto request = requestFor(session, offlineRequestBody());
+    liteim::Packet response;
+    const auto status = service.handleOfflineMessages(request, response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(response.header.msg_type, liteim::MessageType::OfflineMessagesResponse);
+    EXPECT_EQ(cache.clear_unread_calls, 1);
+    EXPECT_EQ(storage.mark_delivered_calls, 1);
+    EXPECT_EQ(storage.last_mark_message_ids, (std::vector<std::uint64_t>{5001}));
 }
 
 TEST_F(OfflineMessageServiceFixture, OfflineMessagesRejectZeroLimit) {
@@ -618,7 +648,7 @@ TEST_F(OfflineMessageServiceIntegrationTest, PullMarksDeliveredAndClearsRedisUnr
               (std::vector<std::string>{message.text}));
 
     std::vector<liteim::OfflineMessageRecord> pending;
-    ASSERT_TRUE(storage->getOfflineMessages(receiver.user_id, pending).isOk());
+    ASSERT_TRUE(storage->getOfflineMessages(receiver.user_id, 100, pending).isOk());
     EXPECT_TRUE(pending.empty());
 
     unread_count = 99;

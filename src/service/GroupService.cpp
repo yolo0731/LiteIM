@@ -4,6 +4,8 @@
 #include "liteim/base/Logger.hpp"
 #include "liteim/protocol/TlvCodec.hpp"
 #include "liteim/service/BotService.hpp"
+#include "liteim/service/MessagePacketBuilder.hpp"
+#include "liteim/service/Validation.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -31,10 +33,6 @@ Status emptyMessageTextStatus() {
 
 Status notGroupMemberStatus() {
     return Status::error(ErrorCode::InvalidArgument, "sender is not a group member");
-}
-
-Status appendConversationType(ConversationType type, Packet& packet) {
-    return appendUint64(TlvType::ConversationType, static_cast<std::uint64_t>(type), packet.body);
 }
 
 // 判断某个用户是不是群成员
@@ -107,6 +105,11 @@ Status GroupService::handleCreateGroup(const MessageRouter::RouterRequest& reque
     }
     if (group_name.empty()) {
         return emptyGroupNameStatus();
+    }
+    const auto group_name_length_status =
+        validateMaxBytes(group_name, kMaxGroupNameBytes, "group name");
+    if (!group_name_length_status.isOk()) {
+        return group_name_length_status;
     }
 
     GroupRecord created_group;
@@ -210,6 +213,11 @@ Status GroupService::handleGroupMessage(const MessageRouter::RouterRequest& requ
     if (message_text.empty()) {
         return emptyMessageTextStatus();
     }
+    const auto text_length_status =
+        validateMaxBytes(message_text, kMaxMessageTextBytes, "message text");
+    if (!text_length_status.isOk()) {
+        return text_length_status;
+    }
 
     // 确认群存在
     GroupRecord group;
@@ -231,12 +239,10 @@ Status GroupService::handleGroupMessage(const MessageRouter::RouterRequest& requ
     // 区分在线成员和离线成员，在线成员直接推送消息，离线成员把消息存到离线消息表里，并在缓存里增加未读计数
     std::vector<Session::Ptr> online_sessions;
     std::vector<std::uint64_t> offline_user_ids;
+    bool online_bot_member = false;
     // 跳过发送者自己
     for (const auto& member : members) {
         if (member.user_id == sender_id) {
-            continue;
-        }
-        if (bot_service_ != nullptr && bot_service_->isBotUser(member.user_id)) {
             continue;
         }
 
@@ -245,7 +251,14 @@ Status GroupService::handleGroupMessage(const MessageRouter::RouterRequest& requ
             online_service_.getSessionByUser(member.user_id, member_session);
         // 在线成员，指针放进 online_sessions，后面保存消息后直接推送
         if (session_status.isOk()) {
+            if (bot_service_ != nullptr && bot_service_->isBotUser(member.user_id)) {
+                online_bot_member = true;
+            }
             online_sessions.push_back(std::move(member_session));
+            continue;
+        }
+        if (bot_service_ != nullptr && bot_service_->isBotUser(member.user_id) &&
+            session_status.code() == ErrorCode::NotFound) {
             continue;
         }
         // 离线成员，user_id 放进 offline_user_ids，后面存离线消息和增加未读计数
@@ -297,7 +310,8 @@ Status GroupService::handleGroupMessage(const MessageRouter::RouterRequest& requ
         }
     }
 
-    if (bot_service_ != nullptr && bot_service_->shouldHandleGroupMention(saved_message, members)) {
+    if (!online_bot_member && bot_service_ != nullptr &&
+        bot_service_->shouldHandleGroupMention(saved_message, members)) {
         const auto bot_status = bot_service_->handleGroupMention(saved_message, members);
         if (!bot_status.isOk()) {
             return bot_status;
@@ -330,37 +344,6 @@ Status GroupService::appendGroupFields(const GroupRecord& group, Packet& packet)
         return id_status;
     }
     return appendString(TlvType::GroupName, group.group_name, packet.body);
-}
-
-Status GroupService::appendMessageFields(const MessageRecord& message, Packet& packet) {
-    const auto message_status = appendUint64(TlvType::MessageId, message.message_id, packet.body);
-    if (!message_status.isOk()) {
-        return message_status;
-    }
-    const auto type_status = appendConversationType(message.conversation.type, packet);
-    if (!type_status.isOk()) {
-        return type_status;
-    }
-    const auto conversation_status =
-        appendUint64(TlvType::ConversationId, message.conversation.id, packet.body);
-    if (!conversation_status.isOk()) {
-        return conversation_status;
-    }
-    const auto sender_status = appendUint64(TlvType::SenderId, message.sender_id, packet.body);
-    if (!sender_status.isOk()) {
-        return sender_status;
-    }
-    const auto receiver_status =
-        appendUint64(TlvType::ReceiverId, message.receiver_id, packet.body);
-    if (!receiver_status.isOk()) {
-        return receiver_status;
-    }
-    const auto text_status = appendString(TlvType::MessageText, message.text, packet.body);
-    if (!text_status.isOk()) {
-        return text_status;
-    }
-    return appendUint64(TlvType::TimestampMs, static_cast<std::uint64_t>(message.created_at_ms),
-                        packet.body);
 }
 
 }  // namespace liteim

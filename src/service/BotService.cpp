@@ -2,7 +2,7 @@
 
 #include "liteim/base/ErrorCode.hpp"
 #include "liteim/base/Logger.hpp"
-#include "liteim/protocol/TlvCodec.hpp"
+#include "liteim/service/MessagePacketBuilder.hpp"
 
 #include <algorithm>
 #include <utility>
@@ -13,41 +13,6 @@ namespace {
 
 Status emptyBotReplyStatus() {
     return Status::error(ErrorCode::InvalidArgument, "bot reply text must not be empty");
-}
-
-Status appendConversationType(ConversationType type, Packet& packet) {
-    return appendUint64(TlvType::ConversationType, static_cast<std::uint64_t>(type), packet.body);
-}
-
-Status appendMessageFields(const MessageRecord& message, Packet& packet) {
-    const auto message_status = appendUint64(TlvType::MessageId, message.message_id, packet.body);
-    if (!message_status.isOk()) {
-        return message_status;
-    }
-    const auto type_status = appendConversationType(message.conversation.type, packet);
-    if (!type_status.isOk()) {
-        return type_status;
-    }
-    const auto conversation_status =
-        appendUint64(TlvType::ConversationId, message.conversation.id, packet.body);
-    if (!conversation_status.isOk()) {
-        return conversation_status;
-    }
-    const auto sender_status = appendUint64(TlvType::SenderId, message.sender_id, packet.body);
-    if (!sender_status.isOk()) {
-        return sender_status;
-    }
-    const auto receiver_status =
-        appendUint64(TlvType::ReceiverId, message.receiver_id, packet.body);
-    if (!receiver_status.isOk()) {
-        return receiver_status;
-    }
-    const auto text_status = appendString(TlvType::MessageText, message.text, packet.body);
-    if (!text_status.isOk()) {
-        return text_status;
-    }
-    return appendUint64(TlvType::TimestampMs, static_cast<std::uint64_t>(message.created_at_ms),
-                        packet.body);
 }
 
 Status sendMessagePush(const Session::Ptr& session, MessageType type, const MessageRecord& message) {
@@ -152,7 +117,14 @@ Status BotService::handlePrivateMessageToBot(const MessageRecord& user_message,
     if (!save_status.isOk()) {
         return save_status;
     }
-    return sendMessagePush(sender_session, MessageType::PrivateMessagePush, saved_message);
+    const auto send_status =
+        sendMessagePush(sender_session, MessageType::PrivateMessagePush, saved_message);
+    if (!send_status.isOk()) {
+        Logger::get()->warn(
+            "Failed to push private bot reply to user {} after message {} was saved: {}",
+            user_message.sender_id, saved_message.message_id, send_status.message());
+    }
+    return Status::ok();
 }
 
 Status BotService::handleGroupMention(const MessageRecord& user_message,
@@ -210,7 +182,9 @@ Status BotService::handleGroupMention(const MessageRecord& user_message,
         const auto send_status =
             sendMessagePush(session, MessageType::GroupMessagePush, saved_message);
         if (!send_status.isOk()) {
-            return send_status;
+            Logger::get()->warn(
+                "Failed to push group bot reply for conversation {} after message {} was saved: {}",
+                saved_message.conversation.id, saved_message.message_id, send_status.message());
         }
     }
     return Status::ok();

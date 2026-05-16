@@ -28,7 +28,8 @@ public:
     Status saveOfflineMessage(std::uint64_t user_id, std::uint64_t message_id);
 
     // 获取用户的离线消息列表，按照 offline_message_id 升序排列
-    Status getOfflineMessages(std::uint64_t user_id, std::vector<OfflineMessageRecord>& messages);
+    Status getOfflineMessages(std::uint64_t user_id, std::uint32_t limit,
+                              std::vector<OfflineMessageRecord>& messages);
 
     // 标记离线消息已送达，message_ids 是要标记为已送达的消息 ID 列表
     // 这个函数会将 offline_messages 表中 user_id 对应的这些 message_id 的记录的 delivered 字段更新为 1，并设置 delivered_at_ms 为当前时间戳，表示这些消息已经成功投递给用户了。但是这不会删除offline_messages 表这些记录

@@ -9,6 +9,7 @@ add_library(liteim_service STATIC
     GroupService.cpp
     HeartbeatService.cpp
     HistoryService.cpp
+    MessagePacketBuilder.cpp
     MessageRouter.cpp
     OfflineMessageService.cpp
     OnlineService.cpp

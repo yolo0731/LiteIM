@@ -53,6 +53,24 @@ Config Config::defaults() {
     return Config{};
 }
 
+Status Config::loadServerConfig(int argc, char* argv[], const std::filesystem::path& default_path,
+                                Config& config) {
+    config = Config::defaults();
+    if (argc == 1) {
+        if (std::filesystem::exists(default_path)) {
+            return config.loadFromFile(default_path);
+        }
+        return Status::ok();
+    }
+
+    if (argc == 3 && argv != nullptr && std::string(argv[1]) == "--config") {
+        return config.loadFromFile(argv[2]);
+    }
+
+    return Status::error(ErrorCode::InvalidArgument,
+                         "usage: liteim_server [--config path]");
+}
+
 Status Config::loadFromFile(const std::filesystem::path& path) {
     std::ifstream input(path);
     if (!input.is_open()) {

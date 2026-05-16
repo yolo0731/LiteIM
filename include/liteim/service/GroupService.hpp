@@ -34,8 +34,6 @@ private:
     Status currentUserId(const MessageRouter::RouterRequest& request, std::uint64_t& user_id);
     // 把群信息写到响应的body里返回给客户端
     Status appendGroupFields(const GroupRecord& group, Packet& packet);
-    // 把消息信息写到响应的body里返回给客户端
-    Status appendMessageFields(const MessageRecord& message, Packet& packet);
 
     IStorage& storage_;
     ICache& cache_;

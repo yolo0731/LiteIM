@@ -97,7 +97,7 @@ public:
     }
 
     liteim::Status
-    getOfflineMessages(std::uint64_t,
+    getOfflineMessages(std::uint64_t, std::uint32_t,
                        std::vector<liteim::OfflineMessageRecord>& messages) override {
         messages.push_back(liteim::OfflineMessageRecord{1, 42, liteim::MessageRecord{}, 300});
         return liteim::Status::ok();

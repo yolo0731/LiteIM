@@ -182,7 +182,7 @@ public:
         return liteim::Status::ok();
     }
 
-    liteim::Status getOfflineMessages(std::uint64_t,
+    liteim::Status getOfflineMessages(std::uint64_t, std::uint32_t,
                                       std::vector<liteim::OfflineMessageRecord>&) override {
         return liteim::Status::ok();
     }
@@ -458,6 +458,49 @@ TEST_F(AuthServiceFixture, DuplicateUsernameRegisterReturnsAlreadyExists) {
     EXPECT_FALSE(status.isOk());
     EXPECT_EQ(status.code(), liteim::ErrorCode::AlreadyExists);
     EXPECT_EQ(storage.create_user_calls, 1);
+}
+
+TEST_F(AuthServiceFixture, RegisterRejectsFieldsLongerThanServiceLimits) {
+    auto session = makeSession(loop, 5001);
+    liteim::Packet response;
+
+    auto long_username_request =
+        requestFor(session, liteim::MessageType::RegisterRequest,
+                   authBody(std::string(65, 'u'), "secret", std::optional<std::string>("Alice")));
+    auto status = service.handleRegister(long_username_request, response);
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
+
+    auto long_password_request =
+        requestFor(session, liteim::MessageType::RegisterRequest,
+                   authBody("alice_long_pw", std::string(129, 'p'),
+                            std::optional<std::string>("Alice")));
+    status = service.handleRegister(long_password_request, response);
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
+
+    auto long_nickname_request =
+        requestFor(session, liteim::MessageType::RegisterRequest,
+                   authBody("alice_long_nick", "secret",
+                            std::optional<std::string>(std::string(65, 'n'))));
+    status = service.handleRegister(long_nickname_request, response);
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
+    EXPECT_EQ(storage.create_user_calls, 0);
+}
+
+TEST_F(AuthServiceFixture, LoginRejectsFieldsLongerThanServiceLimitsBeforeLimiter) {
+    auto session = makeSession(loop, 5001);
+    auto request =
+        requestFor(session, liteim::MessageType::LoginRequest,
+                   authBody(std::string(65, 'u'), std::string(129, 'p')));
+    liteim::Packet response;
+
+    const auto status = service.handleLogin(request, response);
+
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
+    EXPECT_TRUE(cache.login_keys.empty());
 }
 
 TEST_F(AuthServiceFixture, LoginWithCorrectPasswordBindsSessionWritesOnlineAndClearsFailures) {

@@ -446,9 +446,9 @@ Status MySqlStorage::saveOfflineMessage(std::uint64_t user_id, std::uint64_t mes
     return offline_message_dao_.saveOfflineMessage(user_id, message_id);
 }
 
-Status MySqlStorage::getOfflineMessages(std::uint64_t user_id,
+Status MySqlStorage::getOfflineMessages(std::uint64_t user_id, std::uint32_t limit,
                                         std::vector<OfflineMessageRecord>& messages) {
-    return offline_message_dao_.getOfflineMessages(user_id, messages);
+    return offline_message_dao_.getOfflineMessages(user_id, limit, messages);
 }
 
 Status MySqlStorage::markOfflineDelivered(std::uint64_t user_id,

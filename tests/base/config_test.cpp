@@ -147,3 +147,52 @@ TEST(ConfigTest, ZeroHighWaterMarkFails) {
 
     std::filesystem::remove(path);
 }
+
+TEST(ConfigTest, LoadServerConfigUsesExplicitConfigPath) {
+    const auto path = writeTempConfig("server.port = 10090\n");
+    const char* argv_const[] = {"liteim_server", "--config", path.c_str()};
+    auto* argv = const_cast<char**>(argv_const);
+    liteim::Config config;
+
+    const auto status = liteim::Config::loadServerConfig(3, argv, "config/missing.conf", config);
+
+    EXPECT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(config.server_port, 10090);
+    std::filesystem::remove(path);
+}
+
+TEST(ConfigTest, LoadServerConfigUsesDefaultFileWhenPresent) {
+    const auto path = writeTempConfig("server.port = 10091\n");
+    const char* argv_const[] = {"liteim_server"};
+    auto* argv = const_cast<char**>(argv_const);
+    liteim::Config config;
+
+    const auto status = liteim::Config::loadServerConfig(1, argv, path, config);
+
+    EXPECT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(config.server_port, 10091);
+    std::filesystem::remove(path);
+}
+
+TEST(ConfigTest, LoadServerConfigFallsBackWhenDefaultFileIsMissing) {
+    const char* argv_const[] = {"liteim_server"};
+    auto* argv = const_cast<char**>(argv_const);
+    liteim::Config config;
+
+    const auto status =
+        liteim::Config::loadServerConfig(1, argv, "/tmp/liteim_missing_default.conf", config);
+
+    EXPECT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(config.server_port, 9000);
+}
+
+TEST(ConfigTest, LoadServerConfigFailsForUnknownArguments) {
+    const char* argv_const[] = {"liteim_server", "--bad"};
+    auto* argv = const_cast<char**>(argv_const);
+    liteim::Config config;
+
+    const auto status = liteim::Config::loadServerConfig(2, argv, "config/missing.conf", config);
+
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
+}

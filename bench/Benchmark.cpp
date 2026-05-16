@@ -3,6 +3,7 @@
 #include "ClientCli.hpp"
 #include "liteim/base/ErrorCode.hpp"
 #include "liteim/protocol/MessageType.hpp"
+#include "liteim/protocol/MessageLimits.hpp"
 #include "liteim/protocol/Packet.hpp"
 #include "liteim/protocol/TlvCodec.hpp"
 
@@ -76,14 +77,17 @@ Status validateOptions(const BenchmarkOptions& options) {
     if (options.message_size == 0) {
         return invalidOption("message size must be positive");
     }
-    if (options.message_size > 900U * 1024U) {
-        return invalidOption("message size must be <= 900 KiB");
+    if (options.message_size > liteim::kMaxMessageTextBytes) {
+        return invalidOption("message size must be <= 8192 bytes");
     }
     if (options.duration_seconds == 0) {
         return invalidOption("duration seconds must be positive");
     }
     if (options.username_prefix.empty()) {
         return invalidOption("username prefix must not be empty");
+    }
+    if (options.username_prefix.size() > 24U) {
+        return invalidOption("username prefix must be <= 24 characters");
     }
     if (options.password.empty()) {
         return invalidOption("password must not be empty");

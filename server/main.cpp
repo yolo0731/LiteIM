@@ -23,10 +23,17 @@
 
 #include <chrono>
 #include <csignal>
+#include <iostream>
 #include <vector>
 
-int main() {
-    const auto config = liteim::Config::defaults();
+int main(int argc, char* argv[]) {
+    liteim::Config config;
+    const auto config_status =
+        liteim::Config::loadServerConfig(argc, argv, "config/liteim.conf", config);
+    if (!config_status.isOk()) {
+        std::cerr << "Failed to load LiteIM config: " << config_status.message() << '\n';
+        return 1;
+    }
     liteim::Logger::init(liteim::parseLogLevel(config.log_level));
 
     liteim::EventLoop loop;

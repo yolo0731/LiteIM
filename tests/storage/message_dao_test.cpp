@@ -203,7 +203,7 @@ TEST_F(MessageDaoIntegrationTest, OfflineMessageSaveFetchAndDeliveredFlow) {
     ASSERT_TRUE(save_status.isOk()) << save_status.message();
 
     std::vector<liteim::OfflineMessageRecord> pending;
-    const auto fetch_status = offline_message_dao->getOfflineMessages(receiver.user_id, pending);
+    const auto fetch_status = offline_message_dao->getOfflineMessages(receiver.user_id, 100, pending);
     ASSERT_TRUE(fetch_status.isOk()) << fetch_status.message();
     ASSERT_EQ(pending.size(), 1U);
     EXPECT_GE(pending.front().offline_message_id, 10000U);
@@ -217,7 +217,8 @@ TEST_F(MessageDaoIntegrationTest, OfflineMessageSaveFetchAndDeliveredFlow) {
     ASSERT_TRUE(mark_status.isOk()) << mark_status.message();
 
     pending.clear();
-    const auto refetch_status = offline_message_dao->getOfflineMessages(receiver.user_id, pending);
+    const auto refetch_status =
+        offline_message_dao->getOfflineMessages(receiver.user_id, 100, pending);
     ASSERT_TRUE(refetch_status.isOk()) << refetch_status.message();
     EXPECT_TRUE(pending.empty());
 }

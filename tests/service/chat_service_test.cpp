@@ -312,7 +312,7 @@ public:
         return liteim::Status::ok();
     }
 
-    liteim::Status getOfflineMessages(std::uint64_t,
+    liteim::Status getOfflineMessages(std::uint64_t, std::uint32_t,
                                       std::vector<liteim::OfflineMessageRecord>&) override {
         return liteim::Status::ok();
     }
@@ -524,6 +524,33 @@ TEST_F(ChatServiceFixture, PrivateMessageToBotSavesOriginalWithoutBotOfflineUnre
     EXPECT_EQ(stringField(*push, liteim::TlvType::MessageText), "Echo: hello mira");
 }
 
+TEST_F(ChatServiceFixture, PrivateMessageToOnlineBotIsDeliveredAsNormalUserWithoutEchoFallback) {
+    auto sender = bindAlice();
+    RunningSession bot(7901);
+    ASSERT_TRUE(online.bindUser(9001, bot.session()).isOk());
+
+    auto request = requestFor(sender, liteim::MessageType::PrivateMessageRequest,
+                              privateMessageBody(9001, "hello online bot"));
+    liteim::Packet response;
+
+    const auto status = service_with_bot.handlePrivateMessage(request, response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(response.header.msg_type, liteim::MessageType::PrivateMessageResponse);
+    EXPECT_EQ(storage.save_message_calls, 1);
+    ASSERT_EQ(storage.saved_messages.size(), 1U);
+    EXPECT_TRUE(storage.last_offline_user_ids.empty());
+    EXPECT_EQ(cache.incr_unread_calls, 0);
+
+    const auto push = readPacket(bot.peerFd(), 2s);
+    ASSERT_TRUE(push.has_value());
+    EXPECT_EQ(push->header.msg_type, liteim::MessageType::PrivateMessagePush);
+    EXPECT_EQ(uint64Field(*push, liteim::TlvType::MessageId), 5001U);
+    EXPECT_EQ(uint64Field(*push, liteim::TlvType::SenderId), 1001U);
+    EXPECT_EQ(uint64Field(*push, liteim::TlvType::ReceiverId), 9001U);
+    EXPECT_EQ(stringField(*push, liteim::TlvType::MessageText), "hello online bot");
+}
+
 TEST_F(ChatServiceFixture, PrivateMessageToNormalUserKeepsOfflineUnreadWhenBotEnabled) {
     auto session = bindAlice();
     auto request = requestFor(session, liteim::MessageType::PrivateMessageRequest,
@@ -564,6 +591,20 @@ TEST_F(ChatServiceFixture, PrivateMessageRequiresExistingReceiver) {
 
     EXPECT_FALSE(status.isOk());
     EXPECT_EQ(status.code(), liteim::ErrorCode::NotFound);
+    EXPECT_EQ(storage.save_message_calls, 0);
+    EXPECT_EQ(cache.incr_unread_calls, 0);
+}
+
+TEST_F(ChatServiceFixture, PrivateMessageRejectsTextAboveServiceLimit) {
+    auto session = bindAlice();
+    auto request = requestFor(session, liteim::MessageType::PrivateMessageRequest,
+                              privateMessageBody(1002, std::string(8193, 'x')));
+    liteim::Packet response;
+
+    const auto status = service.handlePrivateMessage(request, response);
+
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
     EXPECT_EQ(storage.save_message_calls, 0);
     EXPECT_EQ(cache.incr_unread_calls, 0);
 }

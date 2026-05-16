@@ -1,7 +1,9 @@
 #include "liteim/service/OfflineMessageService.hpp"
 
 #include "liteim/base/ErrorCode.hpp"
+#include "liteim/base/Logger.hpp"
 #include "liteim/protocol/TlvCodec.hpp"
+#include "liteim/service/MessagePacketBuilder.hpp"
 
 #include <algorithm>
 #include <stdexcept>
@@ -20,11 +22,6 @@ Status notLoggedInStatus() {
 Status invalidLimitStatus() {
     return Status::error(ErrorCode::InvalidArgument, "offline message limit must be positive");
 }
-// 把会话类型写进 TLV body
-Status appendConversationType(ConversationType type, Packet& packet) {
-    return appendUint64(TlvType::ConversationType, static_cast<std::uint64_t>(type), packet.body);
-}
-
 bool sameConversation(const ConversationKey& lhs, const ConversationKey& rhs) {
     return lhs.type == rhs.type && lhs.id == rhs.id;
 }
@@ -34,38 +31,6 @@ bool containsConversation(const std::vector<ConversationKey>& conversations,
     return std::any_of(
         conversations.begin(), conversations.end(),
         [&](const ConversationKey& item) { return sameConversation(item, conversation); });
-}
-
-// 把一条 MessageRecord 编码成多个 TLV 字段，写进 packet.body
-Status appendMessageFields(const MessageRecord& message, Packet& packet) {
-    const auto message_status = appendUint64(TlvType::MessageId, message.message_id, packet.body);
-    if (!message_status.isOk()) {
-        return message_status;
-    }
-    const auto type_status = appendConversationType(message.conversation.type, packet);
-    if (!type_status.isOk()) {
-        return type_status;
-    }
-    const auto conversation_status =
-        appendUint64(TlvType::ConversationId, message.conversation.id, packet.body);
-    if (!conversation_status.isOk()) {
-        return conversation_status;
-    }
-    const auto sender_status = appendUint64(TlvType::SenderId, message.sender_id, packet.body);
-    if (!sender_status.isOk()) {
-        return sender_status;
-    }
-    const auto receiver_status =
-        appendUint64(TlvType::ReceiverId, message.receiver_id, packet.body);
-    if (!receiver_status.isOk()) {
-        return receiver_status;
-    }
-    const auto text_status = appendString(TlvType::MessageText, message.text, packet.body);
-    if (!text_status.isOk()) {
-        return text_status;
-    }
-    return appendUint64(TlvType::TimestampMs, static_cast<std::uint64_t>(message.created_at_ms),
-                        packet.body);
 }
 
 }  // namespace
@@ -105,12 +70,9 @@ Status OfflineMessageService::handleOfflineMessages(const MessageRouter::RouterR
     }
     // 从数据库拉取待投递消息记录
     std::vector<OfflineMessageRecord> messages;
-    const auto fetch_status = storage_.getOfflineMessages(user_id, messages);
+    const auto fetch_status = storage_.getOfflineMessages(user_id, limit, messages);
     if (!fetch_status.isOk()) {
         return fetch_status;
-    }
-    if (messages.size() > limit) {
-        messages.resize(limit);
     }
 
     response.header.msg_type = MessageType::OfflineMessagesResponse;
@@ -122,7 +84,8 @@ Status OfflineMessageService::handleOfflineMessages(const MessageRouter::RouterR
     // 清 Redis 未读数
     const auto clear_status = clearUnreadForMessages(user_id, messages);
     if (!clear_status.isOk()) {
-        return clear_status;
+        Logger::get()->warn("Failed to clear unread counters for user {} after offline pull: {}",
+                            user_id, clear_status.message());
     }
     // 将这些消息标记为已投递
     std::vector<std::uint64_t> message_ids;

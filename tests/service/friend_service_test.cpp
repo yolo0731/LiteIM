@@ -196,7 +196,7 @@ public:
         return liteim::Status::ok();
     }
 
-    liteim::Status getOfflineMessages(std::uint64_t,
+    liteim::Status getOfflineMessages(std::uint64_t, std::uint32_t,
                                       std::vector<liteim::OfflineMessageRecord>&) override {
         return liteim::Status::ok();
     }
@@ -276,6 +276,9 @@ public:
 
     liteim::Status isUserOnline(std::uint64_t user_id, bool& online) override {
         queried_online_users.push_back(user_id);
+        if (fail_online_status) {
+            return liteim::Status::error(liteim::ErrorCode::IoError, "redis online failed");
+        }
         online = online_users.find(user_id) != online_users.end();
         return liteim::Status::ok();
     }
@@ -324,6 +327,7 @@ public:
 
     std::set<std::uint64_t> online_users;
     std::vector<std::uint64_t> queried_online_users;
+    bool fail_online_status{false};
 };
 
 class FriendServiceFixture : public ::testing::Test {
@@ -577,6 +581,25 @@ TEST_F(FriendServiceFixture, ListFriendsReturnsProfilesAndOnlineStatus) {
     EXPECT_EQ(uint64Fields(response, liteim::TlvType::OnlineStatus),
               (std::vector<std::uint64_t>{1, 0}));
     EXPECT_EQ(cache.queried_online_users, (std::vector<std::uint64_t>{1002, 1003}));
+}
+
+TEST_F(FriendServiceFixture, ListFriendsDegradesOfflineWhenRedisOnlineStatusFails) {
+    auto session = bindAlice();
+    storage.addExistingFriendship(1001, 1002);
+    cache.online_users.insert(1002);
+    cache.fail_online_status = true;
+    auto request = requestFor(session, liteim::MessageType::ListFriendsRequest);
+    liteim::Packet response;
+
+    const auto status = service.handleListFriends(request, response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(response.header.msg_type, liteim::MessageType::ListFriendsResponse);
+    EXPECT_EQ(uint64Fields(response, liteim::TlvType::FriendId),
+              (std::vector<std::uint64_t>{1002}));
+    EXPECT_EQ(uint64Fields(response, liteim::TlvType::OnlineStatus),
+              (std::vector<std::uint64_t>{0}));
+    EXPECT_EQ(cache.queried_online_users, (std::vector<std::uint64_t>{1002}));
 }
 
 TEST_F(FriendServiceIntegrationTest, AddAndListFriendsWithMySqlStorageAndRedisOnlineStatus) {

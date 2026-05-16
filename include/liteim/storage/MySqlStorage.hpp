@@ -43,7 +43,7 @@ public:
                                             const std::vector<std::uint64_t>& offline_user_ids,
                                             MessageRecord& saved_message) override;
     Status saveOfflineMessage(std::uint64_t user_id, std::uint64_t message_id) override;
-    Status getOfflineMessages(std::uint64_t user_id,
+    Status getOfflineMessages(std::uint64_t user_id, std::uint32_t limit,
                               std::vector<OfflineMessageRecord>& messages) override;
     Status markOfflineDelivered(std::uint64_t user_id,
                                 const std::vector<std::uint64_t>& message_ids) override;

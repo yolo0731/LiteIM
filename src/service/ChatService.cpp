@@ -4,6 +4,8 @@
 #include "liteim/base/Logger.hpp"
 #include "liteim/protocol/TlvCodec.hpp"
 #include "liteim/service/BotService.hpp"
+#include "liteim/service/MessagePacketBuilder.hpp"
+#include "liteim/service/Validation.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -49,11 +51,6 @@ Status privateConversationId(std::uint64_t sender_id, std::uint64_t receiver_id,
     }
     conversation_id = (left << 32U) | right;
     return Status::ok();
-}
-
-// 响应和 push 里都要用这个函数把 ConversationType 写进 TLV body
-Status appendConversationType(ConversationType type, Packet& packet) {
-    return appendUint64(TlvType::ConversationType, static_cast<std::uint64_t>(type), packet.body);
 }
 
 }  // namespace
@@ -102,6 +99,11 @@ Status ChatService::handlePrivateMessage(const MessageRouter::RouterRequest& req
     if (message_text.empty()) {
         return emptyMessageTextStatus();
     }
+    const auto text_length_status =
+        validateMaxBytes(message_text, kMaxMessageTextBytes, "message text");
+    if (!text_length_status.isOk()) {
+        return text_length_status;
+    }
 
     UserRecord receiver;
     const auto find_status = storage_.findUserById(receiver_id, receiver);
@@ -115,17 +117,18 @@ Status ChatService::handlePrivateMessage(const MessageRouter::RouterRequest& req
     if (!conversation_status.isOk()) {
         return conversation_status;
     }
-    const bool receiver_is_bot = bot_service_ != nullptr && bot_service_->isBotUser(receiver_id);
+    bool receiver_is_bot = bot_service_ != nullptr && bot_service_->isBotUser(receiver_id);
 
     // 检查接收用户是否在线，如果在线就直接发消息，否则就存离线消息和未读计数
     Session::Ptr receiver_session;
     bool receiver_online = false;
-    if (!receiver_is_bot) {
-        const auto session_status = online_service_.getSessionByUser(receiver_id, receiver_session);
-        receiver_online = session_status.isOk();
-        if (!session_status.isOk() && session_status.code() != ErrorCode::NotFound) {
-            return session_status;
-        }
+    const auto session_status = online_service_.getSessionByUser(receiver_id, receiver_session);
+    receiver_online = session_status.isOk();
+    if (!session_status.isOk() && session_status.code() != ErrorCode::NotFound) {
+        return session_status;
+    }
+    if (receiver_is_bot && receiver_online) {
+        receiver_is_bot = false;
     }
 
     // 构建消息
@@ -197,38 +200,6 @@ Status ChatService::currentUserId(const MessageRouter::RouterRequest& request,
         return notLoggedInStatus();
     }
     return status;
-}
-
-// 把消息记录的字段写进响应包的 TLV body，响应和 push 都会用到这个函数
-Status ChatService::appendMessageFields(const MessageRecord& message, Packet& packet) {
-    const auto message_status = appendUint64(TlvType::MessageId, message.message_id, packet.body);
-    if (!message_status.isOk()) {
-        return message_status;
-    }
-    const auto type_status = appendConversationType(message.conversation.type, packet);
-    if (!type_status.isOk()) {
-        return type_status;
-    }
-    const auto conversation_status =
-        appendUint64(TlvType::ConversationId, message.conversation.id, packet.body);
-    if (!conversation_status.isOk()) {
-        return conversation_status;
-    }
-    const auto sender_status = appendUint64(TlvType::SenderId, message.sender_id, packet.body);
-    if (!sender_status.isOk()) {
-        return sender_status;
-    }
-    const auto receiver_status =
-        appendUint64(TlvType::ReceiverId, message.receiver_id, packet.body);
-    if (!receiver_status.isOk()) {
-        return receiver_status;
-    }
-    const auto text_status = appendString(TlvType::MessageText, message.text, packet.body);
-    if (!text_status.isOk()) {
-        return text_status;
-    }
-    return appendUint64(TlvType::TimestampMs, static_cast<std::uint64_t>(message.created_at_ms),
-                        packet.body);
 }
 
 }  // namespace liteim

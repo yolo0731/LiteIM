@@ -10,6 +10,9 @@ Status validateHeader(const PacketHeader& header) {
     if (header.version != kPacketVersion) {
         return Status::error(ErrorCode::ParseError, "unsupported packet version");
     }
+    if (header.flags != kPacketFlagsNone) {
+        return Status::error(ErrorCode::ParseError, "unsupported packet flags");
+    }
     if (header.body_len > kMaxPacketBodyLength) {
         return Status::error(ErrorCode::ParseError, "packet body is too large");
     }

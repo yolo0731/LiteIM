@@ -2,6 +2,7 @@
 
 #include "liteim/base/ErrorCode.hpp"
 #include "liteim/protocol/TlvCodec.hpp"
+#include "liteim/service/Validation.hpp"
 
 // 链接openssl库,用于注册 / 登录里的密码盐和密码哈希
 #include <openssl/evp.h>
@@ -191,6 +192,11 @@ Status AuthService::handleRegister(const MessageRouter::RouterRequest& request, 
     if (!username_status.isOk()) {
         return username_status;
     }
+    const auto username_length_status =
+        validateMaxBytes(username, kMaxUsernameBytes, "username");
+    if (!username_length_status.isOk()) {
+        return username_length_status;
+    }
 
     std::string password;
     const auto password_status =
@@ -198,11 +204,21 @@ Status AuthService::handleRegister(const MessageRouter::RouterRequest& request, 
     if (!password_status.isOk()) {
         return password_status;
     }
+    const auto password_length_status =
+        validateMaxBytes(password, kMaxPasswordBytes, "password");
+    if (!password_length_status.isOk()) {
+        return password_length_status;
+    }
 
     std::string nickname;
     const auto nickname_status = optionalNickname(request.fields, username, nickname);
     if (!nickname_status.isOk()) {
         return nickname_status;
+    }
+    const auto nickname_length_status =
+        validateMaxBytes(nickname, kMaxNicknameBytes, "nickname");
+    if (!nickname_length_status.isOk()) {
+        return nickname_length_status;
     }
 
     std::string salt;
@@ -242,12 +258,22 @@ Status AuthService::handleLogin(const MessageRouter::RouterRequest& request, Pac
     if (!username_status.isOk()) {
         return username_status;
     }
+    const auto username_length_status =
+        validateMaxBytes(username, kMaxUsernameBytes, "username");
+    if (!username_length_status.isOk()) {
+        return username_length_status;
+    }
 
     std::string password;
     const auto password_status =
         requiredString(request.fields, TlvType::Password, "password", password);
     if (!password_status.isOk()) {
         return password_status;
+    }
+    const auto password_length_status =
+        validateMaxBytes(password, kMaxPasswordBytes, "password");
+    if (!password_length_status.isOk()) {
+        return password_length_status;
     }
 
     const LoginAttemptKey login_key{username, options_.default_remote_ip};

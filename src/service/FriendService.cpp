@@ -1,6 +1,7 @@
 #include "liteim/service/FriendService.hpp"
 
 #include "liteim/base/ErrorCode.hpp"
+#include "liteim/base/Logger.hpp"
 #include "liteim/protocol/TlvCodec.hpp"
 
 #include <algorithm>
@@ -158,7 +159,9 @@ Status FriendService::appendFriendFields(const UserProfileRecord& friend_profile
     bool online = false;
     const auto online_status = cache_.isUserOnline(friend_profile.user_id, online);
     if (!online_status.isOk()) {
-        return online_status;
+        Logger::get()->warn("Failed to query online status for friend {}: {}",
+                            friend_profile.user_id, online_status.message());
+        online = false;
     }
     return appendUint64(TlvType::OnlineStatus, online ? 1U : 0U, response.body);
 }

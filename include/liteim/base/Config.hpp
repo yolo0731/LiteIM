@@ -43,6 +43,8 @@ struct Config {
     QtClientConfig qt_client;
 
     static Config defaults();
+    static Status loadServerConfig(int argc, char* argv[],
+                                   const std::filesystem::path& default_path, Config& config);
     Status loadFromFile(const std::filesystem::path& path);
 };
 

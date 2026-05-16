@@ -77,6 +77,8 @@ jobs:
         run: docker compose -f docker/docker-compose.yml up -d --wait
 
       - name: Run integration and E2E tests
+        env:
+          LITEIM_E2E_STRICT: "1"
         run: ctest --test-dir build -L integration --output-on-failure
 
       - name: Show dependency logs on failure
@@ -118,6 +120,8 @@ jobs:
         run: docker compose -f docker/docker-compose.yml up -d --wait
 
       - name: Run sanitizer tests
+        env:
+          LITEIM_E2E_STRICT: "1"
         run: ctest --test-dir build-asan --output-on-failure
 
       - name: Show dependency logs on failure

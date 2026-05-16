@@ -1,5 +1,41 @@
 # LiteIM Progress
 
+## 2026-05-16 Post-Step45 Review Hardening
+
+本次按评审结论执行 Step 45 后的必要收口，不拆 Step 46。
+
+实现内容：
+
+- 修复 Bot 在线让位：`mira_bot` 有真实在线 session 时，`ChatService` / `GroupService` 把消息当普通用户流量投递，不再被 EchoBot fallback 拦截。
+- 修复 Bot post-save push 语义：bot 回复已经写入 MySQL 后，推送失败只记录 warning，不把发送方响应变成失败，避免客户端重试制造重复消息。
+- 统一部分 Redis 降级策略：好友列表在线状态查询失败时降级为 offline；离线消息响应已组装后，Redis unread 清理失败不阻塞 MySQL delivered 标记。
+- 将离线消息拉取 limit 下推到 `IStorage` / `MySqlStorage` / `OfflineMessageDao`，SQL 使用 `LIMIT ?`，避免先全量查询再内存截断。
+- 增加服务层输入边界：username/nickname <= 64 bytes，password <= 128 bytes，group name <= 128 bytes，message text <= 8192 bytes；benchmark 同步拒绝过长 username prefix 和超过服务上限的 message size。
+- 给 `liteim_server` 增加 `--config <path>`；不传时尝试读取 `config/liteim.conf`，不存在则使用 defaults。
+- 增加 `tests/e2e/test_bot.py`，覆盖真实 TCP/TLV 私聊 `mira_bot` echo；E2E helper 增加 `LITEIM_E2E_STRICT=1`，CI 中 server 启动失败会 fail 而不是 skip。
+- 修复 ASan/UBSan CI 红点：fd-exhaustion 单测在 ASan runtime 下跳过，因为 sanitizer 自身会占用额外 fd，使该资源耗尽测试不稳定。
+- 修复 CTest 多标签：GoogleTest discovery 通过 `TEST_INCLUDE_FILES` 在 CTest 阶段为 `mysql` / `redis` / `docker` 补真实多标签。
+- 提取 `MessagePacketBuilder`，把 5 处重复的消息 TLV 字段编码收拢到一个 service helper。
+- 更新 README 和 process docs，说明 config、service limits、history newest-first、bench 指标归属、bot handoff、E2E strict、CI/sanitizer 边界。
+
+当前已验证：
+
+- `cmake --build build -j2`：通过。
+- `ctest --test-dir build -R "Bot|ChatService|GroupService|OfflineMessageService|HistoryService|FriendService|ConfigTest|PacketTest|BenchmarkOptions" --output-on-failure`：77/77 通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：MySQL / Redis healthy。
+- `LITEIM_E2E_STRICT=1 ctest --test-dir build -R "LiteIME2E.test_bot" --output-on-failure`：1/1 通过。
+- `ctest --test-dir build -N -L mysql`：38 个测试可被 `mysql` 标签筛中。
+- `ctest --test-dir build -N -L redis`：30 个测试可被 `redis` 标签筛中。
+- `ctest --test-dir build-asan -R "AcceptorTest.FdExhaustionRejectsPendingConnectionWithoutLaterCallback" --output-on-failure`：按预期 skip，ASan 目标测试不再失败。
+- `ctest --test-dir build -L unit --output-on-failure`：318/318 通过。
+- `LITEIM_E2E_STRICT=1 ctest --test-dir build -L integration --output-on-failure`：71/71 通过。
+- `cmake --build build-asan -j2`：通过。
+- `LITEIM_E2E_STRICT=1 ctest --test-dir build-asan --output-on-failure`：389/389 通过，其中 `AcceptorTest.FdExhaustionRejectsPendingConnectionWithoutLaterCallback` 在 ASan 下按预期 skip。
+- `ctest --test-dir build --output-on-failure`：389/389 通过。
+- `git diff --check`：通过。
+- 路径级 stale-route scan：无 `server/net`、`server/protocol`、`*SQLite*`、`*InMemory*` 或 `*step15_sqlite*` 文件路径输出。
+- `timeout 2s ./build/server/liteim_server || test $? -eq 124`：通过，server 启动后通过 signalfd 收到 SIGTERM 并退出。
+
 ## 2026-05-16 Documentation Layout Cleanup
 
 用户确认采用方案 A 后，本次清理目标是让 LiteIM 目录更干净：
@@ -80,7 +116,7 @@ TDD GREEN：
 
 - `tests/CMakeLists.txt` 为 `liteim_tests` 增加测试私有 include 根并链接 `GTest::gmock`。
 - 根 `CMakeLists.txt` 增加 `LITEIM_ENABLE_SANITIZERS` 和内部 `liteim_sanitizer_flags` interface target，GNU/Clang 下启用 `-fsanitize=address,undefined`、`-fno-omit-frame-pointer` 和 `-fno-sanitize-recover=all`。
-- `gtest_discover_tests()` 按 unit / MySQL integration / Redis integration / MySQL+Redis integration 拆分注册；Docker/E2E/server-signal 测试加 integration/docker 标签。gTest 多标签用 `integration_mysql_docker` 等组合标签，保证 `ctest -L integration/mysql/redis/docker` 都能筛中。
+- `gtest_discover_tests()` 按 unit / MySQL integration / Redis integration / MySQL+Redis integration 拆分注册；Docker/E2E/server-signal 测试加 integration/docker 标签。GoogleTest 多标签通过 `TEST_LIST` 和 `TEST_INCLUDE_FILES` 在 CTest 阶段设置，保证 `ctest -L integration/mysql/redis/docker` 都能筛中。
 - 新增 Mock 边界测试 7 个，覆盖 AuthService 登录限流/失败记录/成功清理绑定，ChatService 在线/离线收件人边界，GroupService 群存在/成员校验后保存和未读，HistoryService 权限校验后才查 history。
 - 新增 FrameDecoder 参数化 split 测试、三连包 split、最大 body_len header 等边界；新增 TLV 空 body、重复字段 scalar getter、空字符串重复值和 null body；新增 ThreadPool 空队列 stop/restart；新增 TimerHeap 重复 cancel、未知 cancel 和相同 deadline 顺序。
 - `cmake --build build --target liteim_tests -j2`：通过。

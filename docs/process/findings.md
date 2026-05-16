@@ -8,6 +8,27 @@
 - `LiteIM/docs/process/task_plan.md`、`LiteIM/docs/process/findings.md` 和 `LiteIM/docs/process/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-16 Post-Step45 Review Hardening Findings
+
+本次根据外部评审和本地复核执行的是 Step 45 后的收口修复，不新开 Step 46，也不改变 Qt / PersonaAgent 路线。
+
+当前采用的边界：
+
+- CI 仍属于 Step 45 验证能力和仓库基础设施，不单独拆成 Step 46。
+- 不修改 MySQL schema、Redis key、TCP/TLV wire format、公开 MessageType/TlvType 编号、Qt 或 PersonaAgent。
+- 对运行时正确性问题直接修复：`mira_bot` 在线时让真实 session 接管，EchoBot 只作为离线兜底；bot 回复已经落库后 push 失败只告警。
+- 对可靠性问题做局部收敛：离线消息 limit 下推到 SQL，好友在线状态和离线 unread 清理按 Redis best-effort 降级。
+- 对输入边界做服务层前置校验：username/nickname 64 bytes，password 128 bytes，group name 128 bytes，message text 8192 bytes。
+- 对可维护性做低风险重构：提取 `MessagePacketBuilder`，消除 Chat/Group/History/Offline/Bot 五处重复消息 TLV 拼接。
+- 对 CI 假绿/假红做修复：Python E2E 增加 strict 模式，新增 bot E2E，ASan 下跳过 fd-exhaustion 这种受 sanitizer runtime fd 占用影响的单测。
+
+暂缓项：
+
+- 不抽 `containsMember()`，因为当前重复体量小，抽出新模块收益不如 `appendMessageFields()` 明确。
+- 不改 history wire format 的 repeated TLV 结构，只在 README 写明 newest-first 和 UI 反转要求。
+- 不做 ServerApp/RuntimeContext 大重构；本次只给 `liteim_server` 增加 `--config` 和默认 `config/liteim.conf` fallback。
+- 不清理 backup 分支。删除分支属于 `.git` 操作，需用户单独确认。
+
 ## 2026-05-16 Documentation Layout Cleanup Findings
 
 用户确认采用方案 A：删除 Step 46 GitHub Actions CI，把 Qt 客户端阶段前移为 Step 46-53，最终文档阶段前移为 Step 54，并把 LiteIM 的过程文件和教程统一收到 `docs/` 内。

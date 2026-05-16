@@ -334,7 +334,7 @@ public:
         return liteim::Status::ok();
     }
 
-    liteim::Status getOfflineMessages(std::uint64_t,
+    liteim::Status getOfflineMessages(std::uint64_t, std::uint32_t,
                                       std::vector<liteim::OfflineMessageRecord>&) override {
         return liteim::Status::ok();
     }

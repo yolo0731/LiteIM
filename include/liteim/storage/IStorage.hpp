@@ -34,7 +34,7 @@ public:
                                      const std::vector<std::uint64_t>& offline_user_ids,
                                      MessageRecord& saved_message) = 0;
     virtual Status saveOfflineMessage(std::uint64_t user_id, std::uint64_t message_id) = 0;
-    virtual Status getOfflineMessages(std::uint64_t user_id,
+    virtual Status getOfflineMessages(std::uint64_t user_id, std::uint32_t limit,
                                       std::vector<OfflineMessageRecord>& messages) = 0;
     virtual Status markOfflineDelivered(std::uint64_t user_id,
                                         const std::vector<std::uint64_t>& message_ids) = 0;

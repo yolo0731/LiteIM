@@ -253,9 +253,9 @@ fake 测试更适合验证完整业务结果，gMock 更适合验证依赖调用
 
 不是。ASan/UBSan 只能覆盖测试跑到的路径，但它能把越界、use-after-free、未定义行为等问题变成明确失败。它和普通单元测试、集成测试、代码审查是互补关系。
 
-### 为什么 integration 标签看起来有组合标签？
+### GoogleTest discovery 的多标签怎么处理？
 
-GoogleTest discovery 对多标签注册有转义细节。这里用 `integration_mysql_docker` 这类组合标签，同时保留 `-L integration`、`-L mysql`、`-L redis`、`-L docker` 的 regex 筛选能力，保证常用筛选命令有效。
+GoogleTest discovery 的测试列表在 CTest 阶段才生成。LiteIM 用 `TEST_LIST` 暴露每组发现到的测试，再通过 `TEST_INCLUDE_FILES` 在 CTest 阶段给 MySQL、Redis、Docker 相关测试设置真实多标签。这样 `ctest -L integration`、`ctest -L mysql`、`ctest -L redis`、`ctest -L docker` 都能直接筛中目标。
 
 ### ASan 第一次失败为什么还算有价值？
 
