@@ -2862,6 +2862,63 @@ TDD GREEN：
 
 - 提交完成：`feat(service): add heartbeat ttl refresh`。
 
+## 2026-05-16 Step 41 BotGateway
+
+本次进入 `Step 41：实现 BotGateway 和 AI Bot 特殊用户`。
+
+开始状态：
+
+- Step 40 已提交：`feat(service): add heartbeat ttl refresh`。
+- 工作区进入 Step 41 前已有用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。本 Step 需要修改 GroupService 接入点，提交时必须用精确 staging 避免把进入本 Step 前的注释改动混入行为提交。
+- 用户确认采用“最小普通用户 Bot 集成”并补充硬约束：不改 schema，不启用 BotChat 专用协议，显式过滤 bot offline/unread，群聊触发前确认 bot 是群成员，不伪造 session，不递归 handler。
+
+TDD RED：
+
+- 扩展 `tests/service/chat_service_test.cpp` 和 `tests/service/group_service_test.cpp`。
+- 私聊覆盖：发给 `mira_bot` 保存原始消息但不写 bot offline/unread，保存 bot 回复并给原用户 `PrivateMessagePush`，启用 bot 后普通私聊仍保持 offline/unread。
+- 群聊覆盖：`@mira_bot` 且 bot 是群成员时触发回复；bot 不是群成员时不触发；不含 mention 时不触发；sender 是 bot 时不回环；群聊原始消息和 bot 回复均过滤 bot offline/unread。
+- `cmake --build build --target liteim_tests -j2` 按预期失败于 `fatal error: liteim/service/BotGateway.hpp: No such file or directory`。
+
+代码完成：
+
+- 新增 `include/liteim/service/BotGateway.hpp`、`include/liteim/service/BotService.hpp`、`src/service/BotService.cpp`。
+- `BotOptions` 默认识别 `user_id=9001`、`username=mira_bot`、`mention=@mira_bot`。
+- `EchoBotGateway` 返回 `Echo: <原消息>`。
+- `BotService` 负责 bot 身份判断、群聊 mention 条件、bot 回复保存、push、离线人类 unread 降级日志和 bot offline/unread 过滤。
+- `ChatService` 注入可选 `BotService*`，私聊 `mira_bot` 时保存原始消息但不写 bot offline/unread，并通过 `BotService` 生成普通私聊回复。
+- `GroupService` 注入可选 `BotService*`，群成员遍历时过滤 bot offline/unread，原始群消息处理后再按群成员和 mention 条件触发 bot 回复。
+- `server/main.cpp` 构造 `EchoBotGateway` / `BotService` 并注入 `ChatService` / `GroupService`。
+- `src/service/CMakeLists.txt` 编入 `BotService.cpp`。
+
+TDD GREEN：
+
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -R "ChatService|GroupService" --output-on-failure`：通过，21/21 tests passed。
+
+文档完成：
+
+- 更新 `README.md`：当前 runtime 切到 Step 41，记录 `BotGateway` / `BotService`、普通 IM 协议边界、bot offline/unread 过滤和群聊成员校验。
+- 新增 `tutorials/step41_bot_gateway.md`，按固定 0-10 模板讲解 BotGateway、EchoBot、普通用户语义、私聊/群聊流程、测试设计和面试追问。
+- 更新 `task_plan.md` / `findings.md` / `progress.md` 记录 Step 41 边界、设计发现、RED/GREEN 过程和验证结果。
+
+阶段验证结果：
+
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -R "ChatService|GroupService" --output-on-failure`：通过，21/21 tests passed。
+- `cmake --build build -j2`：通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：通过，MySQL / Redis 均 healthy。
+- `ctest --test-dir build --output-on-failure`：通过，333/333 tests passed。
+- `git diff --check`：通过。
+- `.gitkeep` 检查：无输出。
+- 旧路线路径检查：无 `server/net`、`server/protocol`、`SQLite`、`InMemory`、`step15_sqlite` 残留。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" README.md tutorials/step41_bot_gateway.md`：无输出。
+- `rg -n "^## " tutorials/step41_bot_gateway.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
+- `timeout 2s ./build/server/liteim_server || test $? -eq 124`：通过，server 监听 `0.0.0.0:9000` 后收到 SIGTERM 并通过 signalfd 退出。
+
+收尾注意：
+
+- Step 41 提交需要排除进入本 Step 前已有的用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。其中 `GroupService` 文件同时包含 Step 41 必要行为改动，提交时必须精确 staging。
+
 ## 2026-05-16 Step 39 HistoryService
 
 本次进入 `Step 39: implement HistoryService recent history pagination`。

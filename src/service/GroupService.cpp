@@ -3,6 +3,7 @@
 #include "liteim/base/ErrorCode.hpp"
 #include "liteim/base/Logger.hpp"
 #include "liteim/protocol/TlvCodec.hpp"
+#include "liteim/service/BotService.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -45,8 +46,12 @@ bool containsMember(const std::vector<GroupMemberRecord>& members, std::uint64_t
 
 }  // namespace
 
-GroupService::GroupService(IStorage& storage, ICache& cache, OnlineService& online_service)
-    : storage_(storage), cache_(cache), online_service_(online_service) {}
+GroupService::GroupService(IStorage& storage, ICache& cache, OnlineService& online_service,
+                           BotService* bot_service)
+    : storage_(storage),
+      cache_(cache),
+      online_service_(online_service),
+      bot_service_(bot_service) {}
 
 Status GroupService::registerHandlers(MessageRouter& router) {
     const auto create_status = router.registerHandler(
@@ -221,6 +226,9 @@ Status GroupService::handleGroupMessage(const MessageRouter::RouterRequest& requ
         if (member.user_id == sender_id) {
             continue;
         }
+        if (bot_service_ != nullptr && bot_service_->isBotUser(member.user_id)) {
+            continue;
+        }
 
         Session::Ptr member_session;
         const auto session_status = online_service_.getSessionByUser(member.user_id, member_session);
@@ -271,6 +279,13 @@ Status GroupService::handleGroupMessage(const MessageRouter::RouterRequest& requ
         const auto send_status = session->sendPacket(push);
         if (!send_status.isOk()) {
             return send_status;
+        }
+    }
+
+    if (bot_service_ != nullptr && bot_service_->shouldHandleGroupMention(saved_message, members)) {
+        const auto bot_status = bot_service_->handleGroupMention(saved_message, members);
+        if (!bot_status.isOk()) {
+            return bot_status;
         }
     }
 

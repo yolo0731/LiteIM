@@ -1569,3 +1569,24 @@ Step 13 只实现 `Acceptor` 非阻塞监听器。
 - 不新增协议类型或 TLV 字段。
 - 不新增 metrics 模块；当前第一版通过 warning 日志暴露 Redis TTL 刷新失败，后续可接入指标和告警。
 - 不实现客户端重连策略、断线提示 UI、BotGateway 或跨节点在线状态路由。
+
+## 2026-05-16 Step 41 BotGateway Findings
+
+本次进入 `Step 41：实现 BotGateway 和 AI Bot 特殊用户`。
+
+已经确认并采用的设计：
+
+- 不修改 MySQL schema，不新增 `users.user_type`；当前 v1 通过集中 `BotOptions` 识别 seed 用户 `mira_bot`。
+- 不启用 `BotChatRequest` / `BotChatResponse` / `BotMessagePush`；第一版 bot 入口继续走普通 `PrivateMessageRequest` 和 `GroupMessageRequest`。
+- `BotOptions` 默认固定 `user_id=9001`、`username=mira_bot`、`mention=@mira_bot`，避免把 bot id 分散硬编码到多个业务函数里。
+- 用户私聊 `mira_bot` 时，用户原始私聊消息仍保存到 MySQL，但不把 `9001` 写入 `offline_messages`，也不增加 `9001` unread。
+- Bot 私聊回复作为普通私聊消息保存：`sender_id=9001`、`receiver_id=原用户`，再给原用户发送普通 `PrivateMessagePush`。
+- 群聊原始消息保存时，普通离线成员继续写 offline/unread，但 `mira_bot` 被过滤，不写 bot offline/unread。
+- 群聊只有同时满足“发送者是群成员、消息文本包含 `@mira_bot`、`mira_bot` 也是群成员、发送者不是 bot”才触发 `BotGateway::onGroupMention()`。
+- Bot 群聊回复作为普通群消息保存：`sender_id=9001`、`receiver_id=group_id`，在线人类成员收到 `GroupMessagePush`，离线人类成员继续写 offline/unread。
+
+本次不采用/不改：
+
+- 不要求 seed 中 `mira_bot` 的 `dev_hash_mira_bot` 当前能通过 `AuthService` 的 PBKDF2 密码校验登录；Step 41 只做 C++ EchoBot 识别和路由占位。
+- 不伪造 bot session，不递归调用 `handlePrivateMessage()` 或 `handleGroupMessage()`。
+- 不接入 Python BotClient、FastAPI、LangGraph、LLM SDK、RAG 或 PersonaAgent。

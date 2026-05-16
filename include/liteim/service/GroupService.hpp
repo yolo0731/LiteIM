@@ -12,9 +12,12 @@
 
 namespace liteim {
 
+class BotService;
+
 class GroupService {
 public:
-    GroupService(IStorage& storage, ICache& cache, OnlineService& online_service);
+    GroupService(IStorage& storage, ICache& cache, OnlineService& online_service,
+                 BotService* bot_service = nullptr);
 
     Status registerHandlers(MessageRouter& router);
     Status handleCreateGroup(const MessageRouter::RouterRequest& request, Packet& response);
@@ -30,6 +33,7 @@ private:
     IStorage& storage_;
     ICache& cache_;
     OnlineService& online_service_;
+    BotService* bot_service_{nullptr};
 };
 
 }  // namespace liteim

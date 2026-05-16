@@ -6,6 +6,8 @@
 #include "liteim/net/UniqueFd.hpp"
 #include "liteim/protocol/Packet.hpp"
 #include "liteim/protocol/TlvCodec.hpp"
+#include "liteim/service/BotGateway.hpp"
+#include "liteim/service/BotService.hpp"
 #include "liteim/service/MessageRouter.hpp"
 #include "liteim/service/OnlineService.hpp"
 #include "liteim/service/SessionManager.hpp"
@@ -297,6 +299,7 @@ public:
         ++save_message_calls;
         last_message = message;
         last_offline_user_ids = offline_user_ids;
+        saved_offline_user_ids.push_back(offline_user_ids);
 
         saved_message = message;
         saved_message.message_id = next_message_id++;
@@ -339,6 +342,7 @@ public:
     std::unordered_map<std::uint64_t, liteim::UserRecord> users;
     liteim::MessageRecord last_message;
     std::vector<std::uint64_t> last_offline_user_ids;
+    std::vector<std::vector<std::uint64_t>> saved_offline_user_ids;
     std::vector<liteim::MessageRecord> saved_messages;
     std::uint64_t next_message_id{5001};
     std::int64_t next_created_at_ms{1700000000000LL};
@@ -385,6 +389,7 @@ public:
         ++incr_unread_calls;
         last_unread_key = key;
         last_unread_delta = delta;
+        unread_keys.push_back(key);
         if (fail_incr_unread) {
             return liteim::Status::error(liteim::ErrorCode::IoError, "redis unread failed");
         }
@@ -418,6 +423,7 @@ public:
 
     std::unordered_map<std::uint64_t, liteim::OnlineSession> online_users;
     liteim::UnreadKey last_unread_key;
+    std::vector<liteim::UnreadKey> unread_keys;
     std::uint64_t last_unread_delta{0};
     int incr_unread_calls{0};
     bool fail_incr_unread{false};
@@ -426,9 +432,12 @@ public:
 class ChatServiceFixture : public ::testing::Test {
 protected:
     ChatServiceFixture() : online(sessions, cache, "server-a", 30s),
-                           service(storage, cache, online) {
+                           bot_service(storage, cache, online, bot_gateway),
+                           service(storage, cache, online),
+                           service_with_bot(storage, cache, online, &bot_service) {
         storage.addUser(1001, "alice", "Alice");
         storage.addUser(1002, "bob", "Bob");
+        storage.addUser(9001, "mira_bot", "Mira Bot");
     }
 
     liteim::MessageRouter::RouterRequest requestFor(const liteim::Session::Ptr& session,
@@ -451,7 +460,10 @@ protected:
     FakeCache cache;
     liteim::SessionManager sessions;
     liteim::OnlineService online;
+    liteim::EchoBotGateway bot_gateway;
+    liteim::BotService bot_service;
     liteim::ChatService service;
+    liteim::ChatService service_with_bot;
 };
 
 }  // namespace
@@ -461,6 +473,8 @@ TEST(ChatServiceTest, HeaderIsSelfContained) {
 
     static_assert(std::is_constructible_v<Service, liteim::IStorage&, liteim::ICache&,
                                           liteim::OnlineService&>);
+    static_assert(std::is_constructible_v<Service, liteim::IStorage&, liteim::ICache&,
+                                          liteim::OnlineService&, liteim::BotService*>);
     static_assert(
         std::is_same_v<decltype(&Service::registerHandlers),
                        liteim::Status (Service::*)(liteim::MessageRouter&)>);
@@ -468,6 +482,62 @@ TEST(ChatServiceTest, HeaderIsSelfContained) {
                                  liteim::Status (Service::*)(
                                      const liteim::MessageRouter::RouterRequest&,
                                      liteim::Packet&)>);
+}
+
+TEST_F(ChatServiceFixture, PrivateMessageToBotSavesOriginalWithoutBotOfflineUnreadAndPushesReply) {
+    RunningSession sender(7001);
+    ASSERT_TRUE(online.bindUser(1001, sender.session()).isOk());
+    auto request = requestFor(sender.session(), liteim::MessageType::PrivateMessageRequest,
+                              privateMessageBody(9001, "hello mira"));
+    liteim::Packet response;
+
+    const auto status = service_with_bot.handlePrivateMessage(request, response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(response.header.msg_type, liteim::MessageType::PrivateMessageResponse);
+    EXPECT_EQ(uint64Field(response, liteim::TlvType::MessageId), 5001U);
+    EXPECT_EQ(uint64Field(response, liteim::TlvType::SenderId), 1001U);
+    EXPECT_EQ(uint64Field(response, liteim::TlvType::ReceiverId), 9001U);
+    EXPECT_EQ(stringField(response, liteim::TlvType::MessageText), "hello mira");
+
+    ASSERT_EQ(storage.save_message_calls, 2);
+    ASSERT_EQ(storage.saved_messages.size(), 2U);
+    ASSERT_EQ(storage.saved_offline_user_ids.size(), 2U);
+    EXPECT_TRUE(storage.saved_offline_user_ids[0].empty());
+    EXPECT_TRUE(storage.saved_offline_user_ids[1].empty());
+    EXPECT_EQ(cache.incr_unread_calls, 0);
+
+    const auto& reply = storage.saved_messages[1];
+    EXPECT_EQ(reply.conversation.type, liteim::ConversationType::kPrivate);
+    EXPECT_EQ(reply.conversation.id, 10019001U);
+    EXPECT_EQ(reply.sender_id, 9001U);
+    EXPECT_EQ(reply.receiver_id, 1001U);
+    EXPECT_EQ(reply.text, "Echo: hello mira");
+
+    const auto push = readPacket(sender.peerFd(), 2s);
+    ASSERT_TRUE(push.has_value());
+    EXPECT_EQ(push->header.msg_type, liteim::MessageType::PrivateMessagePush);
+    EXPECT_EQ(uint64Field(*push, liteim::TlvType::MessageId), 5002U);
+    EXPECT_EQ(uint64Field(*push, liteim::TlvType::ConversationId), 10019001U);
+    EXPECT_EQ(uint64Field(*push, liteim::TlvType::SenderId), 9001U);
+    EXPECT_EQ(uint64Field(*push, liteim::TlvType::ReceiverId), 1001U);
+    EXPECT_EQ(stringField(*push, liteim::TlvType::MessageText), "Echo: hello mira");
+}
+
+TEST_F(ChatServiceFixture, PrivateMessageToNormalUserKeepsOfflineUnreadWhenBotEnabled) {
+    auto session = bindAlice();
+    auto request = requestFor(session, liteim::MessageType::PrivateMessageRequest,
+                              privateMessageBody(1002, "hello bob"));
+    liteim::Packet response;
+
+    const auto status = service_with_bot.handlePrivateMessage(request, response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(storage.save_message_calls, 1);
+    ASSERT_EQ(storage.last_offline_user_ids.size(), 1U);
+    EXPECT_EQ(storage.last_offline_user_ids.front(), 1002U);
+    EXPECT_EQ(cache.incr_unread_calls, 1);
+    EXPECT_EQ(cache.last_unread_key.user_id, 1002U);
 }
 
 TEST_F(ChatServiceFixture, PrivateMessageRequiresLoggedInSession) {

@@ -7,6 +7,8 @@
 #include "liteim/net/SignalWatcher.hpp"
 #include "liteim/net/TcpServer.hpp"
 #include "liteim/service/AuthService.hpp"
+#include "liteim/service/BotGateway.hpp"
+#include "liteim/service/BotService.hpp"
 #include "liteim/service/ChatService.hpp"
 #include "liteim/service/FriendService.hpp"
 #include "liteim/service/GroupService.hpp"
@@ -62,10 +64,12 @@ int main() {
     liteim::ThreadPool business_pool(config.business_threads);
     liteim::MessageRouter router(business_pool);
     liteim::HeartbeatService heartbeat_service(online_service);
+    liteim::EchoBotGateway bot_gateway;
+    liteim::BotService bot_service(storage, cache, online_service, bot_gateway);
     liteim::AuthService auth_service(storage, cache, online_service);
     liteim::FriendService friend_service(storage, cache, online_service);
-    liteim::ChatService chat_service(storage, cache, online_service);
-    liteim::GroupService group_service(storage, cache, online_service);
+    liteim::ChatService chat_service(storage, cache, online_service, &bot_service);
+    liteim::GroupService group_service(storage, cache, online_service, &bot_service);
     liteim::OfflineMessageService offline_message_service(storage, cache, online_service);
     liteim::HistoryService history_service(storage, online_service);
     const auto heartbeat_status = heartbeat_service.registerHandlers(router);

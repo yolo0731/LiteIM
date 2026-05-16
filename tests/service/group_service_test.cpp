@@ -6,6 +6,8 @@
 #include "liteim/net/UniqueFd.hpp"
 #include "liteim/protocol/Packet.hpp"
 #include "liteim/protocol/TlvCodec.hpp"
+#include "liteim/service/BotGateway.hpp"
+#include "liteim/service/BotService.hpp"
 #include "liteim/service/MessageRouter.hpp"
 #include "liteim/service/OnlineService.hpp"
 #include "liteim/service/SessionManager.hpp"
@@ -389,6 +391,7 @@ public:
         ++save_message_calls;
         last_message = message;
         last_offline_user_ids = offline_user_ids;
+        saved_offline_user_ids.push_back(offline_user_ids);
         saved_message = message;
         saved_message.message_id = next_message_id++;
         saved_message.created_at_ms = next_message_time_ms++;
@@ -445,6 +448,7 @@ public:
     liteim::CreateGroupRequest last_create_request;
     liteim::MessageRecord last_message;
     std::vector<std::uint64_t> last_offline_user_ids;
+    std::vector<std::vector<std::uint64_t>> saved_offline_user_ids;
     std::vector<liteim::MessageRecord> saved_messages;
     std::uint64_t next_group_id{8801};
     std::uint64_t next_message_id{9001};
@@ -523,6 +527,7 @@ public:
         ++incr_unread_calls;
         last_unread_key = key;
         last_unread_delta = delta;
+        unread_keys.push_back(key);
         if (fail_incr_unread) {
             return liteim::Status::error(liteim::ErrorCode::IoError, "redis unread failed");
         }
@@ -560,6 +565,7 @@ public:
     std::unordered_map<std::uint64_t, liteim::OnlineSession> online_users;
     std::unordered_map<std::uint64_t, std::uint64_t> unread_counts;
     liteim::UnreadKey last_unread_key;
+    std::vector<liteim::UnreadKey> unread_keys;
     std::uint64_t last_unread_delta{0};
     int incr_unread_calls{0};
     bool fail_incr_unread{false};
@@ -568,10 +574,13 @@ public:
 class GroupServiceFixture : public ::testing::Test {
 protected:
     GroupServiceFixture() : online(sessions, cache, "server-a", 30s),
-                            service(storage, cache, online) {
+                            bot_service(storage, cache, online, bot_gateway),
+                            service(storage, cache, online),
+                            service_with_bot(storage, cache, online, &bot_service) {
         storage.addUser(1001, "alice", "Alice");
         storage.addUser(1002, "bob", "Bob");
         storage.addUser(1003, "charlie", "Charlie");
+        storage.addUser(9001, "mira_bot", "Mira Bot");
     }
 
     liteim::MessageRouter::RouterRequest requestFor(const liteim::Session::Ptr& session,
@@ -598,7 +607,10 @@ protected:
     FakeCache cache;
     liteim::SessionManager sessions;
     liteim::OnlineService online;
+    liteim::EchoBotGateway bot_gateway;
+    liteim::BotService bot_service;
     liteim::GroupService service;
+    liteim::GroupService service_with_bot;
 };
 
 }  // namespace
@@ -608,6 +620,8 @@ TEST(GroupServiceTest, HeaderIsSelfContained) {
 
     static_assert(std::is_constructible_v<Service, liteim::IStorage&, liteim::ICache&,
                                           liteim::OnlineService&>);
+    static_assert(std::is_constructible_v<Service, liteim::IStorage&, liteim::ICache&,
+                                          liteim::OnlineService&, liteim::BotService*>);
     static_assert(
         std::is_same_v<decltype(&Service::registerHandlers),
                        liteim::Status (Service::*)(liteim::MessageRouter&)>);
@@ -627,6 +641,124 @@ TEST(GroupServiceTest, HeaderIsSelfContained) {
                                  liteim::Status (Service::*)(
                                      const liteim::MessageRouter::RouterRequest&,
                                      liteim::Packet&)>);
+}
+
+TEST_F(GroupServiceFixture, GroupMentionTriggersBotReplyWhenBotIsMemberAndFiltersBotUnread) {
+    const auto group = storage.addGroup(1001, "team");
+    storage.addMember(group.group_id, 1002);
+    storage.addMember(group.group_id, 1003);
+    storage.addMember(group.group_id, 9001);
+
+    RunningSession alice(7101);
+    ASSERT_TRUE(online.bindUser(1001, alice.session()).isOk());
+    RunningSession bob(7102);
+    ASSERT_TRUE(online.bindUser(1002, bob.session()).isOk());
+
+    auto request = requestFor(alice.session(), liteim::MessageType::GroupMessageRequest,
+                              groupMessageBody(group.group_id, "hi @mira_bot"));
+    liteim::Packet response;
+
+    const auto status = service_with_bot.handleGroupMessage(request, response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(response.header.msg_type, liteim::MessageType::GroupMessageResponse);
+    EXPECT_EQ(uint64Field(response, liteim::TlvType::MessageId), 9001U);
+    EXPECT_EQ(stringField(response, liteim::TlvType::MessageText), "hi @mira_bot");
+
+    ASSERT_EQ(storage.save_message_calls, 2);
+    ASSERT_EQ(storage.saved_messages.size(), 2U);
+    ASSERT_EQ(storage.saved_offline_user_ids.size(), 2U);
+    EXPECT_EQ(storage.saved_messages[0].sender_id, 1001U);
+    EXPECT_EQ(storage.saved_messages[0].receiver_id, group.group_id);
+    EXPECT_EQ(storage.saved_messages[0].text, "hi @mira_bot");
+    ASSERT_EQ(storage.saved_offline_user_ids[0].size(), 1U);
+    EXPECT_EQ(storage.saved_offline_user_ids[0].front(), 1003U);
+
+    EXPECT_EQ(storage.saved_messages[1].sender_id, 9001U);
+    EXPECT_EQ(storage.saved_messages[1].receiver_id, group.group_id);
+    EXPECT_EQ(storage.saved_messages[1].text, "Echo: hi @mira_bot");
+    ASSERT_EQ(storage.saved_offline_user_ids[1].size(), 1U);
+    EXPECT_EQ(storage.saved_offline_user_ids[1].front(), 1003U);
+
+    ASSERT_EQ(cache.incr_unread_calls, 2);
+    ASSERT_EQ(cache.unread_keys.size(), 2U);
+    EXPECT_EQ(cache.unread_keys[0].user_id, 1003U);
+    EXPECT_EQ(cache.unread_keys[1].user_id, 1003U);
+
+    const auto bob_original = readPacket(bob.peerFd(), 2s);
+    ASSERT_TRUE(bob_original.has_value());
+    EXPECT_EQ(bob_original->header.msg_type, liteim::MessageType::GroupMessagePush);
+    EXPECT_EQ(uint64Field(*bob_original, liteim::TlvType::MessageId), 9001U);
+    EXPECT_EQ(uint64Field(*bob_original, liteim::TlvType::SenderId), 1001U);
+
+    const auto bob_reply = readPacket(bob.peerFd(), 2s);
+    ASSERT_TRUE(bob_reply.has_value());
+    EXPECT_EQ(bob_reply->header.msg_type, liteim::MessageType::GroupMessagePush);
+    EXPECT_EQ(uint64Field(*bob_reply, liteim::TlvType::MessageId), 9002U);
+    EXPECT_EQ(uint64Field(*bob_reply, liteim::TlvType::SenderId), 9001U);
+    EXPECT_EQ(stringField(*bob_reply, liteim::TlvType::MessageText), "Echo: hi @mira_bot");
+
+    const auto alice_reply = readPacket(alice.peerFd(), 2s);
+    ASSERT_TRUE(alice_reply.has_value());
+    EXPECT_EQ(alice_reply->header.msg_type, liteim::MessageType::GroupMessagePush);
+    EXPECT_EQ(uint64Field(*alice_reply, liteim::TlvType::MessageId), 9002U);
+    EXPECT_EQ(uint64Field(*alice_reply, liteim::TlvType::SenderId), 9001U);
+}
+
+TEST_F(GroupServiceFixture, GroupMentionDoesNotTriggerWhenBotIsNotGroupMember) {
+    const auto group = storage.addGroup(1001, "team");
+    storage.addMember(group.group_id, 1003);
+
+    auto sender = bindAlice();
+    auto request = requestFor(sender, liteim::MessageType::GroupMessageRequest,
+                              groupMessageBody(group.group_id, "hi @mira_bot"));
+    liteim::Packet response;
+
+    const auto status = service_with_bot.handleGroupMessage(request, response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(storage.save_message_calls, 1);
+    ASSERT_EQ(storage.last_offline_user_ids.size(), 1U);
+    EXPECT_EQ(storage.last_offline_user_ids.front(), 1003U);
+    EXPECT_EQ(cache.incr_unread_calls, 1);
+}
+
+TEST_F(GroupServiceFixture, GroupMessageWithoutMentionDoesNotTriggerBotButFiltersBotOffline) {
+    const auto group = storage.addGroup(1001, "team");
+    storage.addMember(group.group_id, 1003);
+    storage.addMember(group.group_id, 9001);
+
+    auto sender = bindAlice();
+    auto request = requestFor(sender, liteim::MessageType::GroupMessageRequest,
+                              groupMessageBody(group.group_id, "plain group message"));
+    liteim::Packet response;
+
+    const auto status = service_with_bot.handleGroupMessage(request, response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(storage.save_message_calls, 1);
+    ASSERT_EQ(storage.last_offline_user_ids.size(), 1U);
+    EXPECT_EQ(storage.last_offline_user_ids.front(), 1003U);
+    EXPECT_EQ(cache.incr_unread_calls, 1);
+    EXPECT_EQ(cache.last_unread_key.user_id, 1003U);
+}
+
+TEST_F(GroupServiceFixture, BotSenderDoesNotTriggerAnotherBotReply) {
+    const auto group = storage.addGroup(1001, "team");
+    storage.addMember(group.group_id, 9001);
+
+    auto bot_session = bindUser(9001, 7191);
+    auto request = requestFor(bot_session, liteim::MessageType::GroupMessageRequest,
+                              groupMessageBody(group.group_id, "@mira_bot loop"));
+    liteim::Packet response;
+
+    const auto status = service_with_bot.handleGroupMessage(request, response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(storage.save_message_calls, 1);
+    ASSERT_EQ(storage.last_offline_user_ids.size(), 1U);
+    EXPECT_EQ(storage.last_offline_user_ids.front(), 1001U);
+    EXPECT_EQ(cache.incr_unread_calls, 1);
 }
 
 TEST_F(GroupServiceFixture, CreateGroupUsesLoggedInUserAndReturnsGroupFields) {
