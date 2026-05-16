@@ -10,6 +10,7 @@
 #include "liteim/service/ChatService.hpp"
 #include "liteim/service/FriendService.hpp"
 #include "liteim/service/GroupService.hpp"
+#include "liteim/service/HeartbeatService.hpp"
 #include "liteim/service/HistoryService.hpp"
 #include "liteim/service/MessageRouter.hpp"
 #include "liteim/service/OfflineMessageService.hpp"
@@ -60,12 +61,22 @@ int main() {
     liteim::OnlineService online_service(sessions, cache, "liteim-server", std::chrono::seconds{60});
     liteim::ThreadPool business_pool(config.business_threads);
     liteim::MessageRouter router(business_pool);
+    liteim::HeartbeatService heartbeat_service(online_service);
     liteim::AuthService auth_service(storage, cache, online_service);
     liteim::FriendService friend_service(storage, cache, online_service);
     liteim::ChatService chat_service(storage, cache, online_service);
     liteim::GroupService group_service(storage, cache, online_service);
     liteim::OfflineMessageService offline_message_service(storage, cache, online_service);
     liteim::HistoryService history_service(storage, online_service);
+    const auto heartbeat_status = heartbeat_service.registerHandlers(router);
+    if (!heartbeat_status.isOk()) {
+        liteim::Logger::get()->error("Failed to register heartbeat handler: {}",
+                                     heartbeat_status.message());
+        redis_pool.close();
+        mysql_pool.close();
+        signal_watcher.stop();
+        return 1;
+    }
     const auto auth_status = auth_service.registerHandlers(router);
     if (!auth_status.isOk()) {
         liteim::Logger::get()->error("Failed to register auth handlers: {}", auth_status.message());

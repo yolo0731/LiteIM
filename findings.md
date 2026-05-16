@@ -1549,3 +1549,23 @@ Step 13 只实现 `Acceptor` 非阻塞监听器。
 - `HistoryRequest` 的 `before_message_id` 复用请求体中的 `TlvType::MessageId` 表示；响应里的每条消息也继续重复使用 `TlvType::MessageId`。
 - 群聊历史权限需要在 service 层调用 `IStorage::findGroupById()` 和 `IStorage::getGroupMembers()` 验证；否则知道 `group_id` 的非成员可以读取历史。
 - 私聊历史第一版可通过当前 `ChatService` 的 conversation id 生成规则判断当前用户是否参与该私聊会话，避免任意用户凭 `conversation_id` 拉取别人私聊历史。
+
+## 2026-05-16 Step 40 HeartbeatService Findings
+
+本次进入 `Step 40：实现 HeartbeatService`。用户已确认采用方案 B：Redis TTL 刷新失败时记录降级 warning，仍返回 `HeartbeatResponse`。
+
+已经确认并采用的设计：
+
+- `HeartbeatService` 位于 `liteim_service`，只依赖 `OnlineService`，不直接依赖 `ICache` 或 Redis 具体组件。
+- `HeartbeatService::registerHandlers()` 注册 `HeartbeatRequest` 到 `MessageRouter` 的 `BusinessThread` dispatch，覆盖 `MessageRouter` 构造时的默认 inline 心跳 handler。
+- 未登录连接发合法 `HeartbeatRequest` 时返回 `HeartbeatResponse`，不写 Redis。
+- 已登录连接先通过 `OnlineService::getUserBySession(session_id)` 取得当前 user id，再调用 `OnlineService::refreshUserOnline(user_id, session_id)` 刷新 Redis 在线 TTL。
+- Redis TTL 刷新失败只记录 warning，不返回 `ErrorResponse`，不关闭连接，不清理 `SessionManager` 绑定。
+- `HeartbeatResponse` 只表示服务端成功收到并处理合法心跳包，不保证 Redis 在线状态 TTL 一定刷新成功。
+- `HeartbeatService` 不直接更新 `Session::last_active_time`；完整合法入站 packet 已经在 `Session` 读路径刷新连接活跃时间。
+
+本次不采用/不改：
+
+- 不新增协议类型或 TLV 字段。
+- 不新增 metrics 模块；当前第一版通过 warning 日志暴露 Redis TTL 刷新失败，后续可接入指标和告警。
+- 不实现客户端重连策略、断线提示 UI、BotGateway 或跨节点在线状态路由。

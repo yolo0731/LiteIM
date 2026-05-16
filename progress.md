@@ -2795,6 +2795,73 @@ Verification completed:
 - `git diff --check` produced no output.
 - `.gitkeep` and stale SQLite / `InMemoryStorage` / old `server/net` path scans produced no output.
 
+## 2026-05-16 Step 40 HeartbeatService
+
+本次进入 `Step 40: implement HeartbeatService`。
+
+开始状态：
+
+- 当前新路线中 Step 39 `HistoryService` 已完成。
+- `session-catchup.py` 提示的未同步内容来自纯概念问答，不对应当前 Step 40 代码改动。
+- 工作区进入 Step 40 前已有用户侧未提交注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。本 Step 不覆盖这些改动，提交时保持和 Step 40 行为改动分离。
+- 用户确认采用方案 B：Redis TTL 刷新失败时记录降级 warning，仍返回 `HeartbeatResponse`。
+
+概念计划：
+
+- `HeartbeatResponse` 只表示服务端成功收到并处理合法心跳包，不保证 Redis 在线状态 TTL 一定刷新成功。
+- 未登录心跳直接返回成功，不写 Redis。
+- 已登录心跳在 business 线程池中调用 `OnlineService::refreshUserOnline(user_id, session_id)` 刷新 Redis 在线 TTL。
+- Redis TTL 刷新失败只记录 warning，不返回 `ErrorResponse`，不关闭连接，不清理 SessionManager 绑定。
+- `HeartbeatService` 不直接更新 `Session::last_active_time`；完整合法入站 packet 已经在 `Session` 读路径刷新连接活跃时间。
+
+TDD RED：
+
+- 新增 `tests/service/heartbeat_service_test.cpp`，覆盖 header 自包含、未登录心跳成功、已登录刷新 Redis TTL、响应保留 `seq_id`、Redis 刷新失败仍返回 `HeartbeatResponse`、router 注册后覆盖默认 inline 心跳并刷新 TTL。
+- 更新 `tests/CMakeLists.txt` 注册新测试文件。
+- 运行 `cmake --build build --target liteim_tests -j2`，预期失败于 `fatal error: liteim/service/HeartbeatService.hpp: No such file or directory`。
+
+代码完成：
+
+- 新增 `include/liteim/service/HeartbeatService.hpp` 和 `src/service/HeartbeatService.cpp`。
+- `HeartbeatService` 注册 `HeartbeatRequest` 到 business thread dispatch。
+- `handleHeartbeat()` 对未登录连接直接返回 `HeartbeatResponse`，对已登录连接尝试刷新 Redis TTL。
+- Redis TTL 刷新失败时通过 `Logger` 记录 warning，仍返回成功。
+- 更新 `src/service/CMakeLists.txt` 和 `server/main.cpp`，把 `HeartbeatService` 编进 `liteim_service` 并在运行时注册。
+
+TDD GREEN：
+
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -R HeartbeatService --output-on-failure`：通过，6/6 tests passed。
+
+文档进行中：
+
+- 更新 `README.md`：当前 runtime 切到 Step 40，记录 `HeartbeatService` 和 Redis TTL 降级语义。
+- 新增 `tutorials/step40_heartbeat_service.md`，按固定 0-10 模板讲解心跳业务层语义。
+- 更新 `task_plan.md` / `findings.md` / `progress.md` 记录 Step 40 边界、设计发现和 RED/GREEN 过程。
+
+阶段验证结果：
+
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -R HeartbeatService --output-on-failure`：通过，6/6 tests passed。
+- `cmake --build build -j2`：通过。
+- `ctest --test-dir build -R "HeartbeatService|MessageRouter|OnlineService" --output-on-failure`：通过，22/22 tests passed。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：通过，MySQL / Redis 均 healthy。
+- `ctest --test-dir build --output-on-failure`：通过，327/327 tests passed。
+- `git diff --check`：通过。
+- `.gitkeep` 检查：无输出。
+- 旧路线路径检查：无 `server/net`、`server/protocol`、`SQLite`、`InMemory`、`step15_sqlite` 残留。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" README.md tutorials/step40_heartbeat_service.md`：无输出。
+- `rg -n "^## " tutorials/step40_heartbeat_service.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
+- `timeout 2s ./build/server/liteim_server || test $? -eq 124`：通过，server 监听 `0.0.0.0:9000` 后收到 SIGTERM 并通过 signalfd 退出。
+
+收尾注意：
+
+- Step 40 提交应排除进入本 Step 前已有的用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。
+
+收尾完成：
+
+- 提交完成：`feat(service): add heartbeat ttl refresh`。
+
 ## 2026-05-16 Step 39 HistoryService
 
 本次进入 `Step 39: implement HistoryService recent history pagination`。

@@ -31,6 +31,7 @@ The workspace documentation roles are now separated:
 
 | Phase | Status | Notes |
 | --- | --- | --- |
+| Step 40 HeartbeatService ttl refresh | done | User selected degradation scheme B: `HeartbeatResponse` means the server received and handled a legal heartbeat packet, while Redis online TTL refresh is a best-effort logged side effect for logged-in sessions. Added `HeartbeatService`, registered `HeartbeatRequest` on the business pool to override the router's default inline heartbeat handler, refreshed Redis TTL only for logged-in sessions, logged Redis refresh failures without returning `ErrorResponse`, and documented that heartbeat success does not guarantee Redis TTL refresh success. Added targeted tests/docs, full build passed, targeted Heartbeat/Router/OnlineService tests passed 22/22, full CTest passed 327/327 with local Docker MySQL/Redis, diff check passed, stale-route scans passed, tutorial scans passed, and bounded server smoke reached listening state then exited through signalfd SIGTERM. No new TLV fields, metrics module, Session activity timestamp mutation, client reconnect policy, BotGateway, or cross-node online routing. |
 | Step 39 HistoryService recent history pagination | done | Added `HistoryService` for `HistoryRequest` / `HistoryResponse`, querying private/group recent messages through `IStorage::getHistory()`, default limit 20, max limit 50, optional `before_message_id` cursor carried by request `TlvType::MessageId`, repeated TLV response fields, server runtime registration on the business pool, private participant validation, and group member validation. Added targeted tests/docs, full build passed, full CTest 321/321 passed with local Docker MySQL/Redis, diff check passed, tutorial scans passed, and bounded server smoke reached listening state then exited through signalfd SIGTERM. No SQL schema change, JSON body mode, reliable ACK, read receipts, client UI, HeartbeatService, or BotGateway. |
 | Step 38 GroupService group chat | done | Adopted scheme A: extended `GroupDao` / `IStorage` / `MySqlStorage` with `findGroupById()` and `getGroupsForUser(user_id)`, added `GroupService` for `CreateGroupRequest` / `JoinGroupRequest` / `ListGroupsRequest` / `GroupMessageRequest`, wired server runtime registration, saves group messages through `IStorage`, pushes to in-process online group members, writes offline rows and unread counts for offline members, and logs Redis unread failures after MySQL save instead of failing the sender. Added targeted tests/docs, full build passed, full CTest 312/312 passed, diff check passed, tutorial scans passed, and bounded server smoke reached listening state then exited through signalfd SIGTERM. No complex group permissions, announcements, mute, read receipts, ACK/retry, broadcast optimization, cross-node routing, BotGateway, schema change, or new TLV field introduced. |
 | Pre-Step38 Critical Hardening | done | Fixed two runtime correctness issues before group chat: session close cleanup now flows from `TcpServer` to `OnlineService::unbindSession(session_id)` through the business pool, and ChatService no longer reports Redis unread increment failure as sender failure after MySQL message/offline save succeeds. Added targeted tests, synced README/tutorial/planning docs, full build passed, full CTest 303/303 passed, diff check passed, and bounded server smoke reached listening state then exited on timeout SIGTERM as expected. |
@@ -239,7 +240,10 @@ Route status at the time this snapshot was last refreshed:
 - Step 34 `AuthService register and login` is complete.
 - Step 35 `FriendService` is complete.
 - Step 36 `ChatService private chat` is complete.
-- Default next implementation step is Step 39 `HistoryService`.
+- Step 37 `OfflineMessageService` is complete.
+- Step 38 `GroupService group chat` is complete.
+- Step 39 `HistoryService recent history pagination` is complete.
+- Step 40 `HeartbeatService ttl refresh` is complete.
 
 LiteIM phases:
 
