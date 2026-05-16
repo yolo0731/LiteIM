@@ -1,5 +1,66 @@
 # LiteIM Progress
 
+## 2026-05-16 Step 43 Python E2E
+
+本次进入 `Step 43：实现 Python 端到端测试`。
+
+开始状态：
+
+- Step 42 已提交：`feat(client): add command line im client`。
+- 用户确认 MySQL / Redis 在 Docker 环境中运行；本 Step 验证会使用 `docker compose -f docker/docker-compose.yml up -d --wait`。
+- 工作区仍保留 Step 41 前已有的用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。本 Step 不应把这些改动混入提交。
+- `session-catchup.py` 提示的是旧路线概念问答，不对应当前 Step 43 代码改动。
+
+概念计划：
+
+- 新增 `tests/e2e/` Python 测试目录。
+- Python helper 实现最小 TLV 编解码、阻塞 TCP client、请求/响应匹配、push 缓冲和 server 启停。
+- CTest 通过 Python `unittest` 运行 `test_auth.py`、`test_private_chat.py`、`test_group_chat.py`、`test_offline.py`、`test_heartbeat.py`、`test_backpressure.py`。
+- 每个 E2E 模块启动一个 `liteim_server`，CTest 使用资源锁串行执行，避免默认 `9000` 端口冲突。
+- 不修改 C++ 服务端协议、schema、Redis key 或业务 handler。
+
+TDD RED：
+
+- 新增 `tests/e2e/test_auth.py`、`test_private_chat.py`、`test_group_chat.py`、`test_offline.py`、`test_heartbeat.py`、`test_backpressure.py`。
+- 更新 `tests/CMakeLists.txt`，用 Python `unittest` 注册 `LiteIME2E.*` CTest，并通过 `LITEIM_SERVER_BIN=$<TARGET_FILE:liteim_server>` 指向构建产物。
+- `cmake --build build --target liteim_tests -j2 && ctest --test-dir build -R LiteIME2E.test_auth --output-on-failure` 按预期失败于 `ModuleNotFoundError: No module named 'tests.e2e.liteim_e2e'`，证明当前缺口是 Python E2E helper 尚未实现。
+
+代码完成：
+
+- 新增 `tests/e2e/liteim_e2e.py`，实现 Python `MessageType` / `TlvType`、Packet/TLV 编解码、消息字段组装、`LiteIMClient`、`LiteIMServer` 和 `E2ETestCase`。
+- `LiteIMClient` 支持 register/login/heartbeat/add_friend/list_friends/private_message/create_group/join_group/group_message/history/offline 等测试 helper。
+- `LiteIMServer` 默认启动 CTest 传入的 `LITEIM_SERVER_BIN`，等待 `127.0.0.1:9000` 可连接，并在测试结束时发送 SIGTERM 停止 server。
+- 修正 E2E 测试细节：离线测试使用 register response 取得 receiver id；backpressure 测试在发送阶段不读取 slow receiver，避免提前释放接收缓冲。
+
+TDD GREEN：
+
+- `python3 -m py_compile tests/e2e/*.py`：通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：通过，MySQL / Redis healthy。
+- `ctest --test-dir build -R LiteIME2E.test_auth --output-on-failure`：通过。
+- `ctest --test-dir build -R LiteIME2E --output-on-failure`：6/6 通过。
+
+文档完成：
+
+- 更新 `README.md`：记录 Python 3、Step 43 runtime、E2E 运行命令和测试边界。
+- 新增 `tutorials/step43_python_e2e.md`，按固定 0-10 模板讲解 E2E 边界、接口、运行流程和测试设计。
+
+最终验证：
+
+- `cmake --build build -j2`：通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：通过，MySQL / Redis healthy。
+- `python3 -m py_compile tests/e2e/*.py`：通过。
+- `ctest --test-dir build -R LiteIME2E --output-on-failure`：通过，6/6 tests passed。
+- `ctest --test-dir build --output-on-failure`：通过，344/344 tests passed。
+- `git diff --check`：通过。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" tutorials/step43_python_e2e.md README.md`：无输出。
+- `rg -n "^## " tutorials/step43_python_e2e.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
+- `.gitkeep` 和旧 `server/net`、`server/protocol`、SQLite、`InMemoryStorage`、`step15_sqlite` 路径扫描无输出。
+- `timeout 2s ./build/server/liteim_server || test $? -eq 124`：通过，server 监听 `0.0.0.0:9000` 后收到 SIGTERM 并通过 signalfd 退出。
+
+收尾注意：
+
+- Step 43 提交需要继续排除进入本 Step 前已有的用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。
+
 ## 2026-05-15 Step 38 GroupService
 
 本次进入 `Step 38：GroupService 群聊`，先完成概念和边界核对，再按用户确认的方案 A 进入实现。

@@ -8,6 +8,36 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-16 Step 43 Python E2E Findings
+
+本次进入 `Step 43：实现 Python 端到端测试`。用户确认 MySQL 和 Redis 在 Docker 环境中运行，因此 Step 43 直接沿用 LiteIM 默认 Docker 端口：
+
+- MySQL：`127.0.0.1:33060`
+- Redis：`127.0.0.1:63790`
+- `liteim_server`：默认监听 `0.0.0.0:9000`
+
+当前采用的 E2E 边界：
+
+- Python 测试作为黑盒客户端，不链接 C++ 库，不绕过 TCP/TLV 协议。
+- Python 侧实现最小 Packet/TLV 编解码、阻塞 socket client、server 启停 helper 和常用 IM 操作 helper。
+- CTest 负责调用 Python `unittest` 文件，并通过 `LITEIM_SERVER_BIN=$<TARGET_FILE:liteim_server>` 指向当前构建产物。
+- 每个 E2E test module 自己启动一个 `liteim_server` 进程；CTest 使用同一个资源锁串行运行这些模块，避免默认端口 `9000` 冲突。
+- 测试数据使用唯一用户名注册，不依赖 seed 用户 `alice` / `bob` 的 dev hash，因为 seed 密码不是 AuthService 真实 PBKDF2 hash。
+
+本次不采用/不改：
+
+- 不修改 C++ 协议枚举、TLV 字段、MySQL schema、Redis key 或业务 service 行为。
+- 不给 `liteim_server` 新增配置文件参数或动态端口参数；Step 43 第一版按默认配置运行。
+- 不安装新的全局 Python 依赖；E2E 使用 Python 标准库 `unittest` / `socket` / `subprocess`。
+
+实现确认：
+
+- `tests/e2e/liteim_e2e.py` 中的 Python Packet header 使用 `!IBBHQI`，对应 C++ 20 字节 header：magic、version、flags、msg_type、seq_id、body_len。
+- Python TLV body 使用 `!HI`，对应 C++ `type(2) + len(4) + value`。
+- `LiteIMClient.request()` 通过 `seq_id` 匹配 response；收到其他包时先缓存为 push，后续由 `expect_push()` 消费。
+- `LiteIMServer` 默认启动 `LITEIM_SERVER_BIN`，也支持 `LITEIM_E2E_USE_EXISTING_SERVER=1` 连接已运行 server。
+- Backpressure E2E 不读取接收端 push，连续发接近 MySQL `TEXT` 上限的消息，让真实 server 输出缓冲积压并观察 slow receiver 被关闭。
+
 ## 2026-05-15 Step 38 GroupService Findings
 
 本次按 `PROJECT_MEMORY.md` 进入 `Step 38：实现 GroupService 群聊`。长期边界已经确认：

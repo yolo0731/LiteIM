@@ -90,6 +90,7 @@ Requirements:
 - Linux
 - CMake
 - A C++17 compiler
+- Python 3 for end-to-end protocol tests
 - POSIX sockets, `epoll`, `eventfd`, `timerfd`, and `signalfd`
 - `pkg-config`, MySQL client development files that provide `mysqlclient`, hiredis development files that provide `hiredis`, and OpenSSL development files that provide `openssl`
 
@@ -106,9 +107,9 @@ Run the server executable:
 ./build/server/liteim_server
 ```
 
-The server starts a real `EventLoop + TcpServer` on the configured host and port, starts MySQL / Redis pools, starts the business `ThreadPool`, and wires incoming packets into `MessageRouter`. In the current Step 42 runtime, heartbeat requests are handled by `HeartbeatService`; register/login requests are handled by `AuthService`; add-friend and friend-list requests are handled by `FriendService`; private-message requests are handled by `ChatService`; group create/join/list/message requests are handled by `GroupService`; offline-message pull requests are handled by `OfflineMessageService`; history requests are handled by `HistoryService`; messages to or mentioning `mira_bot` are bridged to `BotService` / `EchoBotGateway`; and unknown or unsupported request types get `ErrorResponse`. Business handlers run in the business pool. Session close cleanup submits `OnlineService::unbindSession(session_id)` into the business pool so Redis online-state cleanup does not run in an I/O callback. The server handles `Ctrl-C` / `SIGTERM` through `signalfd`, stops `TcpServer` in the base loop thread, stops the business pool, closes MySQL / Redis pools, and exits cleanly.
+The server starts a real `EventLoop + TcpServer` on the configured host and port, starts MySQL / Redis pools, starts the business `ThreadPool`, and wires incoming packets into `MessageRouter`. In the current Step 43 runtime, heartbeat requests are handled by `HeartbeatService`; register/login requests are handled by `AuthService`; add-friend and friend-list requests are handled by `FriendService`; private-message requests are handled by `ChatService`; group create/join/list/message requests are handled by `GroupService`; offline-message pull requests are handled by `OfflineMessageService`; history requests are handled by `HistoryService`; messages to or mentioning `mira_bot` are bridged to `BotService` / `EchoBotGateway`; and unknown or unsupported request types get `ErrorResponse`. Business handlers run in the business pool. Session close cleanup submits `OnlineService::unbindSession(session_id)` into the business pool so Redis online-state cleanup does not run in an I/O callback. The server handles `Ctrl-C` / `SIGTERM` through `signalfd`, stops `TcpServer` in the base loop thread, stops the business pool, closes MySQL / Redis pools, and exits cleanly.
 
-Because Step 42 runtime starts real MySQL / Redis pools, start local dependencies before a bounded server smoke check:
+Because Step 43 runtime starts real MySQL / Redis pools, start local dependencies before a bounded server smoke check:
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d --wait
@@ -141,6 +142,15 @@ quit
 
 `liteim_cli` is a protocol debugging tool: it sends ordinary TLV requests, prints decoded response/push packets, and sends a background `HeartbeatRequest` every 30 seconds after connecting. It does not provide a curses UI, local persistence, or automatic reconnect in the first version.
 
+Run the Python end-to-end tests:
+
+```bash
+docker compose -f docker/docker-compose.yml up -d --wait
+ctest --test-dir build -R LiteIME2E --output-on-failure
+```
+
+The E2E tests use Python standard-library `unittest`, start the built `liteim_server` through CTest, speak the same TCP/TLV protocol as real clients, and use unique generated usernames so they do not depend on seed users having real PBKDF2 password hashes.
+
 Configuration keys are parsed by `liteim::Config::loadFromFile()`. Network-facing defaults include:
 
 ```text
@@ -164,6 +174,8 @@ Step 40 adds `HeartbeatService`, registers `HeartbeatRequest` on the business th
 Step 41 adds `BotGateway`, `EchoBotGateway`, and `BotService` for the seed user `mira_bot` (`user_id=9001`). The first C++ version keeps bot traffic on ordinary `PrivateMessageRequest` / `GroupMessageRequest`: private messages to `mira_bot` are saved, do not create bot offline/unread rows, and receive an ordinary `PrivateMessagePush` echo from `mira_bot`; group messages trigger a bot echo only when the text contains `@mira_bot` and `mira_bot` is a member of that group. Bot group replies are saved as ordinary group messages, pushed to online human members, and written as offline/unread only for offline human members.
 
 Step 42 adds `liteim_cli`, a command-line protocol debug client. It connects to `127.0.0.1:9000` by default, supports `--host` / `--port`, builds normal TLV packets for register/login/friend/private/group/history/offline/heartbeat commands, prints decoded server responses and push packets, and sends a periodic heartbeat every 30 seconds.
+
+Step 43 adds Python black-box E2E tests. The tests implement a minimal TLV codec/client in Python, start the built `liteim_server`, and verify register/login, wrong-password/login-limit errors, private chat, group chat, history, offline delivery, heartbeat, and slow-client backpressure over the real TCP protocol.
 
 Start MySQL and Redis:
 
@@ -223,11 +235,11 @@ Run tests:
 ctest --test-dir build --output-on-failure
 ```
 
-The Step 23-27 MySQL integration tests, Step 31 `MySqlStorage` tests, Step 28-32 Redis integration tests, and Step 34-41 service tests use `Config::defaults()` where they need real dependencies, so they target the local Docker endpoints shown above. If those containers are not running, integration tests skip instead of failing unrelated unit-test runs. Start the local dependency stack first when validating the storage/cache/service layer:
+The Step 23-27 MySQL integration tests, Step 31 `MySqlStorage` tests, Step 28-32 Redis integration tests, Step 34-41 service tests, and Step 43 Python E2E tests use `Config::defaults()` where they need real dependencies, so they target the local Docker endpoints shown above. If those containers are not running, integration tests skip instead of failing unrelated unit-test runs. Start the local dependency stack first when validating the storage/cache/service/E2E layer:
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d --wait
-ctest --test-dir build -R "MySql|UserDao|MessageDao|FriendGroupDao|MySqlStorage|Redis|OnlineStatusCache|UnreadCounter|LoginRateLimiter|RedisCache|SessionManager|OnlineService|AuthService|FriendService|ChatService|GroupService|OfflineMessageService|HistoryService|HeartbeatService|Bot|ClientCli" --output-on-failure
+ctest --test-dir build -R "MySql|UserDao|MessageDao|FriendGroupDao|MySqlStorage|Redis|OnlineStatusCache|UnreadCounter|LoginRateLimiter|RedisCache|SessionManager|OnlineService|AuthService|FriendService|ChatService|GroupService|OfflineMessageService|HistoryService|HeartbeatService|Bot|ClientCli|LiteIME2E" --output-on-failure
 ```
 
 Useful repository checks:
@@ -274,6 +286,7 @@ LiteIM/
 │   ├── cache/
 │   ├── client_cli/
 │   ├── concurrency/
+│   ├── e2e/
 │   ├── net/
 │   ├── protocol/
 │   ├── service/

@@ -76,3 +76,29 @@ add_test(
     COMMAND /bin/bash ${CMAKE_CURRENT_SOURCE_DIR}/server_signal_shutdown_test.sh $<TARGET_FILE:liteim_server>
 )
 set_tests_properties(LiteIMServerSignalTest.TerminatesOnSigterm PROPERTIES SKIP_RETURN_CODE 77)
+
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+    set(LITEIM_E2E_TESTS
+        test_auth
+        test_private_chat
+        test_group_chat
+        test_offline
+        test_heartbeat
+        test_backpressure
+    )
+
+    foreach(e2e_test IN LISTS LITEIM_E2E_TESTS)
+        add_test(
+            NAME LiteIME2E.${e2e_test}
+            COMMAND ${Python3_EXECUTABLE} -m unittest tests.e2e.${e2e_test}
+        )
+        set_tests_properties(LiteIME2E.${e2e_test}
+            PROPERTIES
+                WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+                ENVIRONMENT "PYTHONPATH=${PROJECT_SOURCE_DIR};LITEIM_SERVER_BIN=$<TARGET_FILE:liteim_server>"
+                RESOURCE_LOCK LiteIME2EServer
+                TIMEOUT 45
+        )
+    endforeach()
+endif()
