@@ -7,6 +7,7 @@
 
 namespace liteim {
 
+// 业务层心跳响应服务，负责处理客户端的心跳请求，刷新在线状态的过期时间
 class HeartbeatService {
 public:
     explicit HeartbeatService(OnlineService& online_service);

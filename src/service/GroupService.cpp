@@ -37,11 +37,11 @@ Status appendConversationType(ConversationType type, Packet& packet) {
     return appendUint64(TlvType::ConversationType, static_cast<std::uint64_t>(type), packet.body);
 }
 
+// 判断某个用户是不是群成员
 bool containsMember(const std::vector<GroupMemberRecord>& members, std::uint64_t user_id) {
-    return std::any_of(members.begin(), members.end(),
-                       [user_id](const GroupMemberRecord& member) {
-                           return member.user_id == user_id;
-                       });
+    return std::any_of(members.begin(), members.end(), [user_id](const GroupMemberRecord& member) {
+        return member.user_id == user_id;
+    });
 }
 
 }  // namespace
@@ -138,12 +138,13 @@ Status GroupService::handleJoinGroup(const MessageRouter::RouterRequest& request
         return invalidGroupIdStatus();
     }
 
+    // 确认群存在
     GroupRecord group;
     const auto find_status = storage_.findGroupById(group_id, group);
     if (!find_status.isOk()) {
         return find_status;
     }
-
+    // 把用户添加到群成员表里
     const auto add_status = storage_.addGroupMember(group_id, user_id);
     if (!add_status.isOk()) {
         return add_status;
@@ -151,9 +152,11 @@ Status GroupService::handleJoinGroup(const MessageRouter::RouterRequest& request
 
     response.header.msg_type = MessageType::JoinGroupResponse;
     response.header.seq_id = request.packet.header.seq_id;
+    // 把群信息写到响应的body里返回给客户端
     return appendGroupFields(group, response);
 }
 
+// 列出用户加入的群，返回的响应里每个TLV是所有加入的群的信息
 Status GroupService::handleListGroups(const MessageRouter::RouterRequest& request,
                                       Packet& response) {
     std::uint64_t user_id = 0;
@@ -162,6 +165,7 @@ Status GroupService::handleListGroups(const MessageRouter::RouterRequest& reques
         return user_status;
     }
 
+    // 从 MySQL 查这个用户加入了哪些群
     std::vector<GroupRecord> groups;
     const auto groups_status = storage_.getGroupsForUser(user_id, groups);
     if (!groups_status.isOk()) {
@@ -179,14 +183,16 @@ Status GroupService::handleListGroups(const MessageRouter::RouterRequest& reques
     return Status::ok();
 }
 
+// 处理发送群消息
 Status GroupService::handleGroupMessage(const MessageRouter::RouterRequest& request,
                                         Packet& response) {
+    // 从 session 里拿到当前用户 id，确认登录状态
     std::uint64_t sender_id = 0;
     const auto user_status = currentUserId(request, sender_id);
     if (!user_status.isOk()) {
         return user_status;
     }
-
+    // 从请求消息里拿到群 id 和消息文本
     std::uint64_t group_id = 0;
     const auto group_status = getUint64(request.fields, TlvType::GroupId, group_id);
     if (!group_status.isOk()) {
@@ -205,12 +211,14 @@ Status GroupService::handleGroupMessage(const MessageRouter::RouterRequest& requ
         return emptyMessageTextStatus();
     }
 
+    // 确认群存在
     GroupRecord group;
     const auto find_status = storage_.findGroupById(group_id, group);
     if (!find_status.isOk()) {
         return find_status;
     }
 
+    // 检查发送者是不是群成员
     std::vector<GroupMemberRecord> members;
     const auto members_status = storage_.getGroupMembers(group_id, members);
     if (!members_status.isOk()) {
@@ -220,8 +228,10 @@ Status GroupService::handleGroupMessage(const MessageRouter::RouterRequest& requ
         return notGroupMemberStatus();
     }
 
+    // 区分在线成员和离线成员，在线成员直接推送消息，离线成员把消息存到离线消息表里，并在缓存里增加未读计数
     std::vector<Session::Ptr> online_sessions;
     std::vector<std::uint64_t> offline_user_ids;
+    // 跳过发送者自己
     for (const auto& member : members) {
         if (member.user_id == sender_id) {
             continue;
@@ -231,24 +241,28 @@ Status GroupService::handleGroupMessage(const MessageRouter::RouterRequest& requ
         }
 
         Session::Ptr member_session;
-        const auto session_status = online_service_.getSessionByUser(member.user_id, member_session);
+        const auto session_status =
+            online_service_.getSessionByUser(member.user_id, member_session);
+        // 在线成员，指针放进 online_sessions，后面保存消息后直接推送
         if (session_status.isOk()) {
             online_sessions.push_back(std::move(member_session));
             continue;
         }
+        // 离线成员，user_id 放进 offline_user_ids，后面存离线消息和增加未读计数
         if (session_status.code() == ErrorCode::NotFound) {
             offline_user_ids.push_back(member.user_id);
             continue;
         }
         return session_status;
     }
-
+    // 构造群消息
     MessageRecord message;
     message.conversation = {ConversationType::kGroup, group.group_id};
     message.sender_id = sender_id;
     message.receiver_id = group.group_id;
     message.text = std::move(message_text);
 
+    // 把消息存到 MySQL，存的时候根据离线成员列表把消息也存到离线消息表里，返回保存后的消息记录（包含 message_id 和 created_at_ms）
     MessageRecord saved_message;
     const auto save_status =
         storage_.saveMessageWithOfflineRecipients(message, offline_user_ids, saved_message);
@@ -256,6 +270,7 @@ Status GroupService::handleGroupMessage(const MessageRouter::RouterRequest& requ
         return save_status;
     }
 
+    // 给离线成员加 Redis 未读数
     for (const auto& user_id : offline_user_ids) {
         std::uint64_t unread_count = 0;
         const auto unread_status =
@@ -268,7 +283,7 @@ Status GroupService::handleGroupMessage(const MessageRouter::RouterRequest& requ
                 unread_status.message());
         }
     }
-
+    // 给在线成员推消息
     for (const auto& session : online_sessions) {
         Packet push;
         push.header.msg_type = MessageType::GroupMessagePush;
@@ -291,6 +306,7 @@ Status GroupService::handleGroupMessage(const MessageRouter::RouterRequest& requ
 
     response.header.msg_type = MessageType::GroupMessageResponse;
     response.header.seq_id = request.packet.header.seq_id;
+    // 给发送者返回响应
     return appendMessageFields(saved_message, response);
 }
 

@@ -36,6 +36,7 @@ Status notConversationMemberStatus() {
     return Status::error(ErrorCode::InvalidArgument, "user is not a conversation member");
 }
 
+// 把原始的 uint64_t 转成 ConversationType 枚举
 Status toConversationType(std::uint64_t raw, ConversationType& type) {
     if (raw == static_cast<std::uint64_t>(ConversationType::kPrivate)) {
         type = ConversationType::kPrivate;
@@ -52,6 +53,7 @@ Status appendConversationType(ConversationType type, Packet& packet) {
     return appendUint64(TlvType::ConversationType, static_cast<std::uint64_t>(type), packet.body);
 }
 
+// 是把一条消息写进响应包的 TLV body 里
 Status appendMessageFields(const MessageRecord& message, Packet& packet) {
     const auto message_status = appendUint64(TlvType::MessageId, message.message_id, packet.body);
     if (!message_status.isOk()) {
@@ -88,9 +90,8 @@ bool containsMember(const std::vector<GroupMemberRecord>& members, std::uint64_t
         return member.user_id == user_id;
     });
 }
-
-bool decodePrivateConversationId(std::uint64_t conversation_id,
-                                 std::uint64_t& left_user_id,
+// 解码私聊会话 ID，得到两个用户 ID
+bool decodePrivateConversationId(std::uint64_t conversation_id, std::uint64_t& left_user_id,
                                  std::uint64_t& right_user_id) {
     left_user_id = 0;
     right_user_id = 0;
@@ -110,6 +111,7 @@ bool decodePrivateConversationId(std::uint64_t conversation_id,
     return left_user_id != 0U && right_user_id != 0U && left_user_id != right_user_id;
 }
 
+// 检查用户是否是这个私聊会话的成员
 bool isPrivateConversationMember(std::uint64_t user_id, std::uint64_t conversation_id) {
     std::uint64_t left_user_id = 0;
     std::uint64_t right_user_id = 0;
@@ -124,6 +126,7 @@ bool isPrivateConversationMember(std::uint64_t user_id, std::uint64_t conversati
 HistoryService::HistoryService(IStorage& storage, OnlineService& online_service,
                                HistoryServiceOptions options)
     : storage_(storage), online_service_(online_service), options_(std::move(options)) {
+    // 检查分页配置是否合法
     if (options_.max_limit == 0U || options_.max_limit > kHardMaxHistoryLimit ||
         options_.default_limit == 0U || options_.default_limit > options_.max_limit) {
         throw std::invalid_argument("history limits must satisfy 1 <= default <= max <= 50");
@@ -147,17 +150,20 @@ Status HistoryService::handleHistory(const MessageRouter::RouterRequest& request
         return user_status;
     }
 
+    // 从请求里解析出 HistoryQuery，包含会话类型、会话 ID、分页信息等
     HistoryQuery query;
     const auto query_status = buildQuery(request, query);
     if (!query_status.isOk()) {
         return query_status;
     }
 
+    // 判断当前用户是否有权限看这个会话
     const auto auth_status = authorizeQuery(user_id, query);
     if (!auth_status.isOk()) {
         return auth_status;
     }
 
+    // 从存储里查历史消息写进响应包
     std::vector<MessageRecord> messages;
     const auto history_status = storage_.getHistory(query, messages);
     if (!history_status.isOk()) {
@@ -187,6 +193,7 @@ Status HistoryService::currentUserId(const MessageRouter::RouterRequest& request
     return status;
 }
 
+// 从请求包里解析分页条件、会话类型，组装成 HistoryQuery 结构体
 Status HistoryService::buildQuery(const MessageRouter::RouterRequest& request,
                                   HistoryQuery& query) const {
     std::uint64_t raw_type = 0;
@@ -208,6 +215,7 @@ Status HistoryService::buildQuery(const MessageRouter::RouterRequest& request,
         return invalidConversationIdStatus();
     }
 
+    // before_message_id 可选，默认是 0，表示从最新的消息开始往前查，如果提供了这个字段，则从指定消息 ID 往前查
     query.before_message_id = 0;
     if (request.fields.find(TlvType::MessageId) != request.fields.end()) {
         const auto before_status =
@@ -217,6 +225,7 @@ Status HistoryService::buildQuery(const MessageRouter::RouterRequest& request,
         }
     }
 
+    // limit 可选，默认是 options_.default_limit，最大不能超过 options_.max_limit
     query.limit = options_.default_limit;
     if (request.fields.find(TlvType::Limit) != request.fields.end()) {
         std::uint64_t requested_limit = 0;
@@ -236,6 +245,7 @@ Status HistoryService::buildQuery(const MessageRouter::RouterRequest& request,
 }
 
 Status HistoryService::authorizeQuery(std::uint64_t user_id, const HistoryQuery& query) {
+    // 检验私聊
     if (query.conversation.type == ConversationType::kPrivate) {
         if (!isPrivateConversationMember(user_id, query.conversation.id)) {
             return notConversationMemberStatus();
@@ -243,6 +253,7 @@ Status HistoryService::authorizeQuery(std::uint64_t user_id, const HistoryQuery&
         return Status::ok();
     }
 
+    // 检验群聊
     GroupRecord group;
     const auto group_status = storage_.findGroupById(query.conversation.id, group);
     if (!group_status.isOk()) {

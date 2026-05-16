@@ -275,7 +275,7 @@ Status GroupDao::createGroup(const CreateGroupRequest& request, GroupRecord& cre
 
     PreparedStatement statement(*guard);
     const auto prepare_status =
-        statement.prepare("INSERT INTO chat_groups "
+        statement.prepare("INSERT INTO chat_groups "  // 插入chat_groups表
                           "(owner_id, group_name, created_at_ms, updated_at_ms) "
                           "VALUES (?, ?, ?, ?)");
     if (!prepare_status.isOk()) {
