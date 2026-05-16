@@ -1549,3 +1549,10 @@ Step 13 只实现 `Acceptor` 非阻塞监听器。
 - `HistoryRequest` 的 `before_message_id` 复用请求体中的 `TlvType::MessageId` 表示；响应里的每条消息也继续重复使用 `TlvType::MessageId`。
 - 群聊历史权限需要在 service 层调用 `IStorage::findGroupById()` 和 `IStorage::getGroupMembers()` 验证；否则知道 `group_id` 的非成员可以读取历史。
 - 私聊历史第一版可通过当前 `ChatService` 的 conversation id 生成规则判断当前用户是否参与该私聊会话，避免任意用户凭 `conversation_id` 拉取别人私聊历史。
+
+## 2026-05-16 Step 40 HeartbeatService Findings
+
+- `MessageRouter` 当前构造函数内置一个 inline `HeartbeatRequest` fallback handler，只返回空 `HeartbeatResponse`，不触碰 Redis；Step 40 可以通过 `HeartbeatService::registerHandlers()` 覆盖这个 handler，让 server runtime 使用 business thread 执行 Redis TTL 刷新。
+- `OnlineService::refreshUserOnline(user_id, session_id)` 已经验证当前 `session_id` 仍绑定到该 `user_id`，然后调用 `ICache::refreshUserOnline(user_id, ttl)`；它只刷新 Redis key TTL，不更新 Redis value 里的 `last_active_time_ms`。
+- `Session::last_active_time_ms_` 仍由完整、合法入站 Packet 刷新；业务心跳 service 不能直接写 `Session` 活跃时间，也不能让服务端出站写刷新活跃时间。
+- 用户已确认方案 A：已登录心跳刷新 Redis TTL 失败时返回错误响应；未登录连接仍返回 `HeartbeatResponse`，不写 Redis。

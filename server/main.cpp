@@ -10,6 +10,7 @@
 #include "liteim/service/ChatService.hpp"
 #include "liteim/service/FriendService.hpp"
 #include "liteim/service/GroupService.hpp"
+#include "liteim/service/HeartbeatService.hpp"
 #include "liteim/service/HistoryService.hpp"
 #include "liteim/service/MessageRouter.hpp"
 #include "liteim/service/OfflineMessageService.hpp"
@@ -66,6 +67,7 @@ int main() {
     liteim::GroupService group_service(storage, cache, online_service);
     liteim::OfflineMessageService offline_message_service(storage, cache, online_service);
     liteim::HistoryService history_service(storage, online_service);
+    liteim::HeartbeatService heartbeat_service(online_service);
     const auto auth_status = auth_service.registerHandlers(router);
     if (!auth_status.isOk()) {
         liteim::Logger::get()->error("Failed to register auth handlers: {}", auth_status.message());
@@ -113,6 +115,15 @@ int main() {
     if (!history_status.isOk()) {
         liteim::Logger::get()->error("Failed to register history handlers: {}",
                                      history_status.message());
+        redis_pool.close();
+        mysql_pool.close();
+        signal_watcher.stop();
+        return 1;
+    }
+    const auto heartbeat_status = heartbeat_service.registerHandlers(router);
+    if (!heartbeat_status.isOk()) {
+        liteim::Logger::get()->error("Failed to register heartbeat handlers: {}",
+                                     heartbeat_status.message());
         redis_pool.close();
         mysql_pool.close();
         signal_watcher.stop();
