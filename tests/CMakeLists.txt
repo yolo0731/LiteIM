@@ -50,6 +50,7 @@ add_executable(liteim_tests
     service/history_service_test.cpp
     service/heartbeat_service_test.cpp
     client_cli/cli_protocol_test.cpp
+    bench/benchmark_test.cpp
     timer/timer_heap_header_test.cpp
     timer/timer_heap_test.cpp
     timer/timer_manager_header_test.cpp
@@ -63,7 +64,7 @@ add_executable(liteim_tests
 )
 
 target_compile_features(liteim_tests PRIVATE cxx_std_17)
-target_link_libraries(liteim_tests PRIVATE liteim_base liteim_net liteim_protocol liteim_concurrency liteim_storage liteim_cache liteim_service liteim_client_cli GTest::gtest_main)
+target_link_libraries(liteim_tests PRIVATE liteim_base liteim_net liteim_protocol liteim_concurrency liteim_storage liteim_cache liteim_service liteim_client_cli liteim_bench_core GTest::gtest_main)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(liteim_tests PRIVATE -Wall -Wextra -Wpedantic)

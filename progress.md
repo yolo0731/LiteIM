@@ -3111,3 +3111,64 @@ TDD GREEN：
 收尾完成：
 
 - 提交完成：`feat(chat): add recent history pagination`。
+
+## 2026-05-16 Step 44 Benchmark Tool
+
+本次进入 `Step 44：实现自研压测工具`。
+
+开始状态：
+
+- Step 43 已提交：`64ec246 test(e2e): add python end to end tests`。
+- 工作区仍保留 Step 41 前已有的用户侧改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。本 Step 不应把这些改动混入提交。
+- 用户的 MySQL / Redis 在 Docker 环境运行；Step 44 的真实运行验证继续使用 `docker compose -f docker/docker-compose.yml up -d --wait`。
+
+概念计划：
+
+- 新增 `bench/` 目录和 `liteim_bench` 可执行程序。
+- 把参数解析、延迟分位数、报告格式和资源采样拆成可单测 helper。
+- `liteim_bench` 启动多个长连接，注册/登录唯一 bench 用户，并向一个接收用户发送普通私聊消息。
+- 输出 JSON 或 Markdown 报告，包含 connection success、QPS、平均延迟、p50/p95/p99、错误数、内存和 CPU 使用。
+
+TDD RED：
+
+- 新增 `tests/bench/benchmark_test.cpp`，覆盖参数解析、私聊压测最低连接数、p50/p95/p99 统计、JSON 报告字段和固定大小 payload。
+- 更新根 `CMakeLists.txt` 与 `tests/CMakeLists.txt`，注册 `bench` 子目录和 `liteim_bench_core`。
+- `cmake --build build --target liteim_tests -j2` 按预期失败：`add_subdirectory given source "bench" which is not an existing directory`。
+
+代码完成：
+
+- 新增 `bench/CMakeLists.txt`，生成 `liteim_bench_core` 静态库和 `liteim_bench` 可执行程序。
+- 新增 `bench/Benchmark.hpp` / `bench/Benchmark.cpp`，实现参数解析、payload 生成、nearest-rank 分位数统计、JSON/Markdown 报告、进程 RSS/CPU 采样和真实私聊压测 runner。
+- 新增 `bench/liteim_bench.cpp`，作为命令行入口：解析参数、运行 benchmark、输出报告。
+- 压测 runner 使用 1 个接收者连接和 `connections - 1` 个发送者连接；所有用户注册唯一账号并登录，发送者走普通 `PrivateMessageRequest`，接收者后台读取 push 防止接收端输出缓冲干扰测试。
+
+TDD GREEN：
+
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -R Benchmark --output-on-failure`：通过，5/5 tests passed。
+
+阶段验证：
+
+- `cmake --build build --target liteim_bench -j2`：通过。
+- `./build/bench/liteim_bench --help`：通过，输出可用参数。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：通过，MySQL / Redis healthy。
+- 手动启动 `./build/server/liteim_server` 后运行小规模 smoke：`./build/bench/liteim_bench --host 127.0.0.1 --port 9000 --connections 4 --message-size 64 --interval-ms 20 --duration-sec 1 --format json`：通过，`connection_success=4/4`、`request_success=114`、`error_count=0`、`p99_us=9403`。
+
+最终验证：
+
+- `cmake --build build -j2`：通过。
+- `ctest --test-dir build --output-on-failure`：通过，349/349 tests passed。
+- `git diff --check`：通过。
+- `.gitkeep` 检查：无输出。
+- 旧路线路径检查：无 `server/net`、`server/protocol`、`SQLite`、`InMemory`、`step15_sqlite` 残留。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" tutorials/step44_benchmark_tool.md README.md`：无输出。
+- `rg -n "^## " tutorials/step44_benchmark_tool.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
+- `timeout 2s ./build/server/liteim_server || test $? -eq 124`：通过，server 监听 `0.0.0.0:9000` 后收到 SIGTERM 并通过 signalfd 退出。
+
+收尾注意：
+
+- Step 44 提交需要继续排除进入本 Step 前已有的用户侧改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。
+
+收尾完成：
+
+- 提交完成：`feat(bench): add liteim benchmark tool`。

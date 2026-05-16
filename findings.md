@@ -8,6 +8,30 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-16 Step 44 Benchmark Tool Findings
+
+本次进入 `Step 44：实现自研压测工具`。`PROJECT_MEMORY.md` 的要求是实现 `bench/liteim_bench.cpp`，支持多长连接、可配置消息大小/发送间隔/持续时间、登录后私聊发送、统计连接成功数、QPS、平均延迟、p50/p95/p99、错误数、内存和 CPU 使用，并输出 JSON 或 Markdown 报告片段。
+
+当前采用的边界：
+
+- 压测工具作为独立本地客户端，不修改 `liteim_server` 协议、MySQL schema、Redis key 或业务 service 行为。
+- 可测试逻辑拆进 bench helper 库：参数解析、用户名生成、payload 生成、延迟统计、资源采样和报告渲染。
+- 可执行入口 `bench/liteim_bench.cpp` 负责并发连接、注册/登录、私聊请求、响应匹配、资源采样和报告输出。
+- 第一版复用普通 `RegisterRequest` / `LoginRequest` / `PrivateMessageRequest`，每个连接注册唯一用户名，所有 worker 把私聊发给同一个接收用户。
+- README 只记录本机真实小规模验证命令和输出字段，不写未经验证的夸张 QPS。
+
+本次不采用/不改：
+
+- 不实现分布式压测、连接复用到多进程、复杂场景脚本、图表生成、CI 压测 workflow、sanitizer 构建或 Qt。
+- 不把压测默认加入全量 CTest，避免本地依赖和耗时污染普通测试；只保留 helper 单元测试和手动运行命令。
+
+实现确认：
+
+- `liteim_bench` 使用 1 个 receiver 和 `connections - 1` 个 sender；`connections` 表示总长连接数，最小为 2。
+- receiver 后台读取 push，避免普通吞吐压测被慢接收端 backpressure 行为污染。
+- 延迟分位数采用 nearest-rank：`rank = ceil(q * count)`。
+- 本地 smoke 在 2026-05-16 运行：`--connections 4 --message-size 64 --interval-ms 20 --duration-sec 1 --format json`，结果 `connection_success=4/4`、`request_success=114`、`error_count=0`、`p99_us=9403`。
+
 ## 2026-05-16 Step 43 Python E2E Findings
 
 本次进入 `Step 43：实现 Python 端到端测试`。用户确认 MySQL 和 Redis 在 Docker 环境中运行，因此 Step 43 直接沿用 LiteIM 默认 Docker 端口：
