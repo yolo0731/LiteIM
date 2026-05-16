@@ -6,6 +6,7 @@ add_library(liteim_service STATIC
     ChatService.cpp
     FriendService.cpp
     GroupService.cpp
+    HistoryService.cpp
     MessageRouter.cpp
     OfflineMessageService.cpp
     OnlineService.cpp

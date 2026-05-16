@@ -2794,3 +2794,68 @@ Verification completed:
 - `ctest --test-dir build --output-on-failure` passed `164/164`.
 - `git diff --check` produced no output.
 - `.gitkeep` and stale SQLite / `InMemoryStorage` / old `server/net` path scans produced no output.
+
+## 2026-05-16 Step 39 HistoryService
+
+本次进入 `Step 39: implement HistoryService recent history pagination`。
+
+开始状态：
+
+- 当前新路线中 Step 38 `GroupService` 已完成。
+- `session-catchup.py` 提示的未同步内容来自纯概念问答，不对应当前 Step 39 代码改动。
+- 工作区进入 Step 39 前已有用户侧未提交注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。本 Step 不覆盖这些改动，提交时保持和 Step 39 行为改动分离。
+- Step 39 采用现有 TLV 协议，不新增协议枚举：请求读取 `ConversationType`、`ConversationId`、可选 `MessageId` 作为 `before_message_id`、可选 `Limit`；响应继续返回重复消息字段。
+
+概念计划：
+
+- `HistoryService` 只负责鉴权、解析请求、调用 `IStorage::getHistory()` 和编码响应。
+- 历史查询仍由 `MessageDao` / `MySqlStorage` 走 `(conversation_type, conversation_id, message_id)` 索引；service 不拼 SQL。
+- 默认返回最近 20 条，超过 50 条截断，`limit=0` 拒绝。
+- 群聊历史必须验证当前用户是群成员；私聊历史用当前私聊 conversation id 规则验证当前用户是否参与该会话。
+
+TDD RED：
+
+- 新增 `tests/service/history_service_test.cpp`，覆盖 header 自包含、未登录拒绝、私聊默认 limit、limit 最大 50 截断、`before_message_id` 游标、`limit=0` 拒绝、私聊非参与者拒绝、群聊非成员拒绝、群成员查询成功、router 注册发回 `HistoryResponse`。
+- 更新 `tests/CMakeLists.txt` 注册新测试文件。
+- 运行 `cmake --build build`，预期失败于 `fatal error: liteim/service/HistoryService.hpp: No such file or directory`。
+
+代码完成：
+
+- 新增 `include/liteim/service/HistoryService.hpp` 和 `src/service/HistoryService.cpp`。
+- `HistoryService` 注册 `HistoryRequest` 到 `MessageRouter` 的 business thread dispatch。
+- 请求解析 `ConversationType` / `ConversationId` / 可选 `MessageId` 游标 / 可选 `Limit`，默认 limit 为 20，超过 50 截断，`limit=0` 拒绝。
+- 私聊历史按当前私聊 conversation id 规则验证当前用户是否参与；群聊历史通过 `findGroupById()` 和 `getGroupMembers()` 验证成员身份。
+- 响应使用重复 TLV 字段返回 `MessageId`、`ConversationType`、`ConversationId`、`SenderId`、`ReceiverId`、`MessageText`、`TimestampMs`。
+- 更新 `src/service/CMakeLists.txt` 和 `server/main.cpp`，把 `HistoryService` 编进 `liteim_service` 并在运行时注册。
+
+TDD GREEN：
+
+- `cmake --build build`：通过。
+- `ctest --test-dir build -R HistoryService --output-on-failure`：通过，9/9 tests passed。
+
+文档完成：
+
+- 更新 `README.md`：当前 runtime 切到 Step 39，记录 `HistoryService` 和 HistoryService 验证命令。
+- 新增 `tutorials/step39_history_service.md`，按固定 0-10 模板讲解历史分页、请求字段、权限校验、测试设计和面试追问。
+- 更新 `task_plan.md` / `findings.md` / `progress.md` 记录 Step 39 边界、设计发现和 RED/GREEN 过程。
+
+阶段验证结果：
+
+- `cmake --build build`：通过。
+- `ctest --test-dir build -R HistoryService --output-on-failure`：通过，9/9 tests passed。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：通过，MySQL / Redis 均 healthy。
+- `ctest --test-dir build --output-on-failure`：通过，321/321 tests passed。
+- `git diff --check`：通过。
+- `.gitkeep` 检查：无输出。
+- 旧路线路径检查：无 `server/net`、`server/protocol`、`SQLite`、`InMemory`、`step15_sqlite` 残留。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" tutorials/step39_history_service.md README.md`：无输出。
+- `rg -n "^## " tutorials/step39_history_service.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
+- `timeout 2s ./build/server/liteim_server || test $? -eq 124`：通过，server 监听 `0.0.0.0:9000` 后收到 SIGTERM 并通过 signalfd 退出。
+
+收尾注意：
+
+- Step 39 提交应排除进入本 Step 前已有的用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。
+
+收尾完成：
+
+- 提交完成：`feat(chat): add recent history pagination`。

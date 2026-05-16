@@ -1540,3 +1540,12 @@ Step 13 只实现 `Acceptor` 非阻塞监听器。
 - `tutorials/README.md` 不再维护；`tutorials/` 只保留每个 Step 的教程文件。
 - `task_plan.md`、`findings.md`、`progress.md` 是过程记忆，应尽量保留历史内容；纠正记录只追加，不用摘要覆盖。
 - 主 README 不写 `Current Status` / `当前状态` 标题，也不把 planning 三件套当成对外介绍内容。
+
+## 2026-05-16 Step 39 HistoryService Findings
+
+- Step 39 不需要新建 SQL schema 或 DAO 方法：`IStorage::getHistory(const HistoryQuery&, std::vector<MessageRecord>&)` 已存在，`MySqlStorage` 已委托到 `MessageDao::getHistoryByConversation()`。
+- `MessageDao::getHistoryByConversation()` 已按 `conversation_type`、`conversation_id`、可选 `message_id < before_message_id` 查询，并按 `message_id DESC LIMIT ?` 返回；service 层只需要传正确的 `HistoryQuery`。
+- 协议层已有 `MessageType::HistoryRequest` / `HistoryResponse`，也已有 `TlvType::ConversationType`、`ConversationId`、`MessageId`、`Limit`、消息字段 TLV；Step 39 可复用 TLV body，不新增 JSON 模式。
+- `HistoryRequest` 的 `before_message_id` 复用请求体中的 `TlvType::MessageId` 表示；响应里的每条消息也继续重复使用 `TlvType::MessageId`。
+- 群聊历史权限需要在 service 层调用 `IStorage::findGroupById()` 和 `IStorage::getGroupMembers()` 验证；否则知道 `group_id` 的非成员可以读取历史。
+- 私聊历史第一版可通过当前 `ChatService` 的 conversation id 生成规则判断当前用户是否参与该私聊会话，避免任意用户凭 `conversation_id` 拉取别人私聊历史。

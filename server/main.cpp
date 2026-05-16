@@ -10,6 +10,7 @@
 #include "liteim/service/ChatService.hpp"
 #include "liteim/service/FriendService.hpp"
 #include "liteim/service/GroupService.hpp"
+#include "liteim/service/HistoryService.hpp"
 #include "liteim/service/MessageRouter.hpp"
 #include "liteim/service/OfflineMessageService.hpp"
 #include "liteim/service/OnlineService.hpp"
@@ -64,6 +65,7 @@ int main() {
     liteim::ChatService chat_service(storage, cache, online_service);
     liteim::GroupService group_service(storage, cache, online_service);
     liteim::OfflineMessageService offline_message_service(storage, cache, online_service);
+    liteim::HistoryService history_service(storage, online_service);
     const auto auth_status = auth_service.registerHandlers(router);
     if (!auth_status.isOk()) {
         liteim::Logger::get()->error("Failed to register auth handlers: {}", auth_status.message());
@@ -102,6 +104,15 @@ int main() {
     if (!group_status.isOk()) {
         liteim::Logger::get()->error("Failed to register group handlers: {}",
                                      group_status.message());
+        redis_pool.close();
+        mysql_pool.close();
+        signal_watcher.stop();
+        return 1;
+    }
+    const auto history_status = history_service.registerHandlers(router);
+    if (!history_status.isOk()) {
+        liteim::Logger::get()->error("Failed to register history handlers: {}",
+                                     history_status.message());
         redis_pool.close();
         mysql_pool.close();
         signal_watcher.stop();

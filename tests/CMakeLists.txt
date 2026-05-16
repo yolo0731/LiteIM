@@ -47,6 +47,7 @@ add_executable(liteim_tests
     service/chat_service_test.cpp
     service/group_service_test.cpp
     service/offline_message_service_test.cpp
+    service/history_service_test.cpp
     timer/timer_heap_header_test.cpp
     timer/timer_heap_test.cpp
     timer/timer_manager_header_test.cpp
