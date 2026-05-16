@@ -8,6 +8,33 @@
 - `LiteIM/task_plan.md`、`LiteIM/findings.md` 和 `LiteIM/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-16 Step 45 Test Coverage, gMock, ASan/UBSan Findings
+
+本次进入 `Step 45：补齐单元测试覆盖率 + gMock + ASan/UBSan`。`PROJECT_MEMORY.md` 的要求是补复杂模块测试覆盖、引入 gMock 边界测试、给 Docker 依赖测试打 CTest 标签，并增加 `LITEIM_ENABLE_SANITIZERS=ON` 构建。
+
+当前采用的边界：
+
+- 只补测试、CTest 注册和 sanitizer 构建入口，不修改 LiteIM TCP/TLV 协议、MySQL schema、Redis key、业务 service 语义、Qt、CI 或压测工具行为。
+- 保留已有 fake 测试，用 gMock 专门覆盖 service 与 `IStorage` / `ICache` / `OnlineService` 的依赖调用边界。
+- Docker 依赖测试保留原有 skip 语义；MySQL/Redis 不可用时跳过依赖真实服务的测试，不影响普通 unit 标签测试。
+- sanitizer 只作为可选构建，不改变默认构建类型、C++ standard 或生产依赖。
+
+已经采用的设计：
+
+- 新增 `tests/mocks/MockStorage.hpp` 和 `tests/mocks/MockCache.hpp`，用 `MOCK_METHOD` 覆盖 `IStorage` / `ICache` 纯虚接口。
+- 新增 `tests/service/service_mock_boundary_test.cpp`，验证 Auth 登录限流/失败记录/成功清理绑定、Chat 在线/离线收件人边界、Group 群存在和成员校验后保存/未读、History 权限校验后才查询历史。
+- 扩展 FrameDecoder、TlvCodec、ThreadPool、TimerHeap 边界测试，覆盖半包 split、粘包、多连续包、空 body、重复字段、非法长度、空队列 stop/restart、重复 cancel、未知 cancel 和相同 deadline。
+- `tests/CMakeLists.txt` 链接 `GTest::gmock`，并拆分 CTest discovery。普通 GoogleTest 标记为 `unit`，MySQL/Redis/Docker/E2E 相关测试可用 `-L integration`、`-L mysql`、`-L redis`、`-L docker`、`-L e2e` 筛选。
+- 根 `CMakeLists.txt` 增加 `LITEIM_ENABLE_SANITIZERS`。GNU/Clang 下添加 `-fsanitize=address,undefined`、`-fno-omit-frame-pointer`、`-fno-sanitize-recover=all`；其他编译器开启该选项直接 CMake fatal。
+- ASan/UBSan 首轮全量测试暴露 5 个既有测试断言问题：`EXPECT_EQ(const char*, "...")` 比较的是地址而不是内容。已改为 `EXPECT_STREQ`，随后 ASan/UBSan 全量通过。
+
+本次不采用/不改：
+
+- 不引入 `lcov` / `gcovr` 覆盖率报告。
+- 不把所有 fake 测试替换成 gMock。
+- 不新增 death test 数量指标，不改变已有 owner-loop-only death 行为。
+- 不修改 server runtime、业务协议、数据库结构、Redis key、CI workflow、Qt 或 PersonaAgent。
+
 ## 2026-05-16 Step 44 Benchmark Tool Findings
 
 本次进入 `Step 44：实现自研压测工具`。`PROJECT_MEMORY.md` 的要求是实现 `bench/liteim_bench.cpp`，支持多长连接、可配置消息大小/发送间隔/持续时间、登录后私聊发送、统计连接成功数、QPS、平均延迟、p50/p95/p99、错误数、内存和 CPU 使用，并输出 JSON 或 Markdown 报告片段。

@@ -5,19 +5,19 @@
 #include <gtest/gtest.h>
 
 TEST(MessageTypeTest, CoreTypesReturnReadableNames) {
-    EXPECT_EQ(liteim::toString(liteim::MessageType::HeartbeatRequest), "HEARTBEAT_REQUEST");
-    EXPECT_EQ(liteim::toString(liteim::MessageType::LoginRequest), "LOGIN_REQUEST");
-    EXPECT_EQ(liteim::toString(liteim::MessageType::PrivateMessageRequest),
-              "PRIVATE_MESSAGE_REQUEST");
-    EXPECT_EQ(liteim::toString(liteim::MessageType::ListGroupsRequest), "LIST_GROUPS_REQUEST");
-    EXPECT_EQ(liteim::toString(liteim::MessageType::GroupMessagePush), "GROUP_MESSAGE_PUSH");
-    EXPECT_EQ(liteim::toString(liteim::MessageType::BotChatRequest), "BOT_CHAT_REQUEST");
-    EXPECT_EQ(liteim::toString(liteim::MessageType::ErrorResponse), "ERROR_RESPONSE");
+    EXPECT_STREQ(liteim::toString(liteim::MessageType::HeartbeatRequest), "HEARTBEAT_REQUEST");
+    EXPECT_STREQ(liteim::toString(liteim::MessageType::LoginRequest), "LOGIN_REQUEST");
+    EXPECT_STREQ(liteim::toString(liteim::MessageType::PrivateMessageRequest),
+                 "PRIVATE_MESSAGE_REQUEST");
+    EXPECT_STREQ(liteim::toString(liteim::MessageType::ListGroupsRequest), "LIST_GROUPS_REQUEST");
+    EXPECT_STREQ(liteim::toString(liteim::MessageType::GroupMessagePush), "GROUP_MESSAGE_PUSH");
+    EXPECT_STREQ(liteim::toString(liteim::MessageType::BotChatRequest), "BOT_CHAT_REQUEST");
+    EXPECT_STREQ(liteim::toString(liteim::MessageType::ErrorResponse), "ERROR_RESPONSE");
 }
 
 TEST(MessageTypeTest, UnknownTypeReturnsUnknown) {
-    EXPECT_EQ(liteim::toString(liteim::MessageType::Unknown), "UNKNOWN");
-    EXPECT_EQ(liteim::toString(static_cast<liteim::MessageType>(65535)), "UNKNOWN");
+    EXPECT_STREQ(liteim::toString(liteim::MessageType::Unknown), "UNKNOWN");
+    EXPECT_STREQ(liteim::toString(static_cast<liteim::MessageType>(65535)), "UNKNOWN");
 }
 
 TEST(MessageTypeTest, RequestTypesAreClassified) {

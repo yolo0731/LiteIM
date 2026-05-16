@@ -49,6 +49,7 @@ add_executable(liteim_tests
     service/offline_message_service_test.cpp
     service/history_service_test.cpp
     service/heartbeat_service_test.cpp
+    service/service_mock_boundary_test.cpp
     client_cli/cli_protocol_test.cpp
     bench/benchmark_test.cpp
     timer/timer_heap_header_test.cpp
@@ -64,19 +65,49 @@ add_executable(liteim_tests
 )
 
 target_compile_features(liteim_tests PRIVATE cxx_std_17)
-target_link_libraries(liteim_tests PRIVATE liteim_base liteim_net liteim_protocol liteim_concurrency liteim_storage liteim_cache liteim_service liteim_client_cli liteim_bench_core GTest::gtest_main)
+target_include_directories(liteim_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(liteim_tests PRIVATE liteim_base liteim_net liteim_protocol liteim_concurrency liteim_storage liteim_cache liteim_service liteim_client_cli liteim_bench_core GTest::gtest_main GTest::gmock)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(liteim_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-gtest_discover_tests(liteim_tests)
+set(LITEIM_MYSQL_INTEGRATION_TEST_FILTER
+    "MySqlIntegrationTest.*:MySqlPoolIntegrationTest.*:UserDaoIntegrationTest.*:MessageDaoIntegrationTest.*:FriendGroupDaoIntegrationTest.*:MySqlStorageIntegrationTest.*"
+)
+set(LITEIM_REDIS_INTEGRATION_TEST_FILTER
+    "RedisIntegrationTest.*:RedisPoolIntegrationTest.*:OnlineStatusCacheIntegrationTest.*:Step30CacheIntegrationTest.*:RedisCacheIntegrationTest.*:OnlineServiceRedisIntegrationTest.*"
+)
+set(LITEIM_MYSQL_REDIS_INTEGRATION_TEST_FILTER
+    "AuthServiceIntegrationTest.*:FriendServiceIntegrationTest.*:OfflineMessageServiceIntegrationTest.*"
+)
+set(LITEIM_INTEGRATION_TEST_FILTER
+    "${LITEIM_MYSQL_INTEGRATION_TEST_FILTER}:${LITEIM_REDIS_INTEGRATION_TEST_FILTER}:${LITEIM_MYSQL_REDIS_INTEGRATION_TEST_FILTER}"
+)
+
+gtest_discover_tests(liteim_tests
+    TEST_FILTER "*-${LITEIM_INTEGRATION_TEST_FILTER}"
+    PROPERTIES LABELS unit
+)
+gtest_discover_tests(liteim_tests
+    TEST_FILTER "${LITEIM_MYSQL_INTEGRATION_TEST_FILTER}"
+    PROPERTIES LABELS integration_mysql_docker
+)
+gtest_discover_tests(liteim_tests
+    TEST_FILTER "${LITEIM_REDIS_INTEGRATION_TEST_FILTER}"
+    PROPERTIES LABELS integration_redis_docker
+)
+gtest_discover_tests(liteim_tests
+    TEST_FILTER "${LITEIM_MYSQL_REDIS_INTEGRATION_TEST_FILTER}"
+    PROPERTIES LABELS integration_mysql_redis_docker
+)
 
 add_test(
     NAME LiteIMServerSignalTest.TerminatesOnSigterm
     COMMAND /bin/bash ${CMAKE_CURRENT_SOURCE_DIR}/server_signal_shutdown_test.sh $<TARGET_FILE:liteim_server>
 )
 set_tests_properties(LiteIMServerSignalTest.TerminatesOnSigterm PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(LiteIMServerSignalTest.TerminatesOnSigterm PROPERTIES LABELS "integration;mysql;redis;docker")
 
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
@@ -100,6 +131,7 @@ if(Python3_Interpreter_FOUND)
                 ENVIRONMENT "PYTHONPATH=${PROJECT_SOURCE_DIR};LITEIM_SERVER_BIN=$<TARGET_FILE:liteim_server>"
                 RESOURCE_LOCK LiteIME2EServer
                 TIMEOUT 45
+                LABELS "e2e;integration;docker"
         )
     endforeach()
 endif()

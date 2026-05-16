@@ -108,9 +108,9 @@ Run the server executable:
 ./build/server/liteim_server
 ```
 
-The server starts a real `EventLoop + TcpServer` on the configured host and port, starts MySQL / Redis pools, starts the business `ThreadPool`, and wires incoming packets into `MessageRouter`. In the current Step 44 runtime, heartbeat requests are handled by `HeartbeatService`; register/login requests are handled by `AuthService`; add-friend and friend-list requests are handled by `FriendService`; private-message requests are handled by `ChatService`; group create/join/list/message requests are handled by `GroupService`; offline-message pull requests are handled by `OfflineMessageService`; history requests are handled by `HistoryService`; messages to or mentioning `mira_bot` are bridged to `BotService` / `EchoBotGateway`; and unknown or unsupported request types get `ErrorResponse`. Business handlers run in the business pool. Session close cleanup submits `OnlineService::unbindSession(session_id)` into the business pool so Redis online-state cleanup does not run in an I/O callback. The server handles `Ctrl-C` / `SIGTERM` through `signalfd`, stops `TcpServer` in the base loop thread, stops the business pool, closes MySQL / Redis pools, and exits cleanly.
+The server starts a real `EventLoop + TcpServer` on the configured host and port, starts MySQL / Redis pools, starts the business `ThreadPool`, and wires incoming packets into `MessageRouter`. In the current Step 45 runtime, heartbeat requests are handled by `HeartbeatService`; register/login requests are handled by `AuthService`; add-friend and friend-list requests are handled by `FriendService`; private-message requests are handled by `ChatService`; group create/join/list/message requests are handled by `GroupService`; offline-message pull requests are handled by `OfflineMessageService`; history requests are handled by `HistoryService`; messages to or mentioning `mira_bot` are bridged to `BotService` / `EchoBotGateway`; and unknown or unsupported request types get `ErrorResponse`. Business handlers run in the business pool. Session close cleanup submits `OnlineService::unbindSession(session_id)` into the business pool so Redis online-state cleanup does not run in an I/O callback. The server handles `Ctrl-C` / `SIGTERM` through `signalfd`, stops `TcpServer` in the base loop thread, stops the business pool, closes MySQL / Redis pools, and exits cleanly.
 
-Because Step 44 runtime starts real MySQL / Redis pools, start local dependencies before a bounded server smoke check:
+Because Step 45 runtime starts real MySQL / Redis pools, start local dependencies before a bounded server smoke check:
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d --wait
@@ -212,6 +212,8 @@ Step 43 adds Python black-box E2E tests. The tests implement a minimal TLV codec
 
 Step 44 adds `liteim_bench`, a local benchmark executable. It creates one receiver connection and configurable sender connections, registers and logs in generated users, sends ordinary private messages, and emits JSON or Markdown metrics for connection success, QPS, latency percentiles, errors, RSS, and CPU usage. The README does not hard-code performance claims; benchmark numbers must come from real runs with parameters and machine details.
 
+Step 45 expands the validation layer. It adds gMock-based service boundary tests for `AuthService`, `ChatService`, `GroupService`, and `HistoryService`; adds extra protocol, thread-pool, and timer edge-case coverage; labels CTest entries for `unit`, `integration`, `mysql`, `redis`, `docker`, and `e2e` filtering; and adds an optional ASan/UBSan build through `LITEIM_ENABLE_SANITIZERS`.
+
 Start MySQL and Redis:
 
 ```bash
@@ -270,12 +272,33 @@ Run tests:
 ctest --test-dir build --output-on-failure
 ```
 
-The Step 23-27 MySQL integration tests, Step 31 `MySqlStorage` tests, Step 28-32 Redis integration tests, Step 34-41 service tests, and Step 43 Python E2E tests use `Config::defaults()` where they need real dependencies, so they target the local Docker endpoints shown above. If those containers are not running, integration tests skip instead of failing unrelated unit-test runs. Start the local dependency stack first when validating the storage/cache/service/E2E layer:
+Useful label filters:
+
+```bash
+ctest --test-dir build -L unit --output-on-failure
+ctest --test-dir build -L integration --output-on-failure
+ctest --test-dir build -L mysql --output-on-failure
+ctest --test-dir build -L redis --output-on-failure
+ctest --test-dir build -L docker --output-on-failure
+ctest --test-dir build -L e2e --output-on-failure
+```
+
+The Step 23-27 MySQL integration tests, Step 31 `MySqlStorage` tests, Step 28-32 Redis integration tests, Step 34-41 service tests, Step 43 Python E2E tests, and Step 45 Docker-tagged integration tests use `Config::defaults()` where they need real dependencies, so they target the local Docker endpoints shown above. If those containers are not running, integration tests skip instead of failing unrelated unit-test runs. Start the local dependency stack first when validating the storage/cache/service/E2E layer:
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d --wait
 ctest --test-dir build -R "MySql|UserDao|MessageDao|FriendGroupDao|MySqlStorage|Redis|OnlineStatusCache|UnreadCounter|LoginRateLimiter|RedisCache|SessionManager|OnlineService|AuthService|FriendService|ChatService|GroupService|OfflineMessageService|HistoryService|HeartbeatService|Bot|ClientCli|Benchmark|LiteIME2E" --output-on-failure
 ```
+
+Run the sanitizer build when checking memory and undefined-behavior risks:
+
+```bash
+cmake -S . -B build-asan -DLITEIM_ENABLE_SANITIZERS=ON
+cmake --build build-asan -j2
+ctest --test-dir build-asan --output-on-failure
+```
+
+`LITEIM_ENABLE_SANITIZERS=ON` is supported for GNU and Clang builds. It enables AddressSanitizer and UndefinedBehaviorSanitizer with frame pointers and non-recovering sanitizer failures. It does not change the default C++ standard or require new production dependencies.
 
 Useful repository checks:
 

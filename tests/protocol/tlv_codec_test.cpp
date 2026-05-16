@@ -54,6 +54,15 @@ TEST(TlvCodecTest, MultipleFieldsCanBeEncodedAndDecoded) {
     EXPECT_EQ(text, "hello");
 }
 
+TEST(TlvCodecTest, EmptyBodyParsesToEmptyMap) {
+    liteim::TlvMap map;
+
+    const auto status = liteim::parseTlvMap(liteim::Bytes{}, map);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_TRUE(map.empty());
+}
+
 TEST(TlvCodecTest, Utf8StringCanBeEncodedAndDecoded) {
     liteim::Bytes body;
 
@@ -70,6 +79,24 @@ TEST(TlvCodecTest, Utf8StringCanBeEncodedAndDecoded) {
     EXPECT_EQ(text, "你好，LiteIM 👋");
 }
 
+TEST(TlvCodecTest, ScalarGettersUseFirstRepeatedFieldValue) {
+    liteim::Bytes body;
+
+    ASSERT_TRUE(liteim::appendString(liteim::TlvType::Username, "first", body).isOk());
+    ASSERT_TRUE(liteim::appendString(liteim::TlvType::Username, "second", body).isOk());
+    ASSERT_TRUE(liteim::appendUint64(liteim::TlvType::UserId, 1001, body).isOk());
+    ASSERT_TRUE(liteim::appendUint64(liteim::TlvType::UserId, 1002, body).isOk());
+
+    const auto map = parseBody(body);
+    std::string username;
+    std::uint64_t user_id = 0;
+    ASSERT_TRUE(liteim::getString(map, liteim::TlvType::Username, username).isOk());
+    ASSERT_TRUE(liteim::getUint64(map, liteim::TlvType::UserId, user_id).isOk());
+
+    EXPECT_EQ(username, "first");
+    EXPECT_EQ(user_id, 1001U);
+}
+
 TEST(TlvCodecTest, RepeatedStringFieldsArePreserved) {
     liteim::Bytes body;
 
@@ -84,6 +111,22 @@ TEST(TlvCodecTest, RepeatedStringFieldsArePreserved) {
     ASSERT_EQ(names.size(), 2U);
     EXPECT_EQ(names[0], "dev");
     EXPECT_EQ(names[1], "study");
+}
+
+TEST(TlvCodecTest, RepeatedStringSupportsEmptyValues) {
+    liteim::Bytes body;
+
+    ASSERT_TRUE(liteim::appendString(liteim::TlvType::GroupName, "", body).isOk());
+    ASSERT_TRUE(liteim::appendString(liteim::TlvType::GroupName, "dev", body).isOk());
+
+    const auto map = parseBody(body);
+    std::vector<std::string> names;
+    const auto get_status = liteim::getRepeatedString(map, liteim::TlvType::GroupName, names);
+
+    ASSERT_TRUE(get_status.isOk()) << get_status.message();
+    ASSERT_EQ(names.size(), 2U);
+    EXPECT_EQ(names[0], "");
+    EXPECT_EQ(names[1], "dev");
 }
 
 TEST(TlvCodecTest, RepeatedUint64FieldsArePreserved) {
@@ -131,6 +174,16 @@ TEST(TlvCodecTest, Uint64UsesNetworkByteOrder) {
     std::uint64_t message_id = 0;
     ASSERT_TRUE(liteim::getUint64(map, liteim::TlvType::MessageId, message_id).isOk());
     EXPECT_EQ(message_id, 0x0102030405060708ULL);
+}
+
+TEST(TlvCodecTest, NullBodyWithNonzeroLengthReturnsError) {
+    liteim::TlvMap map;
+
+    const auto status = liteim::parseTlvMap(nullptr, 1, map);
+
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
+    EXPECT_TRUE(map.empty());
 }
 
 TEST(TlvCodecTest, TlvLengthOutOfBoundsReturnsError) {

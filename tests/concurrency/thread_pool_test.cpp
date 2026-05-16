@@ -94,6 +94,30 @@ TEST(ThreadPoolTest, StopRejectsNewTasks) {
     EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
 }
 
+TEST(ThreadPoolTest, StopBeforeStartIsNoopAndSubmitStillRejected) {
+    liteim::ThreadPool pool(1);
+
+    pool.stop();
+
+    EXPECT_FALSE(pool.started());
+    EXPECT_EQ(pool.pendingTaskCount(), 0U);
+    const auto submit_status = pool.submit([]() {});
+    EXPECT_FALSE(submit_status.isOk());
+    EXPECT_EQ(submit_status.code(), liteim::ErrorCode::InvalidArgument);
+}
+
+TEST(ThreadPoolTest, StopWithEmptyQueueAllowsCleanRestart) {
+    liteim::ThreadPool pool(1);
+    ASSERT_TRUE(pool.start().isOk());
+
+    pool.stop();
+
+    EXPECT_FALSE(pool.started());
+    EXPECT_EQ(pool.pendingTaskCount(), 0U);
+    ASSERT_TRUE(pool.start().isOk());
+    pool.stop();
+}
+
 TEST(ThreadPoolTest, StopCalledFromWorkerRequiresOwnerCleanupBeforeRestart) {
     liteim::ThreadPool pool(1);
     const auto start_status = pool.start();

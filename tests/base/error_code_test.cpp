@@ -4,14 +4,14 @@
 #include <gtest/gtest.h>
 
 TEST(ErrorCodeTest, ToStringReturnsReadableNames) {
-    EXPECT_EQ(liteim::toString(liteim::ErrorCode::Ok), "Ok");
-    EXPECT_EQ(liteim::toString(liteim::ErrorCode::InvalidArgument), "InvalidArgument");
-    EXPECT_EQ(liteim::toString(liteim::ErrorCode::NotFound), "NotFound");
-    EXPECT_EQ(liteim::toString(liteim::ErrorCode::AlreadyExists), "AlreadyExists");
-    EXPECT_EQ(liteim::toString(liteim::ErrorCode::IoError), "IoError");
-    EXPECT_EQ(liteim::toString(liteim::ErrorCode::ParseError), "ParseError");
-    EXPECT_EQ(liteim::toString(liteim::ErrorCode::ConfigError), "ConfigError");
-    EXPECT_EQ(liteim::toString(liteim::ErrorCode::InternalError), "InternalError");
+    EXPECT_STREQ(liteim::toString(liteim::ErrorCode::Ok), "Ok");
+    EXPECT_STREQ(liteim::toString(liteim::ErrorCode::InvalidArgument), "InvalidArgument");
+    EXPECT_STREQ(liteim::toString(liteim::ErrorCode::NotFound), "NotFound");
+    EXPECT_STREQ(liteim::toString(liteim::ErrorCode::AlreadyExists), "AlreadyExists");
+    EXPECT_STREQ(liteim::toString(liteim::ErrorCode::IoError), "IoError");
+    EXPECT_STREQ(liteim::toString(liteim::ErrorCode::ParseError), "ParseError");
+    EXPECT_STREQ(liteim::toString(liteim::ErrorCode::ConfigError), "ConfigError");
+    EXPECT_STREQ(liteim::toString(liteim::ErrorCode::InternalError), "InternalError");
 }
 
 TEST(StatusTest, OkStatusHasOkCode) {

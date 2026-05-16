@@ -49,6 +49,37 @@ TEST(TimerHeapTest, CancelUsesLazyDeletionWithoutRemovingNewTimer) {
     EXPECT_TRUE(timers.empty());
 }
 
+TEST(TimerHeapTest, DuplicateCancelAndUnknownCancelAreNoOps) {
+    liteim::TimerHeap timers;
+    int fired_count = 0;
+
+    const auto timer_id = timers.add(10, [&fired_count]() { ++fired_count; });
+    timers.cancel(timer_id);
+    timers.cancel(timer_id);
+    timers.cancel(timer_id + 100);
+
+    EXPECT_TRUE(timers.empty());
+    EXPECT_EQ(timers.activeTimerCount(), 0U);
+    EXPECT_EQ(timers.nextExpirationMilliseconds(), -1);
+    EXPECT_EQ(timers.popExpired(10), 0U);
+    EXPECT_EQ(fired_count, 0);
+}
+
+TEST(TimerHeapTest, SameDeadlineTimersFireInInsertionOrder) {
+    liteim::TimerHeap timers;
+    std::vector<int> fired;
+
+    const auto first = timers.add(10, [&fired]() { fired.push_back(1); });
+    const auto second = timers.add(10, [&fired]() { fired.push_back(2); });
+    const auto third = timers.add(10, [&fired]() { fired.push_back(3); });
+
+    EXPECT_LT(first, second);
+    EXPECT_LT(second, third);
+    EXPECT_EQ(timers.popExpired(10), 3U);
+    EXPECT_EQ(fired, (std::vector<int>{1, 2, 3}));
+    EXPECT_TRUE(timers.empty());
+}
+
 TEST(TimerHeapTest, PopExpiredIgnoresFutureTimers) {
     liteim::TimerHeap timers;
     int fired_count = 0;

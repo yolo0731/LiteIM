@@ -1,5 +1,73 @@
 # LiteIM Progress
 
+## 2026-05-16 Step 45 Test Coverage, gMock, ASan/UBSan
+
+本次进入 `Step 45：补齐单元测试覆盖率 + gMock + ASan/UBSan`。
+
+开始状态：
+
+- Step 44 已完成并记录为 benchmark tooling；Step 45 只补测试、CTest 标签和 sanitizer 构建，不修改服务端协议、MySQL schema、Redis key、Qt、CI 或压测工具行为。
+- 工作区已有用户侧未提交改动：`include/liteim/service/GroupService.hpp`、`include/liteim/service/HistoryService.hpp`、`src/service/GroupService.cpp`、`src/service/HistoryService.cpp`、`src/storage/GroupDao.cpp`，以及未跟踪 `build-asan-plan/`。本 Step 不回滚、不清理，并在提交时精确排除。
+- `session-catchup.py` 提示的是历史概念问答，不对应当前 Step 45 代码实现。
+
+TDD RED 计划：
+
+- 新增 `tests/mocks/MockStorage.hpp` 和 `tests/mocks/MockCache.hpp`，用 gMock 覆盖 `IStorage` / `ICache` 纯虚接口。
+- 新增 `tests/service/service_mock_boundary_test.cpp`，用 mock 验证 `AuthService`、`ChatService`、`GroupService`、`HistoryService` 和 storage/cache/online 边界。
+- 先接入测试源再构建，预期暴露当前 `liteim_tests` 尚未链接 gMock 或测试缺口。
+- 随后再补 CMake sanitizer 选项、CTest labels、协议/ThreadPool/TimerHeap/TcpServer 额外边界测试。
+
+TDD RED：
+
+- 新增 `tests/mocks/MockStorage.hpp`、`tests/mocks/MockCache.hpp` 和 `tests/service/service_mock_boundary_test.cpp`，并接入 `tests/CMakeLists.txt`。
+- 首次 `cmake --build build --target liteim_tests -j2` 按预期失败于 `fatal error: mocks/MockCache.hpp: No such file or directory`，证明新 gMock 测试已进入构建，而测试 target 还缺少 `tests/` 私有 include 根和后续 gMock 链接配置。
+
+TDD GREEN：
+
+- `tests/CMakeLists.txt` 为 `liteim_tests` 增加测试私有 include 根并链接 `GTest::gmock`。
+- 根 `CMakeLists.txt` 增加 `LITEIM_ENABLE_SANITIZERS` 和内部 `liteim_sanitizer_flags` interface target，GNU/Clang 下启用 `-fsanitize=address,undefined`、`-fno-omit-frame-pointer` 和 `-fno-sanitize-recover=all`。
+- `gtest_discover_tests()` 按 unit / MySQL integration / Redis integration / MySQL+Redis integration 拆分注册；Docker/E2E/server-signal 测试加 integration/docker 标签。gTest 多标签用 `integration_mysql_docker` 等组合标签，保证 `ctest -L integration/mysql/redis/docker` 都能筛中。
+- 新增 Mock 边界测试 7 个，覆盖 AuthService 登录限流/失败记录/成功清理绑定，ChatService 在线/离线收件人边界，GroupService 群存在/成员校验后保存和未读，HistoryService 权限校验后才查 history。
+- 新增 FrameDecoder 参数化 split 测试、三连包 split、最大 body_len header 等边界；新增 TLV 空 body、重复字段 scalar getter、空字符串重复值和 null body；新增 ThreadPool 空队列 stop/restart；新增 TimerHeap 重复 cancel、未知 cancel 和相同 deadline 顺序。
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -R "ServiceMockBoundary|FrameDecoder|TlvCodec|ThreadPool|TimerHeap|TcpServer" --output-on-failure`：78/78 通过。
+- 标签检查：`ctest -N -L unit` 为 301 个普通单元测试，`-L integration` / `-L docker` 为 70 个，`-L mysql` 为 38 个，`-L redis` 为 30 个，`-L e2e` 为 6 个。
+
+Sanitizer 验证：
+
+- `cmake -S . -B build-asan -DLITEIM_ENABLE_SANITIZERS=ON` 首次尝试卡在重新 clone GoogleTest；改用现有 FetchContent source override 完成配置：`-DFETCHCONTENT_SOURCE_DIR_GOOGLETEST=/home/yolo/jianli/LiteIM/build/_deps/googletest-src -DFETCHCONTENT_SOURCE_DIR_SPDLOG=/home/yolo/jianli/LiteIM/build/_deps/spdlog-src`。
+- `cmake --build build-asan -j2`：通过。
+- 首次 `ctest --test-dir build-asan --output-on-failure` 暴露 5 个已有测试断言问题：`ErrorCodeTest.ToStringReturnsReadableNames`、`MessageTypeTest.CoreTypesReturnReadableNames`、`MessageTypeTest.UnknownTypeReturnsUnknown`、`TlvTypeTest.CoreTypesReturnReadableNames`、`TlvTypeTest.UnknownTypeReturnsUnknown`。根因是 `EXPECT_EQ(const char*, "...")` 比较指针地址而非字符串内容。
+- 修正为 `EXPECT_STREQ` 后，`ctest --test-dir build-asan -R "ErrorCodeTest|MessageTypeTest|TlvTypeTest" --output-on-failure`：9/9 通过。
+- `ctest --test-dir build-asan --output-on-failure`：371/371 通过。
+
+文档同步：
+
+- 新增 `tutorials/step45_test_coverage_sanitizers.md`，保持固定 0-10 教程模板，最后一节为 `面试常见追问`。
+- 更新 README，记录 Step 45 runtime、gMock 覆盖、CTest label 筛选和 sanitizer 构建命令。
+- 更新 `task_plan.md`、`findings.md` 和本文件，记录 Step 45 边界、RED/GREEN、标签和 sanitizer 结果。
+
+最终验证：
+
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -R "ServiceMockBoundary|FrameDecoder|TlvCodec|ThreadPool|TimerHeap|TcpServer" --output-on-failure`：78/78 通过。
+- `ctest --test-dir build -L unit --output-on-failure`：301/301 通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：通过，MySQL / Redis healthy。
+- `ctest --test-dir build -L integration --output-on-failure`：70/70 通过。
+- `cmake --build build-asan -j2`：通过。
+- `ctest --test-dir build-asan --output-on-failure`：371/371 通过。
+- `cmake --build build -j2`：通过。
+- `ctest --test-dir build --output-on-failure`：371/371 通过。
+- `git diff --check`：通过。
+- Step 45 教程标题扫描：保持 0-10，最后主章节是 `## 10. 面试常见追问`。
+- 路径级 stale-route scan：未发现旧路线文件路径。
+- `timeout 2s ./build/server/liteim_server || test $? -eq 124`：通过，server 启动后由 bounded smoke 发送 SIGTERM 并通过 signalfd 退出。
+
+收尾注意：
+
+- Step 45 提交继续排除进入本 Step 前已有的用户侧改动：`include/liteim/service/GroupService.hpp`、`include/liteim/service/HistoryService.hpp`、`src/service/GroupService.cpp`、`src/service/HistoryService.cpp`、`src/storage/GroupDao.cpp`，以及未跟踪 `build-asan-plan/`。
+- 本次生成的本地构建目录 `build-asan/` 和 Python `__pycache__` 不纳入 Git。
+
 ## 2026-05-16 Step 43 Python E2E
 
 本次进入 `Step 43：实现 Python 端到端测试`。

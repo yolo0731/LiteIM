@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -26,6 +27,8 @@ liteim::Bytes makeEncodedPacket(liteim::MessageType type, std::uint64_t seq_id,
 }
 
 }  // namespace
+
+class FrameDecoderSplitTest : public ::testing::TestWithParam<std::size_t> {};
 
 TEST(FrameDecoderTest, CompletePacketEmitsOnePacket) {
     liteim::FrameDecoder decoder;
@@ -62,6 +65,29 @@ TEST(FrameDecoderTest, PacketSplitAcrossFeedsEmitsAfterSecondFeed) {
     EXPECT_EQ(decoder.bufferedBytes(), 0U);
 }
 
+TEST_P(FrameDecoderSplitTest, PacketSplitAtDifferentOffsetsEmitsAfterSecondFeed) {
+    liteim::FrameDecoder decoder;
+    const auto encoded = makeEncodedPacket(liteim::MessageType::LoginRequest, 108, "split");
+    const auto split = GetParam();
+    ASSERT_GT(split, 0U);
+    ASSERT_LT(split, encoded.size());
+    std::vector<liteim::Packet> packets;
+
+    const auto first_status = decoder.feed(encoded.data(), split, packets);
+
+    ASSERT_TRUE(first_status.isOk()) << first_status.message();
+    EXPECT_TRUE(packets.empty());
+    EXPECT_EQ(decoder.bufferedBytes(), split);
+
+    const auto second_status = decoder.feed(encoded.data() + split, encoded.size() - split, packets);
+
+    ASSERT_TRUE(second_status.isOk()) << second_status.message();
+    ASSERT_EQ(packets.size(), 1U);
+    EXPECT_EQ(packets[0].header.seq_id, 108U);
+    EXPECT_EQ(packets[0].body, bytesFromString("split"));
+    EXPECT_EQ(decoder.bufferedBytes(), 0U);
+}
+
 TEST(FrameDecoderTest, MultiplePacketsInOneFeedAreDecoded) {
     liteim::FrameDecoder decoder;
     auto first = makeEncodedPacket(liteim::MessageType::PrivateMessageRequest, 1, "one");
@@ -77,6 +103,30 @@ TEST(FrameDecoderTest, MultiplePacketsInOneFeedAreDecoded) {
     EXPECT_EQ(packets[0].body, bytesFromString("one"));
     EXPECT_EQ(packets[1].header.seq_id, 2U);
     EXPECT_EQ(packets[1].body, bytesFromString("two"));
+}
+
+TEST(FrameDecoderTest, ThreeConsecutivePacketsSplitAcrossFeedsAreDecodedInOrder) {
+    liteim::FrameDecoder decoder;
+    auto stream = makeEncodedPacket(liteim::MessageType::PrivateMessageRequest, 31, "one");
+    const auto second = makeEncodedPacket(liteim::MessageType::PrivateMessageRequest, 32, "two");
+    const auto third = makeEncodedPacket(liteim::MessageType::PrivateMessageRequest, 33, "three");
+    stream.insert(stream.end(), second.begin(), second.end());
+    stream.insert(stream.end(), third.begin(), third.end());
+    const auto split = liteim::kPacketHeaderSize + 1U;
+    std::vector<liteim::Packet> packets;
+
+    ASSERT_TRUE(decoder.feed(stream.data(), split, packets).isOk());
+    EXPECT_TRUE(packets.empty());
+
+    const auto status = decoder.feed(stream.data() + split, stream.size() - split, packets);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    ASSERT_EQ(packets.size(), 3U);
+    EXPECT_EQ(packets[0].header.seq_id, 31U);
+    EXPECT_EQ(packets[1].header.seq_id, 32U);
+    EXPECT_EQ(packets[2].header.seq_id, 33U);
+    EXPECT_EQ(packets[2].body, bytesFromString("three"));
+    EXPECT_EQ(decoder.bufferedBytes(), 0U);
 }
 
 TEST(FrameDecoderTest, ManySmallPacketsInOneFeedAreDecoded) {
@@ -122,6 +172,23 @@ TEST(FrameDecoderTest, HalfPacketThenStickyPacketAreDecodedTogether) {
     EXPECT_EQ(packets[0].body, bytesFromString("first"));
     EXPECT_EQ(packets[1].header.seq_id, 12U);
     EXPECT_EQ(packets[1].body, bytesFromString("second"));
+}
+
+TEST(FrameDecoderTest, MaxBodyLengthHeaderWaitsForRemainingBodyWithoutError) {
+    liteim::FrameDecoder decoder;
+    auto encoded = makeEncodedPacket(liteim::MessageType::PrivateMessageRequest, 41, "");
+    encoded[16] = 0x00;
+    encoded[17] = 0x10;
+    encoded[18] = 0x00;
+    encoded[19] = 0x00;
+    std::vector<liteim::Packet> packets;
+
+    const auto status = decoder.feed(encoded, packets);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_TRUE(packets.empty());
+    EXPECT_FALSE(decoder.hasError());
+    EXPECT_EQ(decoder.bufferedBytes(), liteim::kPacketHeaderSize);
 }
 
 TEST(FrameDecoderTest, InvalidMagicEntersErrorState) {
@@ -200,3 +267,11 @@ TEST(FrameDecoderTest, NullInputWithNonzeroLengthReturnsError) {
     EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
     EXPECT_FALSE(decoder.hasError());
 }
+
+INSTANTIATE_TEST_SUITE_P(SplitOffsets,
+                         FrameDecoderSplitTest,
+                         ::testing::Values(1U,
+                                           liteim::kPacketHeaderSize - 1U,
+                                           liteim::kPacketHeaderSize,
+                                           liteim::kPacketHeaderSize + 1U,
+                                           liteim::kPacketHeaderSize + 4U));
