@@ -1,0 +1,607 @@
+# Step 2：Config / Logger / ErrorCode 基础模块
+
+## 0. 本 Step 结论
+
+- 目标：本 Step 解决什么问题。
+- 前置依赖：依赖 Step 0-1 已建立的工程、协议或运行时基础。
+- 主要交付：`Config / Logger / ErrorCode 基础模块` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
+- 范围控制：不提前实现后续 Step 的业务能力
+
+## 1. 为什么需要这个 Step
+
+### 本 Step 解决什么问题
+
+Step 1 只有最小 CMake、server target 和 GoogleTest 链路。Step 2 开始引入第一个真正可复用的 C++ 模块：`liteim_base`。
+
+`base` 模块不负责聊天业务，也不负责网络 I/O。它只解决后续每一层都会遇到的公共问题：
+
+- 服务端监听地址、端口、I/O 线程数、业务线程数从哪里来。
+- MySQL / Redis / Qt 客户端默认连接参数放在哪里。
+- 日志用什么统一入口输出。
+- 函数失败时如何表达错误原因，而不是只返回 `false`。
+- 消息时间、日志时间、压测统计时间如何统一表示。
+
+所以本 Step 新增：
+
+```text
+Config      -> 统一配置
+Logger      -> 统一日志入口，当前基于 spdlog
+ErrorCode   -> 统一错误码
+Status      -> 统一成功/失败返回值
+Timestamp   -> 统一时间戳表示
+```
+
+本 Step 仍然不实现 socket、epoll、TLV 协议、MySQL 连接池、Redis 连接池或 Qt 客户端。
+
+## 2. 本 Step 边界
+
+### 本 Step 做
+
+- 聚焦 `Config / Logger / ErrorCode 基础模块` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
+- 保持当前 Step 的实现范围，不把后续路线混入本 Step。
+
+### 本 Step 不做
+
+- 不提前实现后续 Step 的业务能力
+- 不改变已经定义好的模块边界
+- 不把阻塞 I/O 放进 Reactor I/O 线程
+
+## 3. 文件变化
+
+| 文件 | 变化 | 作用 |
+| --- | --- | --- |
+| `include/liteim/base/Config.hpp` | 新增 | 定义服务端、MySQL、Redis 和客户端默认配置结构 |
+| `include/liteim/base/ErrorCode.hpp` | 新增 | 定义统一错误码和可读字符串 |
+| `include/liteim/base/Status.hpp` | 新增 | 定义统一成功/失败返回对象 |
+| `include/liteim/base/Logger.hpp` | 新增 | 封装 spdlog 初始化和日志级别解析 |
+| `include/liteim/base/Timestamp.hpp` | 新增 | 提供毫秒时间戳和 UTC 字符串工具 |
+| `src/base/*.cpp` | 新增 | 实现 base 模块各组件 |
+| `src/base/CMakeLists.txt` | 新增 | 构建 `liteim_base` 并链接 spdlog |
+| `src/CMakeLists.txt` | 新增 | 把 `base` 子目录接入工程 |
+| `server/main.cpp` | 修改 | 使用默认配置初始化日志 |
+| `tests/base/*.cpp` | 新增 | 覆盖 Config、ErrorCode、Status、Logger、Timestamp |
+| `README.md` | 更新 | 记录 base 模块和构建方式 |
+| `docs/tutorials/step02_base.md` | 新增 | 讲解基础模块契约 |
+| `docs/process/task_plan.md / docs/process/findings.md / docs/process/progress.md` | 更新 | 记录 Step 2 过程和验证结果 |
+
+## 4. 核心接口与契约
+
+根 `CMakeLists.txt` 新增了 `spdlog`：
+
+```cmake
+FetchContent_Declare(
+    spdlog
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG v1.13.0
+)
+```
+
+然后接入 `src/`：
+
+```cmake
+add_subdirectory(src)
+add_subdirectory(server)
+add_subdirectory(tests)
+```
+
+`src/base/CMakeLists.txt` 生成 `liteim_base`：
+
+```cmake
+add_library(liteim_base
+    Config.cpp
+    ErrorCode.cpp
+    Logger.cpp
+    Status.cpp
+    Timestamp.cpp
+)
+```
+
+关键点：
+
+- `liteim_base` 对外暴露 `${PROJECT_SOURCE_DIR}/include`。
+- `liteim_base` 链接 `spdlog::spdlog_header_only`。
+- `liteim_server` 和 `liteim_tests` 都链接 `liteim_base`。
+
+这说明 `base` 是公共库，不是 server 入口文件里的临时工具函数。
+
+`Config.hpp` 定义配置数据的结构边界：
+
+- `MySqlConfig` 保存 `host`、`port`、`user`、`password`、`database`、`pool_size`，后续 MySQL 连接池按这些字段初始化。
+- `RedisConfig` 保存 `host`、`port`、`password`、`db`、`pool_size`，后续 Redis pool 不从业务代码里硬编码连接参数。
+- `QtClientConfig` 保存 demo 客户端默认连接地址。
+- `Config` 保存 server host/port、I/O 线程数、业务线程数、`session_output_high_water_mark`、日志级别以及 MySQL/Redis/Qt 子配置。
+- `Config::defaults()` 返回带默认值的配置对象。
+- `loadFromFile(path)` 读取简单 `key=value` 文件，成功返回 `Status::ok()`；文件不存在返回 `NotFound`；未知 key、非法端口、非法整数或 0 高水位返回错误 `Status`。
+- `Config` 是普通值类型，没有 fd、线程或外部资源所有权。
+
+`ErrorCode.hpp` 定义统一错误分类：
+
+- `Ok` 表示成功。
+- `InvalidArgument` 表示调用参数不合法。
+- `NotFound` 表示文件、字段、session 等不存在。
+- `IoError` 表示系统调用或 I/O 操作失败。
+- `ParseError` 表示配置、协议或字节解析失败。
+- `ConfigError` 预留给更复杂配置校验。
+- `InternalError` 表示内部状态或平台能力不满足预期。
+- `toString()` 用于日志和测试，不抛异常。
+
+`Status.hpp` 定义错误返回对象：
+
+- 默认构造和 `Status::ok()` 都表示成功。
+- `Status::error(code, message)` 创建失败状态并携带可读消息。
+- `isOk()`、`code()`、`message()` 都是只读查询。
+- 关键成员变量是 `code_` 和 `message_`。`code_` 支撑程序判断，`message_` 支撑日志和测试断言。
+- `Status` 不负责线程同步，调用方按值返回即可。
+
+`Logger.hpp` 定义日志入口：
+
+- `LogLevel` 覆盖 trace/debug/info/warn/error/critical/off。
+- `parseLogLevel()` 把配置字符串转成枚举，未知值回退到 `Info`。
+- `Logger::init()` 创建或更新全局 `spdlog` logger。
+- `Logger::get()` 返回共享 logger，未初始化时会按 info 级别懒创建。
+- `Logger::setLevel()` 只调整级别。
+- 关键内部状态在 `.cpp` 中是全局 `shared_ptr<spdlog::logger>` 和 mutex，保证重复 init/get 不把 logger 状态弄乱。
+
+`Timestamp.hpp` 定义时间值对象：
+
+- `Clock` 是 `std::chrono::system_clock`，用于日志、消息创建时间和可读时间。
+- 默认构造保存当前时间。
+- 显式构造接收 `Clock::time_point`，便于测试固定时间。
+- `now()` 返回当前时间戳。
+- `millisecondsSinceEpoch()` 返回毫秒级 epoch。
+- `toIso8601String()` 返回 UTC 可读字符串。
+- 关键成员变量 `time_point_` 是值语义，没有外部资源所有权。
+
+## 5. 运行流程
+
+### 1. 在 LiteIM 里的具体使用场景
+
+Base 模块是所有后续模块的公共地基：server 启动时用 `Config` 决定监听地址、线程数和输出高水位，用 `Logger` 初始化日志；网络、协议、存储和缓存模块用 `Status` / `ErrorCode` 返回可恢复错误，用 `Timestamp` 记录连接活跃时间。
+
+### 2. 上下层调用连接
+
+```text
+server/main.cpp
+    -> Config::defaults() / Config::loadFromFile()
+    -> parseLogLevel()
+    -> Logger::init()
+    -> TcpServer / Session / TimerManager
+        -> Status / ErrorCode / Timestamp / Logger
+        -> 上层决定继续、关闭连接或拒绝启动
+```
+
+上游是进程启动和各业务/网络模块；下游是标准库文件读取、spdlog、时间库和统一错误对象。
+
+### 3. 整体运行链路
+
+1. 进程启动时先拿到默认配置；当前入口在 [server/main.cpp](../server/main.cpp)。
+2. 如果后续启用配置文件，调用 [Config::loadFromFile()](../src/base/Config.cpp) 覆盖默认值。
+3. 用 [parseLogLevel()](../src/base/Logger.cpp) 把字符串级别转成枚举。
+4. 调用 [Logger::init()](../src/base/Logger.cpp) 初始化进程级 logger。
+5. `TcpServer` 读取配置中的 host、port、I/O 线程数和输出高水位。
+6. 后续任意模块失败时返回 `Status::error()`，上层根据错误语义决定处理方式。
+
+### 4. 自身内部运行流程
+
+整体可以看成 5 步：配置快照、配置解析、日志初始化、错误返回、时间取值。
+
+核心成员或数据职责：
+
+- `Config` 是启动期配置快照，里面包含 server、MySQL、Redis、Qt client 等分组字段。
+- `ErrorCode` 是稳定错误分类，避免上层只解析字符串。
+- `Status` 是错误信封，携带 `ErrorCode` 和 message。
+- `Logger` 包一层全局 spdlog logger。
+- `Timestamp` 是真实墙钟时间值，用于日志和 Session 活跃时间。
+
+核心函数流程：
+
+- [Config::defaults()](../src/base/Config.cpp)：直接返回默认构造的配置快照。
+- [Config::loadFromFile()](../src/base/Config.cpp)：逐行读取、去注释、trim、按 `key=value` 拆分，再按 key 写入字段。
+- [parseLogLevel()](../src/base/Logger.cpp)：把 `debug`、`warn`、`error` 等字符串映射为 `LogLevel`，未知值回落到 info。
+- [Logger::init()](../src/base/Logger.cpp)：加锁创建或复用 spdlog logger，并设置当前级别。
+- [Status::ok() / Status::error()](../src/base/Status.cpp)：构造成功或失败返回值，不抛异常。
+- [Timestamp::now()](../src/base/Timestamp.cpp)：取当前 system clock，用于对外可理解的时间点。
+
+`Config::loadFromFile()` 可以按这条流程理解：
+
+```text
+配置文件路径
+    ↓
+打开并读取文本内容
+    ↓
+清理注释、空行和首尾空白
+    ↓
+按 key=value 解析成配置项
+    ↓
+写入 Config 对应字段
+    ↓
+返回 Status 表示成功或具体错误
+```
+
+它的关键边界是“先把文本整理成配置项，再统一写入 `Config`”。缺文件、未知 key、端口非法或高水位为 0 这类问题不会抛异常给上层，而是通过 `Status::error()` 带着 `ErrorCode` 返回。
+
+### 5. 该项目代码在实际应用中的具体数据例子
+
+本地服务启动时会读取类似 `server.host=0.0.0.0`、`server.port=9000`、`server.io_threads=4`、`server.output_high_water_mark_bytes=4194304` 的配置。业务层保存 `user_id=1001` 给 `user_id=1002` 的消息失败时，不抛裸异常，而是返回 `Status::error(...)`；日志中记录模块、错误码和时间戳，方便定位 `conversation_id=10011002` 这条链路的问题。
+
+## 6. 关键实现点
+
+### Config 设计
+
+`Config` 当前保存这些配置：
+
+```cpp
+struct Config {
+    std::string server_host{"0.0.0.0"};
+    std::uint16_t server_port{9000};
+    std::uint32_t io_threads{4};
+    std::uint32_t business_threads{4};
+    std::size_t session_output_high_water_mark{4 * 1024 * 1024};
+    std::string log_level{"info"};
+    MySqlConfig mysql;
+    RedisConfig redis;
+    QtClientConfig qt_client;
+
+    static Config defaults();
+    Status loadFromFile(const std::filesystem::path& path);
+};
+```
+
+### `Config::defaults()`
+
+职责：返回一份默认配置。
+
+当前默认值包括：
+
+- `server.host = 0.0.0.0`
+- `server.port = 9000`
+- `server.io_threads = 4`
+- `server.business_threads = 4`
+- `server.output_high_water_mark_bytes = 4194304`
+- `mysql.host = 127.0.0.1`
+- `mysql.port = 3306`
+- `redis.host = 127.0.0.1`
+- `redis.port = 6379`
+- `qt.server_host = 127.0.0.1`
+- `qt.server_port = 9000`
+
+这些只是默认值，不代表本 Step 已经连接 MySQL 或 Redis。
+
+### `Config::loadFromFile(path)`
+
+职责：从简单的 `key=value` 文件覆盖默认配置。
+
+支持的形式：
+
+```text
+# comment
+server.host = 127.0.0.1
+server.port = 10086
+server.output_high_water_mark_bytes = 65536
+log.level = debug
+mysql.host = mysql.local
+redis.port = 6380
+qt.server_port = 10087
+```
+
+实现边界：
+
+- 支持 `#` 注释。
+- 支持 key/value 两侧空格。
+- 缺失的配置项保留默认值。
+- 未知 key 返回 `ErrorCode::InvalidArgument`。
+- 非法端口返回 `ErrorCode::ParseError`。
+- 输出高水位必须大于 0，否则返回 `ErrorCode::InvalidArgument`。
+- 缺失文件返回 `ErrorCode::NotFound`。
+
+本 Step 不引入 YAML / JSON / TOML，是为了让项目先保持可读、可测、可手写。等配置项明显复杂之后，再考虑更成熟的配置格式。
+
+### ErrorCode 和 Status
+
+`ErrorCode` 是统一错误码：
+
+```cpp
+enum class ErrorCode {
+    Ok = 0,
+    InvalidArgument,
+    NotFound,
+    IoError,
+    ParseError,
+    ConfigError,
+    InternalError,
+};
+```
+
+`toString(ErrorCode code)` 用于把错误码转成可读字符串，方便日志、测试和调试。
+
+`Status` 是简单的函数返回状态：
+
+```cpp
+class Status {
+public:
+    static Status ok();
+    static Status error(ErrorCode code, std::string message);
+
+    bool isOk() const noexcept;
+    ErrorCode code() const noexcept;
+    const std::string& message() const noexcept;
+};
+```
+
+为什么不只返回 `bool`：
+
+- `false` 只能表示失败，不能说明失败原因。
+- `Status` 可以携带 `ErrorCode` 和错误信息。
+- 单元测试可以精确断言失败类型，例如 `NotFound` 或 `ParseError`。
+
+为什么现在不直接做复杂的 `Result<T>`：
+
+- Step 2 的接口还很少，`Status` 足够表达无返回值函数的成败。
+- 后续 DAO、协议解析、Redis 调用如果需要返回数据，可以再引入 `Result<T>`，不急着过度设计。
+
+### Logger 设计
+
+`Logger` 当前封装 `spdlog`：
+
+```cpp
+enum class LogLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+    Critical,
+    Off,
+};
+
+LogLevel parseLogLevel(const std::string& level);
+
+class Logger {
+public:
+    static void init(LogLevel level = LogLevel::Info);
+    static std::shared_ptr<spdlog::logger> get();
+    static void setLevel(LogLevel level);
+};
+```
+
+### `parseLogLevel()`
+
+职责：把配置文件里的字符串变成枚举。
+
+例如：
+
+```cpp
+parseLogLevel("debug") == LogLevel::Debug
+parseLogLevel("warning") == LogLevel::Warn
+parseLogLevel("verbose") == LogLevel::Info
+```
+
+未知日志级别回退到 `Info`，这样配置写错时不会导致服务端直接崩掉。
+
+### `Logger::init()`
+
+职责：初始化名为 `liteim` 的全局 logger，并设置日志格式：
+
+```text
+[2026-05-05 16:08:57.973] [info] LiteIM server scaffold is running on 0.0.0.0:9000
+```
+
+内部使用 `std::mutex` 保护初始化，避免多个模块同时第一次调用 logger 时重复创建。
+
+### `Logger::get()`
+
+职责：返回当前 logger。如果还没有显式调用 `init()`，它会按 `Info` 级别创建默认 logger。
+
+`get()` 只保证 logger 存在，不改变已经配置好的日志级别。也就是说：
+
+```text
+Logger::init(Debug)
+Logger::get()
+Logger::get()
+```
+
+后续多次 `get()` 仍然保持 `Debug`。否则任何模块拿 logger 打日志都会把全局级别重置回 `Info`，压测或排查问题时很难稳定打开 debug 日志。
+
+### `Logger::setLevel()`
+
+职责：运行时调整日志级别。
+
+本 Step 不做自研异步日志。因为当前还没有 I/O 线程和业务线程池，先把统一日志入口接好更重要。等高性能主线走到线程模型和压测阶段，可以再根据实际需要升级成异步日志策略。
+
+### Timestamp 设计
+
+`Timestamp` 封装 `std::chrono::system_clock::time_point`：
+
+```cpp
+class Timestamp {
+public:
+    using Clock = std::chrono::system_clock;
+
+    Timestamp();
+    explicit Timestamp(Clock::time_point time_point);
+
+    static Timestamp now();
+    std::int64_t millisecondsSinceEpoch() const;
+    std::string toIso8601String() const;
+};
+```
+
+接口含义：
+
+- `Timestamp()`：构造 Unix epoch 时间点。
+- `Timestamp(time_point)`：用指定时间点构造，方便测试。
+- `now()`：返回当前系统时间。
+- `millisecondsSinceEpoch()`：返回从 Unix epoch 到当前时间点的毫秒数。
+- `toIso8601String()`：返回 UTC 字符串，例如 `1970-01-01T00:00:00Z`。
+
+后续消息表、历史消息分页、日志字段、压测统计都需要时间字段，所以 Step 2 先放一个确定性的时间工具。
+
+### server/main.cpp 的变化
+
+Step 1 的 server 只是打印普通文本。Step 2 改成：
+
+```cpp
+#include "liteim/base/Config.hpp"
+#include "liteim/base/Logger.hpp"
+
+int main() {
+    const auto config = liteim::Config::defaults();
+    liteim::Logger::init(liteim::parseLogLevel(config.log_level));
+    liteim::Logger::get()->info("LiteIM server scaffold is running on {}:{}",
+                                config.server_host,
+                                config.server_port);
+    return 0;
+}
+```
+
+这段代码仍然没有启动真实 TCP 服务。它只是证明：
+
+- server target 能使用 `liteim_base`。
+- 默认配置可读取。
+- 日志系统可初始化。
+- 格式化日志输出正常。
+
+真实监听 socket 会在后续网络 Step 中实现。
+
+## 7. 测试设计
+
+| 风险 | 测试如何覆盖 |
+| --- | --- |
+| `Config / Logger / ErrorCode 基础模块` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
+| 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
+
+本 Step 新增 4 个测试文件，加上 Step 1 的 smoke test，一共 15 个 CTest 用例。
+
+### `tests/base/config_test.cpp`
+
+测试：
+
+```cpp
+TEST(ConfigTest, DefaultsContainExpectedValues)
+TEST(ConfigTest, LoadFromFileOverridesConfiguredValues)
+TEST(ConfigTest, MissingValuesKeepDefaults)
+TEST(ConfigTest, MissingFileReturnsNotFound)
+TEST(ConfigTest, UnknownKeyFails)
+TEST(ConfigTest, InvalidPortFails)
+TEST(ConfigTest, ZeroHighWaterMarkFails)
+```
+
+覆盖点：
+
+- 默认配置是否符合预期。
+- 配置文件能否覆盖 server / MySQL / Redis / Qt 字段。
+- 只写一个配置项时，其他字段是否保留默认值。
+- 文件不存在时是否返回 `ErrorCode::NotFound`。
+- 未知 key 是否返回 `ErrorCode::InvalidArgument`。
+- 非法端口是否返回 `ErrorCode::ParseError`。
+
+### `tests/base/error_code_test.cpp`
+
+测试：
+
+```cpp
+TEST(ErrorCodeTest, ToStringReturnsReadableNames)
+TEST(StatusTest, OkStatusHasOkCode)
+TEST(StatusTest, ErrorStatusCarriesCodeAndMessage)
+```
+
+覆盖点：
+
+- 每个错误码能转成可读字符串。
+- `Status::ok()` 的 code 是 `Ok`，message 为空。
+- `Status::error()` 能保留错误码和错误信息。
+
+### `tests/base/logger_test.cpp`
+
+测试：
+
+```cpp
+TEST(LoggerTest, ParseLogLevelReturnsExpectedLevel)
+TEST(LoggerTest, UnknownLogLevelFallsBackToInfo)
+TEST(LoggerTest, InitCreatesReusableLogger)
+TEST(LoggerTest, GetDoesNotResetConfiguredLevel)
+TEST(LoggerTest, SetLevelSurvivesLaterGetCalls)
+```
+
+覆盖点：
+
+- 常见日志级别字符串能正确解析。
+- 未知日志级别回退到 `Info`。
+- `Logger::init()` 后能拿到名为 `liteim` 的 logger。
+- `Logger::get()` 不会把已经配置好的日志级别重置成 `Info`。
+- `Logger::setLevel()` 设置后的级别能经受后续 `get()` 调用。
+
+### `tests/base/timestamp_test.cpp`
+
+测试：
+
+```cpp
+TEST(TimestampTest, NowReturnsPositiveEpochMilliseconds)
+TEST(TimestampTest, Iso8601StringUsesUtcFormat)
+```
+
+覆盖点：
+
+- 当前时间戳大于 0。
+- Unix epoch 时间点格式化为 `1970-01-01T00:00:00Z`。
+
+## 8. 验证命令
+
+```bash
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+## 9. 面试表达
+
+### 一句话
+
+我没有一开始就写聊天业务，而是先抽出一个 base 模块，统一处理配置、日志、错误码、状态返回和时间戳。
+
+### 展开说
+
+可以这样讲：
+
+> 我没有一开始就写聊天业务，而是先抽出一个 `base` 模块，统一处理配置、日志、错误码、状态返回和时间戳。这样后续协议层、网络层、MySQL / Redis 层、Qt 客户端和测试都能复用同一套基础设施。配置当前用简单 `key=value` 文件，缺失项保留默认值，非法端口、未知 key、缺失文件都通过 `Status + ErrorCode` 返回明确错误；日志使用 `spdlog` 封装成项目统一入口，避免后续模块散落 `cout`。
+
+重点表达：
+
+- `base` 模块是底层公共依赖，不反向依赖网络或业务层。
+- `Status` 比裸 `bool` 更适合排查错误。
+- 配置解析先保持简单，不提前引入复杂配置库。
+- `spdlog` 是成熟日志库，当前先统一入口，异步日志不在 Step 2 过度实现。
+- 每个基础能力都有 GoogleTest 覆盖，后续重构更稳。
+
+### 容易被追问
+
+- 为什么不直接用异常处理配置错误？
+- 为什么不直接使用 JSON / YAML / TOML？
+- 为什么 `Logger` 要封装 `spdlog`？
+- 为什么 `Timestamp` 用 UTC？
+- 当前 `Logger` 是异步的吗？
+
+## 10. 面试常见追问
+
+### 为什么不直接用异常处理配置错误？
+
+可以用异常，但这里选择 `Status` 是为了让错误路径更显式。配置文件缺失、未知 key、端口非法都属于可预期错误，返回 `Status` 更容易在调用处写清楚处理逻辑，也更方便单元测试断言错误码。
+
+### 为什么不直接使用 JSON / YAML / TOML？
+
+第一版配置项不复杂，`key=value` 足够。这个项目重点是 C++ 网络服务器，不是配置系统。先实现可测的轻量解析器，后续如果配置层复杂，再替换为成熟库。
+
+### 为什么 `Logger` 要封装 `spdlog`？
+
+封装后业务代码依赖的是项目自己的 `Logger` 入口，而不是到处直接创建 `spdlog` logger。以后如果要换日志格式、调整输出位置、升级异步日志，只需要改 `base` 层。
+
+### 为什么 `Timestamp` 用 UTC？
+
+服务端内部日志、消息存储、压测统计应该避免依赖本地时区。UTC 更适合作为跨客户端、跨环境的一致时间表达。
+
+### 当前 `Logger` 是异步的吗？
+
+不是。Step 2 只建立统一日志入口。当前项目还没有 I/O 线程和业务线程池，没必要过早实现异步日志。后续如果压测发现同步日志影响性能，可以在保持 `Logger` 对外接口不变的情况下升级实现。

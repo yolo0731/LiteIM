@@ -1,5 +1,7 @@
 # LiteIM
 
+![CI](https://github.com/yolo0731/LiteIM/actions/workflows/ci.yml/badge.svg)
+
 LiteIM is a C++17 instant messaging server project built around Linux networking and a one-loop-per-thread Reactor model. The project is developed step by step so each layer remains understandable: protocol encoding, TCP stream decoding, nonblocking I/O, connection lifetime, multi-Reactor dispatch, business-thread isolation, timer-driven heartbeat cleanup, and later MySQL / Redis backed IM services.
 
 The long-term target is a small but realistic IM system:
@@ -108,9 +110,9 @@ Run the server executable:
 ./build/server/liteim_server
 ```
 
-The server starts a real `EventLoop + TcpServer` on the configured host and port, starts MySQL / Redis pools, starts the business `ThreadPool`, and wires incoming packets into `MessageRouter`. In the current Step 45 runtime, heartbeat requests are handled by `HeartbeatService`; register/login requests are handled by `AuthService`; add-friend and friend-list requests are handled by `FriendService`; private-message requests are handled by `ChatService`; group create/join/list/message requests are handled by `GroupService`; offline-message pull requests are handled by `OfflineMessageService`; history requests are handled by `HistoryService`; messages to or mentioning `mira_bot` are bridged to `BotService` / `EchoBotGateway`; and unknown or unsupported request types get `ErrorResponse`. Business handlers run in the business pool. Session close cleanup submits `OnlineService::unbindSession(session_id)` into the business pool so Redis online-state cleanup does not run in an I/O callback. The server handles `Ctrl-C` / `SIGTERM` through `signalfd`, stops `TcpServer` in the base loop thread, stops the business pool, closes MySQL / Redis pools, and exits cleanly.
+The server starts a real `EventLoop + TcpServer` on the configured host and port, starts MySQL / Redis pools, starts the business `ThreadPool`, and wires incoming packets into `MessageRouter`. In the current Step 45 server runtime, heartbeat requests are handled by `HeartbeatService`; register/login requests are handled by `AuthService`; add-friend and friend-list requests are handled by `FriendService`; private-message requests are handled by `ChatService`; group create/join/list/message requests are handled by `GroupService`; offline-message pull requests are handled by `OfflineMessageService`; history requests are handled by `HistoryService`; messages to or mentioning `mira_bot` are bridged to `BotService` / `EchoBotGateway`; and unknown or unsupported request types get `ErrorResponse`. Business handlers run in the business pool. Session close cleanup submits `OnlineService::unbindSession(session_id)` into the business pool so Redis online-state cleanup does not run in an I/O callback. The server handles `Ctrl-C` / `SIGTERM` through `signalfd`, stops `TcpServer` in the base loop thread, stops the business pool, closes MySQL / Redis pools, and exits cleanly.
 
-Because Step 45 runtime starts real MySQL / Redis pools, start local dependencies before a bounded server smoke check:
+Because the current server runtime starts real MySQL / Redis pools, start local dependencies before a bounded server smoke check:
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d --wait
@@ -300,6 +302,16 @@ ctest --test-dir build-asan --output-on-failure
 
 `LITEIM_ENABLE_SANITIZERS=ON` is supported for GNU and Clang builds. It enables AddressSanitizer and UndefinedBehaviorSanitizer with frame pointers and non-recovering sanitizer failures. It does not change the default C++ standard or require new production dependencies.
 
+## Repository CI
+
+The repository includes GitHub Actions workflow configuration in `.github/workflows/ci.yml`. It is project infrastructure, not a numbered LiteIM Step. On push or pull request to `main`, the workflow runs three checks on a clean Ubuntu runner:
+
+- `unit`: configure, build, and run `ctest -L unit`.
+- `integration`: configure, build, start Docker MySQL/Redis, and run `ctest -L integration`.
+- `sanitizers`: configure with `LITEIM_ENABLE_SANITIZERS=ON`, build, start Docker MySQL/Redis, and run full CTest under ASan/UBSan.
+
+The badge at the top of this README reflects the current GitHub Actions result after the workflow file is pushed to GitHub.
+
 Useful repository checks:
 
 ```bash
@@ -312,6 +324,9 @@ find . -path ./build -prune -o -path ./.git -prune -o \( -path ./server/net -o -
 
 ```text
 LiteIM/
+├── .github/
+│   └── workflows/
+│       └── ci.yml
 ├── CMakeLists.txt
 ├── README.md
 ├── docker/
@@ -352,8 +367,9 @@ LiteIM/
 │   ├── service/
 │   ├── storage/
 │   └── timer/
-├── tutorials/
 └── docs/
+    ├── process/
+    ├── tutorials/
     └── debug_cases/
 ```
 
@@ -362,7 +378,9 @@ Directory conventions:
 - Public headers live under `include/liteim/<module>/`.
 - Library implementations live under `src/<module>/`.
 - Executable entry points live under `server/`, `client_cli/`, and `bench/`; future GUI clients belong in `client_qt/`.
-- `tutorials/` contains per-step teaching notes.
+- `.github/workflows/` contains repository CI automation.
+- `docs/tutorials/` contains per-step teaching notes.
+- `docs/process/` contains active planning, findings, and progress memory.
 - `docs/debug_cases/` contains internal postmortems for useful bug and review hardening cases.
 
 ## Debug Notes
@@ -383,7 +401,7 @@ LiteIM is being built in phases:
 | Network base | CMake, GoogleTest, base utilities, TLV protocol, frame decoder, Buffer, socket helpers, Reactor interfaces, `Epoller`, `Channel`, `EventLoop`, `Acceptor`, `Session`, multi-Reactor `TcpServer`, business `ThreadPool`, timerfd heartbeat cleanup, and signalfd shutdown. |
 | Storage and cache | MySQL C API wrapper, prepared statement wrapper with signed/unsigned 64-bit binding, MySQL connection pool, RAII connection guard, user/auth DAO layer, message/offline-message DAO layer, `MySqlStorage` adapter, Redis client/pool, online status cache, unread counters, login rate limiting, and `RedisCache` adapter. |
 | IM services | Session binding, online-state synchronization, async message routing, register/login, friend list, private chat, group chat, offline messages, history loading, heartbeat protocol, graceful shutdown, and BotGateway routing. |
-| Tooling and validation | CLI client, Python E2E tests, benchmark tooling, broader GoogleTest/gMock coverage, ASan/UBSan, and CI. |
+| Tooling and validation | CLI client, Python E2E tests, benchmark tooling, broader GoogleTest/gMock coverage, CTest labels, ASan/UBSan, and repository CI. |
 | Demo clients | Qt Widgets chat client with login, conversation list, message bubbles, group chat, AI Bot entry, heartbeat state, and disconnect feedback. |
 | PersonaAgent integration | Python BotClient and separate FastAPI / LangGraph AgentService using Knowledge, Memory, Authorized Style RAG, Persona, Safety, tracing, checkpointing, and evaluation. |
 

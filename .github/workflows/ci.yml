@@ -1,0 +1,129 @@
+name: LiteIM CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  CMAKE_BUILD_PARALLEL_LEVEL: 2
+  CTEST_OUTPUT_ON_FAILURE: 1
+
+jobs:
+  unit:
+    name: Build and unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            default-libmysqlclient-dev \
+            libhiredis-dev \
+            libssl-dev \
+            pkg-config \
+            python3
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel 2
+
+      - name: Run unit tests
+        run: ctest --test-dir build -L unit --output-on-failure
+
+  integration:
+    name: Docker integration and E2E tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            default-libmysqlclient-dev \
+            libhiredis-dev \
+            libssl-dev \
+            pkg-config \
+            python3
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel 2
+
+      - name: Start MySQL and Redis
+        run: docker compose -f docker/docker-compose.yml up -d --wait
+
+      - name: Run integration and E2E tests
+        run: ctest --test-dir build -L integration --output-on-failure
+
+      - name: Show dependency logs on failure
+        if: failure()
+        run: docker compose -f docker/docker-compose.yml logs --no-color || true
+
+      - name: Stop dependencies
+        if: always()
+        run: docker compose -f docker/docker-compose.yml down -v
+
+  sanitizers:
+    name: ASan and UBSan tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            default-libmysqlclient-dev \
+            libhiredis-dev \
+            libssl-dev \
+            pkg-config \
+            python3
+
+      - name: Configure sanitizer build
+        run: cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DLITEIM_ENABLE_SANITIZERS=ON
+
+      - name: Build sanitizer configuration
+        run: cmake --build build-asan --parallel 2
+
+      - name: Start MySQL and Redis
+        run: docker compose -f docker/docker-compose.yml up -d --wait
+
+      - name: Run sanitizer tests
+        run: ctest --test-dir build-asan --output-on-failure
+
+      - name: Show dependency logs on failure
+        if: failure()
+        run: docker compose -f docker/docker-compose.yml logs --no-color || true
+
+      - name: Stop dependencies
+        if: always()
+        run: docker compose -f docker/docker-compose.yml down -v

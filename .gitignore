@@ -1,6 +1,10 @@
 build/
+build-asan/
+build-asan-plan/
 cmake-build-*/
 .codex
+__pycache__/
+*.pyc
 *.db
 *.db-journal
 *.log
