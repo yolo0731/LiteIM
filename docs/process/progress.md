@@ -1,33 +1,51 @@
 # LiteIM Progress
 
-## 2026-05-17 Retire C++ Bot Route
+## 2026-05-17 Markdown Drift Sync
 
-用户确认原来的 Step 41 不再需要，直接从 LiteIM 中移除 C++ BotGateway/EchoBot 路线。
+用户要求同步所有 Markdown，保证旧 C++ assistant 路线不再漂移。
 
 实现内容：
 
-- 删除 `BotGateway` / `BotService` / C++ EchoBot 相关头文件、实现、CMake 源文件和测试。
-- 删除 `MessageType` 中的 `BotChatRequest` / `BotChatResponse` / `BotMessagePush`，并让 600/601/602 回到 unknown。
-- 删除 `TlvType` 中的 `BotId` / `PersonaId`，并让 100/101 回到 unknown。
-- `ChatService` / `GroupService` 构造函数不再注入 bot 服务，所有账号都按普通在线/离线用户处理。
-- `server/main.cpp` 不再构造 C++ EchoBot 或 bot 服务。
-- `scripts/seed_test_data.sql` 不再创建固定 bot 用户、bot 好友、bot 群成员、bot 消息或 bot 离线消息，并清理旧 seed 中的 `user_id=9001` 数据。
-- 删除旧 `docs/tutorials/step41_bot_gateway.md`，同步 README、PROJECT_MEMORY、Step 3/5/22/27/42/43 教程和 process 文档。
+- 全量扫描 `/home/yolo/jianli` 下 54 个 Markdown 文件，排除 LiteIM build 输出目录。
+- 更新 `/home/yolo/jianli/AGENTS.md` 和 `/home/yolo/jianli/CLAUDE.md`：PersonaAgent 作为普通账号接入；Qt 只是普通联系人入口；SafetyGuard 约束归 PersonaAgent，不让 C++ 服务端定义行文。
+- 更新 `/home/yolo/jianli/PROJECT_MEMORY.md`：项目二中文称呼统一为 AI Agent Worker；seed 和用户身份边界统一为普通账号。
+- 清理 `LiteIM/README.md` 和相关教程里旧 assistant seed、旧专用协议、旧回复示例和旧边界说明。
+- 清理 `docs/process/findings.md` / `task_plan.md` / `progress.md` 中会误导后续上下文恢复的旧 C++ assistant 细节，保留“该路线已移除”的当前结论。
 
 当前已验证：
 
-- `ctest --test-dir build -R MessageType --output-on-failure` 在测试先行阶段按预期失败，证明 600/601/602 当时仍被识别为 bot 类型。
-- `cmake --build build --target liteim_tests -j2`：bot route 删除后已通过一次。
+- 旧路线关键词扫描无输出。
+- 旧独立身份称呼扫描无输出，保留的 `BotClient` 组件名不算漂移。
+- 旧机械替换占位词扫描无输出。
+
+## 2026-05-17 Retire C++ Assistant Route
+
+用户确认原来的 C++ 内置 assistant 路线不再需要，直接从 LiteIM 中移除，后续 PersonaAgent 只作为普通账号客户端接入。
+
+实现内容：
+
+- 删除 C++ 内置 assistant gateway/service/echo fallback 相关头文件、实现、CMake 源文件和测试。
+- 删除 assistant 专用 `MessageType` 常量，并让 600/601/602 回到 unknown。
+- 删除 assistant 专用 `TlvType` 常量，并让 100/101 回到 unknown。
+- `ChatService` / `GroupService` 构造函数不再注入 assistant 服务，所有账号都按普通在线/离线用户处理。
+- `server/main.cpp` 不再构造 C++ echo fallback 或 assistant 服务。
+- `scripts/seed_test_data.sql` 不再创建固定 assistant 用户、好友、群成员、消息或离线消息，并清理旧 seed 中的 `user_id=9001` 数据。
+- 删除旧 assistant 教程，同步 README、PROJECT_MEMORY、Step 3/5/22/27/42/43 教程和 process 文档。
+
+当前已验证：
+
+- `ctest --test-dir build -R MessageType --output-on-failure` 在测试先行阶段按预期失败，证明 600/601/602 当时仍被识别为 assistant 类型。
+- `cmake --build build --target liteim_tests -j2`：assistant route 删除后已通过一次。
 - `ctest --test-dir build -R "MessageType|ChatService|GroupService" --output-on-failure`：26/26 通过。
 - `cmake --build build -j2`：通过。
 - `ctest --test-dir build -R "MessageType|TlvType|ChatService|GroupService" --output-on-failure`：28/28 通过。
 - `docker compose -f docker/docker-compose.yml up -d --wait`：MySQL / Redis healthy。
-- 重新执行 `scripts/seed_test_data.sql` 后查询确认：`users(user_id=9001)` 为 0，bot 相关 messages 为 0。
+- 重新执行 `scripts/seed_test_data.sql` 后查询确认：`users(user_id=9001)` 为 0，旧 assistant 相关 messages 为 0。
 - `ctest --test-dir build --output-on-failure`：380/380 通过。
 - `git diff --check`：通过。
-- 源码/测试/SQL 扫描 `BotChat|BotMessagePush|BotId|PersonaId|BotGateway|BotService|EchoBot|BotOptions|mira_bot|@mira_bot|Mira Bot|dev_hash_mira`：无输出。
-- 当前面向读者文档扫描 `BotChat|BotMessagePush|BotId|PersonaId|BotGateway|BotService|EchoBot|BotOptions|mira_bot|@mira_bot|Mira Bot|AI Bot|普通 Bot 用户|Bot 用户|Bot 路由|特殊用户`：无输出。
-- `test ! -e docs/tutorials/step41_bot_gateway.md`：通过，旧 Step 41 教程已删除。
+- 源码/测试/SQL 旧 assistant 路线关键字扫描：无输出。
+- 当前面向读者文档旧 assistant 路线关键字扫描：无输出。
+- 旧 assistant 教程文件已删除。
 
 ## 2026-05-16 Post-Step45 Review Hardening
 
@@ -192,7 +210,7 @@ Sanitizer 验证：
 
 - Step 42 已提交：`feat(client): add command line im client`。
 - 用户确认 MySQL / Redis 在 Docker 环境中运行；本 Step 验证会使用 `docker compose -f docker/docker-compose.yml up -d --wait`。
-- 工作区仍保留 Step 41 前已有的用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。本 Step 不应把这些改动混入提交。
+- 工作区仍保留 进入该任务前已有的用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。本 Step 不应把这些改动混入提交。
 - `session-catchup.py` 提示的是旧路线概念问答，不对应当前 Step 43 代码改动。
 
 概念计划：
@@ -340,7 +358,7 @@ TDD 过程：
 
 - 本 Step 只做主动离线消息拉取、`OfflineMessagesResponse`、delivered 标记和未读清理。
 - 不修改 `AuthService` / `MessageRouter` 的一请求一响应模型。
-- 不实现可靠 ACK、重试、群聊、历史分页、跨节点路由或 BotGateway。
+- 不实现可靠 ACK、重试、群聊、历史分页、跨节点路由。
 
 已完成代码：
 
@@ -452,7 +470,7 @@ TDD 过程：
 - 添加好友写 `IStorage::addFriendship()`，重复好友返回 `AlreadyExists`。
 - 好友列表来自 `IStorage::getFriends()`，在线状态来自 `ICache::isUserOnline()`。
 - handler 通过 `MessageRouter` 注册为 `BusinessThread`，避免在 Reactor I/O 线程执行 MySQL / Redis 阻塞调用。
-- 不实现好友申请审批、黑名单、备注名、私聊、群聊、离线消息、历史消息、HeartbeatService 或 BotGateway。
+- 不实现好友申请审批、黑名单、备注名、私聊、群聊、离线消息、历史消息、HeartbeatService 。
 
 TDD 过程：
 
@@ -658,7 +676,7 @@ TDD 过程：
 
 - 更新 README、Step21/23/25/26/27/30/31 教程、`docs/process/task_plan.md`、`docs/process/findings.md`、本文件和 `/home/yolo/jianli/PROJECT_MEMORY.md`。
 - 明确 `LoginRateLimiter` 当前是滑动失败窗口，`allow()` / `recordFailure()` 分离，后续 AuthService 如需强原子登录门禁再扩展 Lua 脚本。
-- 明确当前 v1 MySQL schema 没有 `users.user_type`，BotGateway 前若需要数据库级 normal/bot 区分，应单独做迁移。
+- 明确当前 v1 MySQL schema 没有 `用户身份类型列`，如果未来需要数据库级 human/agent 区分，应单独做迁移。
 
 当前验证：
 
@@ -1148,7 +1166,7 @@ feat(storage): add mysql connection and prepared statement
 - `docker compose -f docker/docker-compose.yml config`：通过。
 - `docker compose -f docker/docker-compose.yml down -v && docker compose -f docker/docker-compose.yml up -d --wait`：重建本地开发数据卷并启动成功，MySQL / Redis 均 healthy。
 - `docker compose -f docker/docker-compose.yml ps`：MySQL 镜像为 `mysql:8.0`，端口仍为 `127.0.0.1:33060->3306`；Redis 端口为 `127.0.0.1:63790->6379`。
-- MySQL 查询验证：`SELECT VERSION()` 返回 `8.0.46`；`SHOW TABLES` 返回 6 张表；seed 可查到 `alice`、`bob`、`mira_bot` 和两条未投递离线消息。
+- MySQL 查询验证：`SELECT VERSION()` 返回 `8.0.46`；`SHOW TABLES` 返回 6 张表；seed 可查到 `alice`、`bob` 和待投递离线消息。
 - Redis 认证验证：未带密码 `redis-cli ping` 返回 `NOAUTH Authentication required.`；`REDISCLI_AUTH=6 redis-cli ping` 返回 `PONG`。
 - MySQL root 账号验证：`mysql -uroot -p6 -e "SELECT VERSION()"` 返回 `8.0.46`。
 - MySQL Workbench keyring 中 `LiteIM Docker Local` 的 `liteim@127.0.0.1:33060` 密码已更新为 `6`。
@@ -1189,7 +1207,7 @@ MySQL schema：
 
 seed 数据：
 
-- 用户：`alice`、`bob`、`mira_bot`。
+- 用户：`alice`、`bob`。
 - 群组：`dev_group`。
 - 示例私聊、群聊消息和 pending offline message 记录。
 
@@ -1197,7 +1215,7 @@ seed 数据：
 
 - `docker compose -f docker/docker-compose.yml config`：通过。
 - `LITEIM_MYSQL_PORT=33306 LITEIM_REDIS_PORT=36379 docker compose -p liteim-step22-verify -f docker/docker-compose.yml up -d --wait`：MySQL / Redis 均 healthy。
-- MySQL 查询验证：`SHOW TABLES` 返回 6 张表；`SHOW INDEX FROM messages` 包含 `idx_messages_history`、`idx_messages_sender`、`idx_messages_receiver`；seed 可查到 `alice`、`bob`、`mira_bot`、`dev_group` 和两条未投递离线消息。
+- MySQL 查询验证：`SHOW TABLES` 返回 6 张表；`SHOW INDEX FROM messages` 包含 `idx_messages_history`、`idx_messages_sender`、`idx_messages_receiver`；seed 可查到 `alice`、`bob`、`dev_group` 和待投递离线消息。
 - 后续本地开发口径更新：MySQL 开发镜像固定为 `mysql:8.0`，避免 Workbench 8.0 对 MySQL 8.4 弹兼容性警告；MySQL/Redis 开发密码统一为 `6`。
 - Redis 验证：`REDISCLI_AUTH=6 redis-cli ping` 返回 `PONG`。
 - `LITEIM_MYSQL_PORT=33306 LITEIM_REDIS_PORT=36379 docker compose -p liteim-step22-verify -f docker/docker-compose.yml down -v`：临时验证容器和数据卷已清理。
@@ -1463,7 +1481,7 @@ feat(net): add session high water mark backpressure
 - 设计语义应为“客户端发来完整、合法、成功解码的入站 Packet 才算连接活跃”。
 - 旧实现里 `Session::sendEncodedInLoop()` append output buffer 后会刷新活跃时间。
 - 旧实现里 `Session::handleWrite()` 每次写出字节后也会刷新活跃时间。
-- 这会导致服务端持续 push / echo / Bot 回复时，沉默客户端被误判为活跃连接。
+- 这会导致服务端持续 push / echo 时，沉默客户端被误判为活跃连接。
 
 TDD RED 已确认：
 
@@ -2362,7 +2380,7 @@ init: create LiteIM project structure with googletest
 
 - PersonaAgent 新路线是 Authorized Style RAG Edition。
 - PersonaAgent 保持 20 Step，但 Step 7-20 改为 6 节点 LangGraph + Knowledge/Memory/Authorized Style RAG + Persona + Safety + Tool Calling + Checkpoint + Trace + Evaluation。
-- LiteIM 不嵌入 Python、LangGraph、LLM、embedding 或 vector DB，只提供 Python BotClient 可以复用的 TLV 协议和 BotGateway 接入点。
+- LiteIM 不嵌入 Python、LangGraph、LLM、embedding 或 vector DB，只提供 Python BotClient 可以复用的 TLV 协议和普通账号协议边界。
 - Authorized Style RAG 样本必须有 consent manifest、来源、用途、脱敏、撤回和 SafetyGuard 边界。
 
 ## 2026-05-05 Step 2 Base Module
@@ -2434,7 +2452,7 @@ init: create LiteIM project structure with googletest
 - 更新 `src/CMakeLists.txt`，接入 `protocol` 子目录。
 - 更新 `tests/CMakeLists.txt`，让 `liteim_tests` 链接 `liteim_protocol`。
 - 补充修正 `MessageType`：新增 `ListGroupsRequest` / `ListGroupsResponse`，并把群聊消息编号调整为 `406/407/408`。
-- 补充 `isPushType()`，显式识别 `PrivateMessagePush`、`GroupMessagePush` 和 `BotMessagePush`。
+- 补充 `isPushType()`，显式识别 `PrivateMessagePush` 和 `GroupMessagePush`。
 
 测试完成：
 
@@ -3107,66 +3125,6 @@ TDD GREEN：
 
 - 提交完成：`feat(service): add heartbeat ttl refresh`。
 
-## 2026-05-16 Step 41 BotGateway
-
-本次进入 `Step 41：实现 BotGateway 和 AI Bot 特殊用户`。
-
-开始状态：
-
-- Step 40 已提交：`feat(service): add heartbeat ttl refresh`。
-- 工作区进入 Step 41 前已有用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。本 Step 需要修改 GroupService 接入点，提交时必须用精确 staging 避免把进入本 Step 前的注释改动混入行为提交。
-- 用户确认采用“最小普通用户 Bot 集成”并补充硬约束：不改 schema，不启用 BotChat 专用协议，显式过滤 bot offline/unread，群聊触发前确认 bot 是群成员，不伪造 session，不递归 handler。
-
-TDD RED：
-
-- 扩展 `tests/service/chat_service_test.cpp` 和 `tests/service/group_service_test.cpp`。
-- 私聊覆盖：发给 `mira_bot` 保存原始消息但不写 bot offline/unread，保存 bot 回复并给原用户 `PrivateMessagePush`，启用 bot 后普通私聊仍保持 offline/unread。
-- 群聊覆盖：`@mira_bot` 且 bot 是群成员时触发回复；bot 不是群成员时不触发；不含 mention 时不触发；sender 是 bot 时不回环；群聊原始消息和 bot 回复均过滤 bot offline/unread。
-- `cmake --build build --target liteim_tests -j2` 按预期失败于 `fatal error: liteim/service/BotGateway.hpp: No such file or directory`。
-
-代码完成：
-
-- 新增 `include/liteim/service/BotGateway.hpp`、`include/liteim/service/BotService.hpp`、`src/service/BotService.cpp`。
-- `BotOptions` 默认识别 `user_id=9001`、`username=mira_bot`、`mention=@mira_bot`。
-- `EchoBotGateway` 返回 `Echo: <原消息>`。
-- `BotService` 负责 bot 身份判断、群聊 mention 条件、bot 回复保存、push、离线人类 unread 降级日志和 bot offline/unread 过滤。
-- `ChatService` 注入可选 `BotService*`，私聊 `mira_bot` 时保存原始消息但不写 bot offline/unread，并通过 `BotService` 生成普通私聊回复。
-- `GroupService` 注入可选 `BotService*`，群成员遍历时过滤 bot offline/unread，原始群消息处理后再按群成员和 mention 条件触发 bot 回复。
-- `server/main.cpp` 构造 `EchoBotGateway` / `BotService` 并注入 `ChatService` / `GroupService`。
-- `src/service/CMakeLists.txt` 编入 `BotService.cpp`。
-
-TDD GREEN：
-
-- `cmake --build build --target liteim_tests -j2`：通过。
-- `ctest --test-dir build -R "ChatService|GroupService" --output-on-failure`：通过，21/21 tests passed。
-
-文档完成：
-
-- 更新 `README.md`：当前 runtime 切到 Step 41，记录 `BotGateway` / `BotService`、普通 IM 协议边界、bot offline/unread 过滤和群聊成员校验。
-- 新增 `docs/tutorials/step41_bot_gateway.md`，按固定 0-10 模板讲解 BotGateway、EchoBot、普通用户语义、私聊/群聊流程、测试设计和面试追问。
-- 更新 `docs/process/task_plan.md` / `docs/process/findings.md` / `docs/process/progress.md` 记录 Step 41 边界、设计发现、RED/GREEN 过程和验证结果。
-
-阶段验证结果：
-
-- `cmake --build build --target liteim_tests -j2`：通过。
-- `ctest --test-dir build -R "ChatService|GroupService" --output-on-failure`：通过，21/21 tests passed。
-- `cmake --build build -j2`：通过。
-- `docker compose -f docker/docker-compose.yml up -d --wait`：通过，MySQL / Redis 均 healthy。
-- `ctest --test-dir build --output-on-failure`：通过，333/333 tests passed。
-- `git diff --check`：通过。
-- `.gitkeep` 检查：无输出。
-- 旧路线路径检查：无 `server/net`、`server/protocol`、`SQLite`、`InMemory`、`step15_sqlite` 残留。
-- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" README.md docs/tutorials/step41_bot_gateway.md`：无输出。
-- `rg -n "^## " docs/tutorials/step41_bot_gateway.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
-- `timeout 2s ./build/server/liteim_server || test $? -eq 124`：通过，server 监听 `0.0.0.0:9000` 后收到 SIGTERM 并通过 signalfd 退出。
-
-收尾注意：
-
-- Step 41 提交需要排除进入本 Step 前已有的用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。其中 `GroupService` 文件同时包含 Step 41 必要行为改动，提交时必须精确 staging。
-
-收尾完成：
-
-- 提交完成：`feat(bot): add bot gateway and echo assistant user`。
 
 ## 2026-05-16 Step 42 CLI Client
 
@@ -3174,8 +3132,8 @@ TDD GREEN：
 
 开始状态：
 
-- Step 41 已提交：`feat(bot): add bot gateway and echo assistant user`。
-- 工作区仍保留 Step 41 前已有的用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。本 Step 不应把这些注释改动混入提交。
+- 旧 assistant 路线后来已被移除。
+- 工作区仍保留 进入该任务前已有的用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。本 Step 不应把这些注释改动混入提交。
 - Step 42 目标是先提供协议调试 CLI，不提前实现 Python E2E、bench、Qt 或 PersonaAgent。
 
 概念计划：
@@ -3303,7 +3261,7 @@ TDD GREEN：
 开始状态：
 
 - Step 43 已提交：`64ec246 test(e2e): add python end to end tests`。
-- 工作区仍保留 Step 41 前已有的用户侧改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。本 Step 不应把这些改动混入提交。
+- 工作区仍保留 进入该任务前已有的用户侧改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。本 Step 不应把这些改动混入提交。
 - 用户的 MySQL / Redis 在 Docker 环境运行；Step 44 的真实运行验证继续使用 `docker compose -f docker/docker-compose.yml up -d --wait`。
 
 概念计划：

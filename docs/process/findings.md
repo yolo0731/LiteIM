@@ -8,21 +8,32 @@
 - `LiteIM/docs/process/task_plan.md`、`LiteIM/docs/process/findings.md` 和 `LiteIM/docs/process/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
-## 2026-05-17 C++ Bot Route Retirement Findings
+## 2026-05-17 Markdown Drift Sync Findings
 
-用户确认原来的 Step 41 不再需要，直接从 LiteIM 中移除 C++ BotGateway/EchoBot 路线。
+本次用户要求同步所有 Markdown，避免旧路线漂移。扫描范围是 `/home/yolo/jianli` 下 54 个 Markdown 文件，排除 LiteIM build 输出。
+
+采用结论：
+
+- `PROJECT_MEMORY.md`、`AGENTS.md`、`CLAUDE.md`、`LiteIM/README.md`、`docs/tutorials/`、`docs/process/` 都必须统一表达：PersonaAgent 使用普通 LiteIM 用户账号接入，C++ 服务端不识别 AI/assistant 身份，不定义回复行文。
+- 历史 process 记录可以保留 Step 时间线，但不能继续展开已经移除的 C++ 内置 assistant 方案细节；这些细节会让后续恢复上下文时误判当前路线。
+- `BotClient` 是 Python 客户端组件名，允许保留；其他旧 assistant 叙述、旧固定账号、旧专用协议名、旧 C++ gateway/service 名都不再保留。
+- 旧 assistant 教程已经删除，不再用新教程替代。
+
+## 2026-05-17 C++ Assistant Route Retirement Findings
+
+用户确认原来的 C++ 内置 assistant 路线不再需要，LiteIM 只保留普通账号消息系统。
 
 当前采用的边界：
 
-- LiteIM 不定义 AI/Bot 身份识别，不保留 `BotGateway`、`BotService`、`EchoBotGateway` 或 `BotOptions`。
-- LiteIM 不启用也不保留 `BotChatRequest`、`BotChatResponse`、`BotMessagePush`、`BotId`、`PersonaId` 等 bot/agent 专用协议常量。
+- LiteIM 不定义 AI/assistant 身份识别，不保留 C++ 内置 assistant gateway、assistant service、echo fallback 或 assistant options。
+- LiteIM 不启用也不保留 assistant 专用 `MessageType` 或 `TlvType` 常量。
 - `ChatService` 和 `GroupService` 按普通账号处理所有用户：在线则 push，离线则写 offline/unread，不因为账号未来可能由 LLM 控制而分支。
-- MySQL seed 只保留普通开发用户和开发群，不再固定创建 `mira_bot` 或 bot 群成员。
+- MySQL seed 只保留普通开发用户和开发群，不再固定创建 assistant 账号或 assistant 群成员。
 - PersonaAgent 后续通过 Python BotClient 使用普通账号注册/登录/收发私聊消息；LLM、RAG、风格、安全和回复策略全部属于项目二。
 
 暂缓项：
 
-- 不重排已经完成的 Step 42-45 编号，避免大范围文档迁移；旧 Step 41 教程文件直接删除，路线中 Step 41 留空。
+- 不重排已经完成的 Step 42-45 编号，避免大范围文档迁移；旧 assistant 教程文件直接删除。
 - 不在 LiteIM C++ 服务端加入 Agent 配置、模型调用、群聊 @ 策略或 AI 回复模板。
 
 ## 2026-05-16 Post-Step45 Review Hardening Findings
@@ -159,7 +170,7 @@ GitHub CI 对 LiteIM 有价值，但不需要拆成单独 Step。它的职责是
 本次按 `PROJECT_MEMORY.md` 进入 `Step 38：实现 GroupService 群聊`。长期边界已经确认：
 
 - 做：`CreateGroupRequest`、`JoinGroupRequest`、`ListGroupsRequest`、`GroupMessageRequest`、群成员查询、群消息 MySQL 保存、在线成员 `GroupMessagePush`、离线成员 `offline_messages` 和 Redis unread +1。
-- 不做：复杂群权限、群公告、群禁言、群消息已读回执、广播优化、可靠 ACK、跨节点路由或 BotGateway。
+- 不做：复杂群权限、群公告、群禁言、群消息已读回执、广播优化、可靠 ACK、跨节点路由。
 
 代码核对结果：
 
@@ -183,7 +194,7 @@ GitHub CI 对 LiteIM 有价值，但不需要拆成单独 Step。它的职责是
 本次不采用/不改：
 
 - 不新增 TLV 字段，不修改 MySQL schema。
-- 不实现复杂群权限、群公告、群禁言、群已读回执、大群广播优化、可靠 ACK、跨节点路由或 BotGateway。
+- 不实现复杂群权限、群公告、群禁言、群已读回执、大群广播优化、可靠 ACK、跨节点路由。
 - 不更新 `/home/yolo/jianli/PROJECT_MEMORY.md` 的完成状态；该文件只保留长期设计路线和边界。
 
 ## 2026-05-15 Pre-Step38 Critical Hardening Findings
@@ -224,11 +235,11 @@ GitHub CI 对 LiteIM 有价值，但不需要拆成单独 Step。它的职责是
 
 - 不修改 `AuthService` 登录响应模型，不让登录 handler 额外发送 `OfflineMessagesResponse`。
 - 不修改 `MessageRouter` 支持多 response 或 follow-up response。
-- 不实现可靠投递 ACK、ACK 重试、离线消息删除、历史分页、群聊、跨节点路由或 BotGateway。
+- 不实现可靠投递 ACK、ACK 重试、离线消息删除、历史分页、群聊、跨节点路由。
 
 ## 2026-05-14 Step 36 ChatService Findings
 
-本次进入 `Step 36：实现 ChatService 私聊`，只实现单进程私聊发送闭环，不推进群聊、离线消息拉取、历史查询、跨节点路由、可靠 ACK、好友策略校验或 BotGateway。
+本次进入 `Step 36：实现 ChatService 私聊`，只实现单进程私聊发送闭环，不推进群聊、离线消息拉取、历史查询、跨节点路由、可靠 ACK、好友策略校验。
 
 已经确认并采用的设计：
 
@@ -243,7 +254,7 @@ GitHub CI 对 LiteIM 有价值，但不需要拆成单独 Step。它的职责是
 
 本次不采用/不改：
 
-- 不实现群聊、离线消息拉取、历史查询、消息撤回、已读回执、可靠 ACK、跨节点转发、好友关系强制校验或 BotGateway。
+- 不实现群聊、离线消息拉取、历史查询、消息撤回、已读回执、可靠 ACK、跨节点转发、好友关系强制校验。
 - 不新增协议类型或 TLV 字段，不修改 MySQL schema。
 - 不删除有价值的 process/debug Markdown 历史；只修正当前会误导后续 agent 的标题和明显重复措辞。
 
@@ -280,7 +291,7 @@ GitHub CI 对 LiteIM 有价值，但不需要拆成单独 Step。它的职责是
 
 ## 2026-05-14 Step 35 FriendService Findings
 
-本次进入 `Step 35：实现 FriendService`，只实现好友添加和好友列表业务，不推进私聊、群聊、好友申请审批、黑名单、备注名、离线消息、历史消息、HeartbeatService 或 BotGateway。
+本次进入 `Step 35：实现 FriendService`，只实现好友添加和好友列表业务，不推进私聊、群聊、好友申请审批、黑名单、备注名、离线消息、历史消息、HeartbeatService。
 
 已经确认并采用的设计：
 
@@ -296,13 +307,13 @@ GitHub CI 对 LiteIM 有价值，但不需要拆成单独 Step。它的职责是
 本次不采用/不改：
 
 - 不做好友申请审批、黑名单、备注名、删除好友或搜索用户。
-- 不实现私聊、群聊、离线消息、历史消息、HeartbeatService 或 BotGateway。
+- 不实现私聊、群聊、离线消息、历史消息、HeartbeatService。
 - 不把 MySQL / Redis 阻塞调用放进 Reactor I/O 线程。
 - 不修改 MySQL schema。
 
 ## 2026-05-14 Step 34 AuthService Findings
 
-本次进入 `Step 34：实现 AuthService 注册登录`，只实现注册/登录业务闭环，不推进 FriendService、ChatService、离线消息、历史消息、HeartbeatService、BotGateway 或客户端。
+本次进入 `Step 34：实现 AuthService 注册登录`，只实现注册/登录业务闭环，不推进 FriendService、ChatService、离线消息、历史消息、HeartbeatService、客户端。
 
 已经确认并采用的设计：
 
@@ -323,11 +334,11 @@ GitHub CI 对 LiteIM 有价值，但不需要拆成单独 Step。它的职责是
 - 不修改 MySQL schema，不新增协议消息类型或 TLV 字段。
 - 不实现 JWT、OAuth、短信、邮箱验证码、生产级账号安全体系或真实 peer IP 获取。
 - 不把 MySQL / Redis 阻塞调用放进 Reactor I/O 线程。
-- 不接入好友、私聊、群聊、离线消息、历史消息或 BotGateway。
+- 不接入好友、私聊、群聊、离线消息、历史消息。
 
 ## 2026-05-14 Step 33 MessageRouter Findings
 
-本次进入 `Step 33：实现 MessageRouter 异步分发框架`，只实现业务入口骨架和 `TcpServer` 运行时接入，不实现 AuthService、ChatService、好友、群聊、历史消息或 BotGateway。
+本次进入 `Step 33：实现 MessageRouter 异步分发框架`，只实现业务入口骨架和 `TcpServer` 运行时接入，不实现 AuthService、ChatService、好友、群聊、历史消息。
 
 已经确认并采用的设计：
 
@@ -345,7 +356,7 @@ GitHub CI 对 LiteIM 有价值，但不需要拆成单独 Step。它的职责是
 
 本次不采用/不改：
 
-- 不实现注册、登录、密码哈希、登录限流、好友、私聊、群聊、离线消息、历史消息或 BotGateway。
+- 不实现注册、登录、密码哈希、登录限流、好友、私聊、群聊、离线消息、历史消息。
 - 不把 MySQL / Redis 阻塞调用放进 Reactor I/O 线程。
 - 不修改 Step32 现有未提交的 `SessionManager`、`OnlineService`、`ThreadPool` 注释改动。
 - `/home/yolo/jianli/PROJECT_MEMORY.md` 只修正 PersonaAgent 依赖段的旧 Step 编号漂移，主路线 Step33/34 设计不变。
@@ -365,7 +376,7 @@ GitHub CI 对 LiteIM 有价值，但不需要拆成单独 Step。它的职责是
 
 本次不采用/不改：
 
-- 不实现注册、登录密码校验、登录限流业务组合、消息路由、私聊/群聊 service、BotGateway 或客户端协议响应。
+- 不实现注册、登录密码校验、登录限流业务组合、消息路由、私聊/群聊 service、客户端协议响应。
 - 不把 `OnlineService` 接入 `TcpServer::setMessageCallback()`、`Session` close callback 或 server main。
 - 不做跨进程转发；Redis 在线状态只为状态展示和后续多进程扩展保留信息。
 
@@ -650,7 +661,7 @@ GitHub CI 对 LiteIM 有价值，但不需要拆成单独 Step。它的职责是
 - `init_mysql.sql` 创建 `users`、`friendships`、`chat_groups`、`group_members`、`messages`、`offline_messages`。
 - SQL 字段对齐 Step 21 DTO：id 使用 `BIGINT UNSIGNED`，时间使用毫秒 `BIGINT`，`conversation_type + conversation_id + message_id` 支撑历史消息查询。
 - `offline_messages` 通过 `(user_id, delivered, offline_message_id)` 索引支撑后续“查询某用户待投递离线消息”。
-- seed 数据固定 id，写入 `alice`、`bob`、`mira_bot`、`dev_group`、示例消息和待投递离线消息；脚本可重复执行。
+- seed 数据固定 id，写入 `alice`、`bob`、`dev_group`、示例消息和待投递离线消息；脚本可重复执行。
 - Redis 第一版不初始化数据，但开发容器开启密码认证；后续 RedisPool / ICache 实现再定义 key。
 
 本次不采用/不改：
@@ -1312,14 +1323,14 @@ Step 3 只实现协议类型定义，不进入二进制 Packet 编解码或 TCP 
 ## Step 3 实现结论
 
 - `MessageType` 使用 `std::uint16_t` 作为底层类型，和后续 Packet header 的 `msg_type` 字段匹配。
-- 消息类型按范围分组：心跳、认证、好友、私聊、群聊、离线/历史、Bot 和错误响应。
-- 私聊、群聊和 Bot 都保留 `Push` 类型，用于后续服务端向接收方主动推送消息；`Push` 既不是 request，也不是 response，但需要通过 `isPushType()` 显式识别，避免和 `Unknown` 混在一起。
+- 消息类型按范围分组：心跳、认证、好友、私聊、群聊、离线/历史、预留扩展和错误响应。
+- 私聊和群聊都保留 `Push` 类型，用于后续服务端向接收方主动推送消息；`Push` 既不是 request，也不是 response，但需要通过 `isPushType()` 显式识别，避免和 `Unknown` 混在一起。
 - `isRequestType()` 只返回客户端或 BotClient 主动请求类型。
 - `isResponseType()` 只返回服务端对请求的响应类型，`ErrorResponse` 归为 response，方便后续统一错误返回。
-- `isPushType()` 只返回 `PrivateMessagePush`、`GroupMessagePush` 和 `BotMessagePush`。
+- `isPushType()` 只返回 `PrivateMessagePush` 和 `GroupMessagePush`。
 - `ListGroupsRequest` / `ListGroupsResponse` 已放入 4xx 群聊类型段，避免 Step 37 再回头修改协议编号。
 - 未知 `MessageType` 和 `TlvType` 都返回 `UNKNOWN`，后续解析到未注册类型时可以安全记录日志而不是崩溃。
-- `TlvType` 先覆盖登录、用户、好友、群组、会话、消息、错误和 Bot/Persona 接入需要的字段类型。
+- `TlvType` 先覆盖登录、用户、好友、群组、会话、消息、错误和 PersonaAgent 接入需要的字段类型。
 - 本 Step 没有定义 TLV value 的二进制格式、长度编码、网络字节序或 Packet header；这些属于 Step 4 和 Step 5。
 
 ## Step 4 约束
@@ -1653,7 +1664,7 @@ Step 13 只实现 `Acceptor` 非阻塞监听器。
 ## PersonaAgent 最新路线结论
 
 - PersonaAgent 作为项目二独立推进，不嵌入 C++ LiteIM 服务端。
-- PersonaAgent 通过 Python BotClient 使用同一套 TLV 协议登录 LiteIM，作为普通 Bot 用户收消息、发消息。
+- PersonaAgent 通过 Python BotClient 使用同一套 TLV 协议登录 LiteIM，作为普通用户账号收消息、发消息。
 - AgentService 使用 FastAPI，对 BotClient 暴露 `/chat`。
 - LangGraph 第一版收敛为 6 个核心节点：`dialogue_policy`、`retrieve`、`tool_router`、`generate_reply`、`safety_check`、`send_message`。
 - `retrieve` 节点内部统一调度 Knowledge RAG、Memory RAG 和 Authorized Style RAG，不再拆成十几个薄节点。
@@ -1714,28 +1725,8 @@ Step 13 只实现 `Acceptor` 非阻塞监听器。
 
 - 不新增协议类型或 TLV 字段。
 - 不新增 metrics 模块；当前第一版通过 warning 日志暴露 Redis TTL 刷新失败，后续可接入指标和告警。
-- 不实现客户端重连策略、断线提示 UI、BotGateway 或跨节点在线状态路由。
+- 不实现客户端重连策略、断线提示 UI、跨节点在线状态路由。
 
-## 2026-05-16 Step 41 BotGateway Findings
-
-本次进入 `Step 41：实现 BotGateway 和 AI Bot 特殊用户`。
-
-已经确认并采用的设计：
-
-- 不修改 MySQL schema，不新增 `users.user_type`；当前 v1 通过集中 `BotOptions` 识别 seed 用户 `mira_bot`。
-- 不启用 `BotChatRequest` / `BotChatResponse` / `BotMessagePush`；第一版 bot 入口继续走普通 `PrivateMessageRequest` 和 `GroupMessageRequest`。
-- `BotOptions` 默认固定 `user_id=9001`、`username=mira_bot`、`mention=@mira_bot`，避免把 bot id 分散硬编码到多个业务函数里。
-- 用户私聊 `mira_bot` 时，用户原始私聊消息仍保存到 MySQL，但不把 `9001` 写入 `offline_messages`，也不增加 `9001` unread。
-- Bot 私聊回复作为普通私聊消息保存：`sender_id=9001`、`receiver_id=原用户`，再给原用户发送普通 `PrivateMessagePush`。
-- 群聊原始消息保存时，普通离线成员继续写 offline/unread，但 `mira_bot` 被过滤，不写 bot offline/unread。
-- 群聊只有同时满足“发送者是群成员、消息文本包含 `@mira_bot`、`mira_bot` 也是群成员、发送者不是 bot”才触发 `BotGateway::onGroupMention()`。
-- Bot 群聊回复作为普通群消息保存：`sender_id=9001`、`receiver_id=group_id`，在线人类成员收到 `GroupMessagePush`，离线人类成员继续写 offline/unread。
-
-本次不采用/不改：
-
-- 不要求 seed 中 `mira_bot` 的 `dev_hash_mira_bot` 当前能通过 `AuthService` 的 PBKDF2 密码校验登录；Step 41 只做 C++ EchoBot 识别和路由占位。
-- 不伪造 bot session，不递归调用 `handlePrivateMessage()` 或 `handleGroupMessage()`。
-- 不接入 Python BotClient、FastAPI、LangGraph、LLM SDK、RAG 或 PersonaAgent。
 
 ## 2026-05-16 Step 42 CLI Client Findings
 
