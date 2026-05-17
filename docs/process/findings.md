@@ -19,6 +19,7 @@
 - `BotClient` 是 Python 客户端组件名，允许保留；其他旧 assistant 叙述、旧固定账号、旧专用协议名、旧 C++ gateway/service 名都不再保留。
 - 旧 assistant 教程已经删除，不再用新教程替代。
 - 用户后续要求 Step 40 之后直接重排，因此当前路线改为：Step 41 CLI、Step 42 Python E2E、Step 43 benchmark、Step 44 gMock/ASan/UBSan、Step 45-52 Qt、Step 53 final docs。
+- 当前 LiteIM 没有 Python BotClient 功能；`tests/e2e/liteim_e2e.py` 只是 Step 42 的黑盒测试 helper。PersonaAgent BotClient 属于后续项目二。
 
 ## 2026-05-17 C++ Assistant Route Retirement Findings
 
@@ -1665,7 +1666,7 @@ Step 13 只实现 `Acceptor` 非阻塞监听器。
 ## PersonaAgent 最新路线结论
 
 - PersonaAgent 作为项目二独立推进，不嵌入 C++ LiteIM 服务端。
-- PersonaAgent 通过 Python BotClient 使用同一套 TLV 协议登录 LiteIM，作为普通用户账号收消息、发消息。
+- PersonaAgent 后续通过 Python BotClient 使用同一套 TLV 协议登录 LiteIM，作为普通用户账号收消息、发消息。
 - AgentService 使用 FastAPI，对 BotClient 暴露 `/chat`。
 - LangGraph 第一版收敛为 6 个核心节点：`dialogue_policy`、`retrieve`、`tool_router`、`generate_reply`、`safety_check`、`send_message`。
 - `retrieve` 节点内部统一调度 Knowledge RAG、Memory RAG 和 Authorized Style RAG，不再拆成十几个薄节点。

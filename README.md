@@ -11,7 +11,7 @@ Qt / CLI / Python Client
     -> LiteIM C++ TCP Server
     -> business ThreadPool
     -> MySQL / Redis
-    -> PersonaAgent Python BotClient
+    -> future PersonaAgent Python BotClient
 ```
 
 PersonaAgent is intentionally a separate Python service. LiteIM exposes only the normal account protocol boundary; Python, LangGraph, RAG, LLM calls, and safety logic do not run inside the C++ server process, and the C++ server does not know whether a logged-in account is controlled by a human or by an external agent.
@@ -31,7 +31,7 @@ PersonaAgent is intentionally a separate Python service. LiteIM exposes only the
 
 ```text
                          +----------------------+
-                         |  Qt / CLI / BotClient|
+                         | Qt / CLI / future BotClient |
                          +----------+-----------+
                                     |
                               TLV over TCP
@@ -406,6 +406,6 @@ LiteIM is being built in phases:
 | IM services | Session binding, online-state synchronization, async message routing, register/login, friend list, private chat, group chat, offline messages, history loading, heartbeat protocol, and graceful shutdown. |
 | Tooling and validation | CLI client, Python E2E tests, benchmark tooling, broader GoogleTest/gMock coverage, CTest labels, ASan/UBSan, and repository CI. |
 | Demo clients | Qt Widgets chat client with login, conversation list, message bubbles, group chat, ordinary contact entry for the external PersonaAgent account, heartbeat state, and disconnect feedback. |
-| PersonaAgent integration | Python BotClient and separate FastAPI / LangGraph AgentService using Knowledge, Memory, Authorized Style RAG, Persona, Safety, tracing, checkpointing, and evaluation. |
+| PersonaAgent integration | Planned Python BotClient and separate FastAPI / LangGraph AgentService using Knowledge, Memory, Authorized Style RAG, Persona, Safety, tracing, checkpointing, and evaluation. |
 
 README performance numbers and benchmark claims should only be added after real local measurements exist.

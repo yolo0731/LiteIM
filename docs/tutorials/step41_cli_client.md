@@ -16,7 +16,7 @@ Step 41 的作用是：
 
 - 给服务端提供一个稳定的协议调试入口。
 - 在 Qt 客户端完成前，可以手动验证业务链路。
-- 让后续 Python BotClient 参考一套最小的普通客户端收发流程。
+- 让后续 PersonaAgent BotClient 参考一套最小的普通客户端收发流程。
 - 把“协议构包”和“命令行交互”分开，方便测试。
 
 ## 2. 本 Step 边界
@@ -36,7 +36,7 @@ Step 41 的作用是：
 - 不做 curses/TUI 图形化终端界面。
 - 不做本地联系人缓存、会话列表持久化或消息数据库。
 - 不做自动重连、断点续传、可靠 ACK、client message id 去重。
-- 不做 Python BotClient、Qt 客户端 或 benchmark。
+- 不做 PersonaAgent BotClient、Qt 客户端 或 benchmark。
 - 不改变服务端协议类型、TLV 字段或业务 handler。
 
 ## 3. 文件变化
@@ -153,7 +153,7 @@ join-group 2001
 group 2001 hello team
 ```
 
-如果新注册用户成功加入 `group_id=2001`，服务端会保存用户群消息，并向在线群成员发送普通 `GroupMessagePush`。CLI 只看到普通 `GroupMessageResponse` 和 `GroupMessagePush`，不需要理解任何 AI 或额外专用协议。
+如果新注册用户成功加入 `group_id=2001`，服务端会保存用户群消息，并向在线群成员发送普通 `GroupMessagePush`。CLI 只看到普通 `GroupMessageResponse` 和 `GroupMessagePush`，不需要理解任何额外专用协议。
 
 ### 3. 后台心跳
 
@@ -181,7 +181,7 @@ history group 2001 20 5003
               -> HistoryRequest + ConversationType + ConversationId + Limit + MessageId
 ```
 
-这样 Qt Client、Python BotClient 和 CLI 共享同一套服务端协议。
+这样 CLI 先固定一套普通账号协议；后续 Qt Client 和 PersonaAgent BotClient 必须复用这套协议，而不是让服务端为外部 Agent 增加专用分支。
 
 ### 2. 发送和接收分离
 
@@ -250,4 +250,4 @@ IM 连接不是纯 request/response。用户发送私聊后，另一个客户端
 
 ### CLI 和后续 PersonaAgent BotClient 有什么关系？
 
-CLI 是手工调试客户端，PersonaAgent BotClient 是后续 Python 长连接客户端。两者都走同一套普通账号协议：注册/登录、接收 `PrivateMessagePush`，再按普通私聊发送回复。LiteIM 不知道这个账号背后是真人、脚本还是 LLM。
+CLI 是当前已经实现的手工调试客户端；PersonaAgent BotClient 是后续项目二要实现的 Python 长连接客户端。两者都走同一套普通账号协议：注册/登录、接收 `PrivateMessagePush`，再按普通私聊发送回复。LiteIM 不知道这个账号背后是真人、脚本还是 LLM。

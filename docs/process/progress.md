@@ -1,5 +1,21 @@
 # LiteIM Progress
 
+## 2026-05-17 Python BotClient Wording Review
+
+用户指出 Step 41 教程里“Qt Client、Python BotClient 和 CLI 共享同一套服务端协议”会让人误以为当前已经实现 Python BotClient。
+
+复核结论：
+
+- 当前 LiteIM 没有 Python BotClient 功能。
+- 当前已有的是 `client_cli/` 命令行调试客户端，以及 `tests/e2e/liteim_e2e.py` 里的 Python E2E 测试 helper。
+- PersonaAgent BotClient 是后续项目二组件，应该在 LiteIM 文档中写成“后续 / planned”。
+
+已同步：
+
+- 更新 Step 41 CLI 教程，把当前实现和后续 PersonaAgent BotClient 分清。
+- 更新 Step 3/5/22 教程、README、`PROJECT_MEMORY.md`、`AGENTS.md` 和 `CLAUDE.md` 中容易误读为当前功能的 BotClient 表述。
+- 更新 process 文档记录该边界。
+
 ## 2026-05-17 Step Route Renumber After Step40
 
 用户要求直接重排 Step 40 之后的路线，并同步所有 Markdown。

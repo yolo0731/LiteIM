@@ -16,7 +16,7 @@ LiteIM is planned as a C++17 high-performance IM system:
 - MySQL persistence and Redis online/unread/rate-limit state.
 - CLI, Python E2E, benchmark, GoogleTest/gMock, ASan/UBSan.
 - Qt Widgets demo client with a familiar IM three-column chat layout.
-- PersonaAgent integration through a Python BotClient and a separate six-node LangGraph AgentService.
+- Planned PersonaAgent integration through a Python BotClient and a separate six-node LangGraph AgentService.
 
 ## Documentation Boundary
 
@@ -31,6 +31,7 @@ The workspace documentation roles are now separated:
 
 | Phase | Status | Notes |
 | --- | --- | --- |
+| Python BotClient wording review | done | Reviewed tutorial Markdown, top-level route docs, and current-facing docs for wording that implied Python BotClient already exists. Confirmed LiteIM currently has CLI and Python E2E helper clients only; PersonaAgent BotClient remains a planned project-two component. Updated Step 41, related protocol docs, README, `PROJECT_MEMORY.md`, `AGENTS.md`, and `CLAUDE.md` to use explicit future/planned wording. |
 | Step route renumber after assistant-route removal | done | User requested direct renumbering after Step 40. The post-Step40 tooling phase is now Step 41-44, the Qt phase is Step 45-52, and final docs are Step 53. Renamed post-Step40 tutorial files and synchronized all Markdown references. |
 | Markdown drift sync after assistant-route removal | done | Synchronized all 54 Markdown files under `/home/yolo/jianli` excluding build outputs. Updated `AGENTS.md`, `CLAUDE.md`, `/home/yolo/jianli/PROJECT_MEMORY.md`, README, tutorials, and process memory so LiteIM consistently says external PersonaAgent traffic is normal account traffic and C++ owns no AI/assistant behavior. Removed obsolete assistant-route details from historical process sections where they could mislead future work. Full stale scans for old route names, old protocol constants, fixed assistant usernames, and old contact wording returned no output; standalone non-`BotClient` identity wording scan returned no output. |
 | Retire C++ assistant route | done | User confirmed the old C++ built-in assistant route is no longer needed. Removed C++ assistant gateway/service/echo fallback behavior, assistant-only MessageType/TlvType constants, assistant seed data, assistant tests, and the old assistant tutorial. LiteIM treats future PersonaAgent traffic as normal account traffic; LLM behavior belongs outside the C++ server. Targeted MessageType/TlvType/Chat/Group tests passed 28/28, full build passed, Docker MySQL/Redis seed verification confirmed no fixed assistant user/message rows, full CTest passed 380/380, diff check passed, source/test/SQL stale-route scan passed, current-facing docs stale-route scan passed, and the old assistant tutorial is removed. |
@@ -280,7 +281,7 @@ LiteIM phases:
 - Do not queue destructor/stop cleanup as `queueInLoop([this] { ... })` for Reactor-owned objects.
 - Keep accepted fd ownership on `UniqueFd` from `Acceptor` through `TcpServer` into `Session`.
 - Treat `Session::pendingOutputBytes()` as owner-loop-only.
-- Do not embed Python/LangGraph into the C++ server; PersonaAgent connects as a BotClient.
+- Do not embed Python/LangGraph into the C++ server; planned PersonaAgent integration connects as a BotClient.
 - PersonaAgent uses six core LangGraph nodes: `dialogue_policy`, `retrieve`, `tool_router`, `generate_reply`, `safety_check`, and `send_message`.
 - Authorized Style RAG data must have consent manifest, source metadata, allowed usage, PII redaction, revocation support, and SafetyGuard protection.
 - LiteIM should only expose normal account protocol integration points; Knowledge/Memory/Style RAG, Tool Calling, Trace, Checkpoint, and Evaluation belong to PersonaAgent.

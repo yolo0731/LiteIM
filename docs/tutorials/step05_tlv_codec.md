@@ -75,7 +75,7 @@ TLV 的好处是：
 
 - 不同 CPU 可能有不同字节序。
 - C++ struct 可能有 padding。
-- Python BotClient、Qt 客户端和 C++ 服务端必须看到同一套 wire format。
+- 后续 PersonaAgent BotClient、后续 Qt 客户端和当前 C++ 服务端必须看到同一套 wire format。
 
 所以 `TlvCodec.cpp` 通过协议层共享的 `ByteOrder.hpp` 写：
 
