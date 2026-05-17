@@ -1,9 +1,9 @@
-# Step 44：自研压测工具
+# Step 43：自研压测工具
 
 ## 0. 本 Step 结论
 
-- 目标：Step 44 增加 `liteim_bench`，用普通 LiteIM TCP/TLV 客户端行为做本地压测。
-- 前置依赖：依赖 Step 42 的 CLI 协议流程、Step 43 的端到端验证，以及 Step 34-41 的服务端业务 handler。
+- 目标：Step 43 增加 `liteim_bench`，用普通 LiteIM TCP/TLV 客户端行为做本地压测。
+- 前置依赖：依赖 Step 41 的 CLI 协议流程、Step 42 的端到端验证，以及 Step 34-40 的服务端业务 handler。
 - 主要交付：新增 `bench/`、`liteim_bench_core`、`liteim_bench` 和 `Benchmark*` 单元测试。
 - 压测边界：工具注册/登录唯一用户，然后发送普通 `PrivateMessageRequest`，不使用特殊测试协议。
 - 报告边界：输出 JSON 或 Markdown；README 不写未实测的性能数字。
@@ -17,7 +17,7 @@
 - 慢客户端和输出高水位机制是否能避免内存无限增长。
 - 代码修改后，QPS、p95、p99 是否明显退化。
 
-Step 44 的压测工具不是为了制造夸张数据，而是为了给后续优化、本地手动验证和最终简历报告提供可复现的测量入口。
+Step 43 的压测工具不是为了制造夸张数据，而是为了给后续优化、本地手动验证和最终简历报告提供可复现的测量入口。
 
 ## 2. 本 Step 边界
 
@@ -37,7 +37,7 @@ Step 44 的压测工具不是为了制造夸张数据，而是为了给后续优
 - 不实现复杂场景脚本、图表生成或自动报告归档。
 - 不把压测加入默认 CTest 。
 - 不修改服务端协议、MySQL schema、Redis key 或业务 service。
-- 不提前实现 Step 45 的 gMock、ASan/UBSan 或后续 Qt 客户端。
+- 不提前实现 Step 44 的 gMock、ASan/UBSan 或后续 Qt 客户端。
 
 ## 3. 文件变化
 
@@ -151,7 +151,7 @@ receiver 登录后不主动发消息，只负责持续读取 push；三个 sende
 
 ### 2. receiver 必须读 push
 
-如果 receiver 在线但不读 push，server 对 receiver 的输出缓冲会增长并触发 backpressure。Step 44 的默认私聊压测关注 sender 请求延迟，所以 receiver 后台读包，避免把“慢客户端测试”混进普通吞吐压测。
+如果 receiver 在线但不读 push，server 对 receiver 的输出缓冲会增长并触发 backpressure。Step 43 的默认私聊压测关注 sender 请求延迟，所以 receiver 后台读包，避免把“慢客户端测试”混进普通吞吐压测。
 
 ### 3. 分位数使用 nearest-rank
 
@@ -166,7 +166,7 @@ value = sorted[rank - 1]
 
 ### 4. README 不写虚假性能数字
 
-压测数字受 CPU、内存、Docker MySQL/Redis、build type、服务端线程数、消息大小和本机负载影响。Step 44 只提供工具和真实运行入口，不在 README 里预置夸张 QPS。
+压测数字受 CPU、内存、Docker MySQL/Redis、build type、服务端线程数、消息大小和本机负载影响。Step 43 只提供工具和真实运行入口，不在 README 里预置夸张 QPS。
 
 ## 7. 测试设计
 
@@ -220,7 +220,7 @@ Result: connection_success=4/4, request_success=114, error_count=0, qps=111.874,
 
 ## 9. 面试表达
 
-> Step 44 增加了一个自研压测工具 `liteim_bench`。它不是 mock 服务端，而是作为真实 TCP/TLV 客户端注册、登录并发送普通私聊消息，统计连接成功、QPS、平均延迟、p50/p95/p99、错误数和本进程资源占用，输出 JSON 或 Markdown 报告。
+> Step 43 增加了一个自研压测工具 `liteim_bench`。它不是 mock 服务端，而是作为真实 TCP/TLV 客户端注册、登录并发送普通私聊消息，统计连接成功、QPS、平均延迟、p50/p95/p99、错误数和本进程资源占用，输出 JSON 或 Markdown 报告。
 
 展开说：
 
@@ -246,4 +246,4 @@ Result: connection_success=4/4, request_success=114, error_count=0, qps=111.874,
 
 ### CPU 和内存采样为什么是 bench 进程自身？
 
-Step 44 的工具是本地客户端压测入口，不直接管理 server 进程。它先记录自身 RSS 和 CPU，保证报告字段完整；服务端资源采样可以在后续压测报告阶段用 `pidstat`、`perf`、cgroup 或 Docker stats 补充。
+Step 43 的工具是本地客户端压测入口，不直接管理 server 进程。它先记录自身 RSS 和 CPU，保证报告字段完整；服务端资源采样可以在后续压测报告阶段用 `pidstat`、`perf`、cgroup 或 Docker stats 补充。

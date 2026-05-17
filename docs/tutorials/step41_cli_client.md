@@ -1,9 +1,9 @@
-# Step 42：CLI 测试客户端
+# Step 41：CLI 测试客户端
 
 ## 0. 本 Step 结论
 
-- 目标：Step 42 增加 `liteim_cli`，作为服务端协议调试和手工联调工具。
-- 前置依赖：依赖 Step 3-6 的 MessageType / TLV / Packet / FrameDecoder 协议契约，以及 Step 34-41 的业务请求处理。
+- 目标：Step 41 增加 `liteim_cli`，作为服务端协议调试和手工联调工具。
+- 前置依赖：依赖 Step 3-6 的 MessageType / TLV / Packet / FrameDecoder 协议契约，以及 Step 34-40 的业务请求处理。
 - 主要交付：新增 `client_cli/`、`liteim_client_cli` helper 库、`liteim_cli` 可执行文件和 CLI 协议测试。
 - 运行边界：CLI 连接真实 TCP server，发送普通 TLV 请求，打印 response / push，不绕过服务端协议。
 - 心跳边界：CLI 连接后后台每 30 秒发送一次 `HeartbeatRequest`；用户也可以手动输入 `heartbeat`。
@@ -12,7 +12,7 @@
 
 到 Step 40 为止，LiteIM 服务端已经能处理注册、登录、好友、私聊、群聊、离线消息、历史消息和心跳。但是没有一个稳定的命令行工具直接按 TLV 协议连上 server。
 
-Step 42 的作用是：
+Step 41 的作用是：
 
 - 给服务端提供一个稳定的协议调试入口。
 - 在 Qt 客户端完成前，可以手动验证业务链路。
@@ -50,7 +50,7 @@ Step 42 的作用是：
 | `tests/client_cli/cli_protocol_test.cpp` | 新增 | 覆盖命令构包、packet 描述和 loopback 发送 |
 | `CMakeLists.txt` | 修改 | 接入 `client_cli/` |
 | `tests/CMakeLists.txt` | 修改 | 编译 CLI 测试并链接 `liteim_client_cli` |
-| `README.md` / planning 文件 | 更新 | 记录 Step 42 CLI 用法、边界和验证结果 |
+| `README.md` / planning 文件 | 更新 | 记录 Step 41 CLI 用法、边界和验证结果 |
 
 ## 4. 核心接口与契约
 
@@ -199,7 +199,7 @@ history group 2001 20 5003
 
 ### 4. 第一版使用阻塞 socket
 
-这是调试客户端，不是高性能 server。阻塞 socket 让实现直接、可读，也避免在 Step 42 引入另一个客户端 Reactor。服务端的非阻塞 Reactor 设计不受影响。
+这是调试客户端，不是高性能 server。阻塞 socket 让实现直接、可读，也避免在 Step 41 引入另一个客户端 Reactor。服务端的非阻塞 Reactor 设计不受影响。
 
 ## 7. 测试设计
 
@@ -232,7 +232,7 @@ docker compose -f docker/docker-compose.yml up -d --wait
 
 ## 9. 面试表达
 
-> Step 42 增加了一个命令行协议客户端。它不是 TUI，而是稳定的 TLV 调试工具：把文本命令转成普通 `Packet`，通过阻塞 TCP 连接发给 LiteIM server，后台线程持续读取 response 和 push 并打印字段，同时每 30 秒发送心跳。核心构包和收发逻辑放在 `liteim_client_cli` 库里，入口只负责交互编排，所以可以用单元测试验证 login/private/history 构包、packet 描述和 loopback 发送。
+> Step 41 增加了一个命令行协议客户端。它不是 TUI，而是稳定的 TLV 调试工具：把文本命令转成普通 `Packet`，通过阻塞 TCP 连接发给 LiteIM server，后台线程持续读取 response 和 push 并打印字段，同时每 30 秒发送心跳。核心构包和收发逻辑放在 `liteim_client_cli` 库里，入口只负责交互编排，所以可以用单元测试验证 login/private/history 构包、packet 描述和 loopback 发送。
 
 ## 10. 面试常见追问
 

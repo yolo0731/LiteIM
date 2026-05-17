@@ -18,6 +18,7 @@
 - 历史 process 记录可以保留 Step 时间线，但不能继续展开已经移除的 C++ 内置 assistant 方案细节；这些细节会让后续恢复上下文时误判当前路线。
 - `BotClient` 是 Python 客户端组件名，允许保留；其他旧 assistant 叙述、旧固定账号、旧专用协议名、旧 C++ gateway/service 名都不再保留。
 - 旧 assistant 教程已经删除，不再用新教程替代。
+- 用户后续要求 Step 40 之后直接重排，因此当前路线改为：Step 41 CLI、Step 42 Python E2E、Step 43 benchmark、Step 44 gMock/ASan/UBSan、Step 45-52 Qt、Step 53 final docs。
 
 ## 2026-05-17 C++ Assistant Route Retirement Findings
 
@@ -33,16 +34,16 @@
 
 暂缓项：
 
-- 不重排已经完成的 Step 42-45 编号，避免大范围文档迁移；旧 assistant 教程文件直接删除。
+- 后续已按用户要求重排 Step 40 之后的编号；旧 assistant 教程文件直接删除，不占用 Step。
 - 不在 LiteIM C++ 服务端加入 Agent 配置、模型调用、群聊 @ 策略或 AI 回复模板。
 
-## 2026-05-16 Post-Step45 Review Hardening Findings
+## 2026-05-16 Post-Step44 Review Hardening Findings
 
-本次根据外部评审和本地复核执行的是 Step 45 后的收口修复，不新开 Step 46，也不改变 Qt / PersonaAgent 路线。
+本次根据外部评审和本地复核执行的是 Step 44 后的收口修复，不新开 Step 45，也不改变 Qt / PersonaAgent 路线。
 
 当前采用的边界：
 
-- CI 仍属于 Step 45 验证能力和仓库基础设施，不单独拆成 Step 46。
+- CI 仍属于 Step 44 验证能力和仓库基础设施，不单独拆成 Step 45。
 - 不修改 MySQL schema、Redis key、Qt 或 PersonaAgent；本条记录中的旧 C++ assistant 路线已在 2026-05-17 被移除。
 - 对运行时正确性问题直接修复：离线消息、好友在线状态、输入边界、配置加载和测试稳定性问题按局部方案收敛。
 - 对可靠性问题做局部收敛：离线消息 limit 下推到 SQL，好友在线状态和离线 unread 清理按 Redis best-effort 降级。
@@ -59,11 +60,11 @@
 
 ## 2026-05-16 Documentation Layout Cleanup Findings
 
-用户确认采用方案 A：删除 Step 46 GitHub Actions CI，把 Qt 客户端阶段前移为 Step 46-53，最终文档阶段前移为 Step 54，并把 LiteIM 的过程文件和教程统一收到 `docs/` 内。
+用户确认采用方案 A：删除原 GitHub Actions CI Step，把 Qt 客户端阶段前移，并把 LiteIM 的过程文件和教程统一收到 `docs/` 内。当前后续重排后的路线是 Step 45-52 Qt、Step 53 final docs。
 
 当前采用的边界：
 
-- 删除 `.github/workflows/ci.yml` 和 `docs/tutorials/step46_github_actions_ci.md`，不保留 CI 作为 LiteIM 近期 Step。
+- 删除当时的 `.github/workflows/ci.yml` 和 GitHub Actions CI 教程，不保留 CI 作为 LiteIM 近期 Step。
 - `docs/process/` 承载 `task_plan.md`、`findings.md`、`progress.md`。
 - `docs/tutorials/` 承载 Step 教程；不创建教程 README。
 - 保留 `docs/debug_cases/`，因为这些是仍有价值的内部复盘材料。
@@ -77,16 +78,16 @@ GitHub CI 对 LiteIM 有价值，但不需要拆成单独 Step。它的职责是
 
 当前采用的边界：
 
-- 恢复 `.github/workflows/ci.yml`，但不恢复 `docs/tutorials/step46_github_actions_ci.md`，也不把 CI 写成 Step 46。
-- workflow 分为 `unit`、`integration`、`sanitizers` 三个 job，复用 Step 45 已有 CTest labels 和 `LITEIM_ENABLE_SANITIZERS=ON`。
+- 恢复 `.github/workflows/ci.yml`，但不恢复 GitHub Actions CI 教程，也不把 CI 写成独立 Step。
+- workflow 分为 `unit`、`integration`、`sanitizers` 三个 job，复用 Step 44 已有 CTest labels 和 `LITEIM_ENABLE_SANITIZERS=ON`。
 - `integration` 和 `sanitizers` job 使用仓库已有 `docker/docker-compose.yml` 启动 MySQL/Redis，避免在 workflow 中重复维护第二套服务配置。
 - README 顶部增加 GitHub Actions badge，并新增 `Repository CI` 小节说明 CI 是 infra，不是编号 Step。
 - 不修改 C++ 源码、服务端协议、MySQL schema、Redis key、Qt 或 PersonaAgent。
 - 不暂存进入本任务前已有的用户侧源码改动。
 
-## 2026-05-16 Step 45 Test Coverage, gMock, ASan/UBSan Findings
+## 2026-05-16 Step 44 Test Coverage, gMock, ASan/UBSan Findings
 
-本次进入 `Step 45：补齐单元测试覆盖率 + gMock + ASan/UBSan`。`PROJECT_MEMORY.md` 的要求是补复杂模块测试覆盖、引入 gMock 边界测试、给 Docker 依赖测试打 CTest 标签，并增加 `LITEIM_ENABLE_SANITIZERS=ON` 构建。
+本次进入 `Step 44：补齐单元测试覆盖率 + gMock + ASan/UBSan`。`PROJECT_MEMORY.md` 的要求是补复杂模块测试覆盖、引入 gMock 边界测试、给 Docker 依赖测试打 CTest 标签，并增加 `LITEIM_ENABLE_SANITIZERS=ON` 构建。
 
 当前采用的边界：
 
@@ -111,9 +112,9 @@ GitHub CI 对 LiteIM 有价值，但不需要拆成单独 Step。它的职责是
 - 不新增 death test 数量指标，不改变已有 owner-loop-only death 行为。
 - 不修改 server runtime、业务协议、数据库结构、Redis key、Qt 或 PersonaAgent。
 
-## 2026-05-16 Step 44 Benchmark Tool Findings
+## 2026-05-16 Step 43 Benchmark Tool Findings
 
-本次进入 `Step 44：实现自研压测工具`。`PROJECT_MEMORY.md` 的要求是实现 `bench/liteim_bench.cpp`，支持多长连接、可配置消息大小/发送间隔/持续时间、登录后私聊发送、统计连接成功数、QPS、平均延迟、p50/p95/p99、错误数、内存和 CPU 使用，并输出 JSON 或 Markdown 报告片段。
+本次进入 `Step 43：实现自研压测工具`。`PROJECT_MEMORY.md` 的要求是实现 `bench/liteim_bench.cpp`，支持多长连接、可配置消息大小/发送间隔/持续时间、登录后私聊发送、统计连接成功数、QPS、平均延迟、p50/p95/p99、错误数、内存和 CPU 使用，并输出 JSON 或 Markdown 报告片段。
 
 当前采用的边界：
 
@@ -135,9 +136,9 @@ GitHub CI 对 LiteIM 有价值，但不需要拆成单独 Step。它的职责是
 - 延迟分位数采用 nearest-rank：`rank = ceil(q * count)`。
 - 本地 smoke 在 2026-05-16 运行：`--connections 4 --message-size 64 --interval-ms 20 --duration-sec 1 --format json`，结果 `connection_success=4/4`、`request_success=114`、`error_count=0`、`p99_us=9403`。
 
-## 2026-05-16 Step 43 Python E2E Findings
+## 2026-05-16 Step 42 Python E2E Findings
 
-本次进入 `Step 43：实现 Python 端到端测试`。用户确认 MySQL 和 Redis 在 Docker 环境中运行，因此 Step 43 直接沿用 LiteIM 默认 Docker 端口：
+本次进入 `Step 42：实现 Python 端到端测试`。用户确认 MySQL 和 Redis 在 Docker 环境中运行，因此 Step 42 直接沿用 LiteIM 默认 Docker 端口：
 
 - MySQL：`127.0.0.1:33060`
 - Redis：`127.0.0.1:63790`
@@ -154,7 +155,7 @@ GitHub CI 对 LiteIM 有价值，但不需要拆成单独 Step。它的职责是
 本次不采用/不改：
 
 - 不修改 C++ 协议枚举、TLV 字段、MySQL schema、Redis key 或业务 service 行为。
-- 不给 `liteim_server` 新增配置文件参数或动态端口参数；Step 43 第一版按默认配置运行。
+- 不给 `liteim_server` 新增配置文件参数或动态端口参数；Step 42 第一版按默认配置运行。
 - 不安装新的全局 Python 依赖；E2E 使用 Python 标准库 `unittest` / `socket` / `subprocess`。
 
 实现确认：
@@ -1728,9 +1729,9 @@ Step 13 只实现 `Acceptor` 非阻塞监听器。
 - 不实现客户端重连策略、断线提示 UI、跨节点在线状态路由。
 
 
-## 2026-05-16 Step 42 CLI Client Findings
+## 2026-05-16 Step 41 CLI Client Findings
 
-本次进入 `Step 42：实现 CLI 测试客户端`。
+本次进入 `Step 41：实现 CLI 测试客户端`。
 
 当前采用的 CLI 边界：
 
@@ -1755,4 +1756,4 @@ TDD RED：
 - `offline [limit]` 复用 `OfflineMessagesRequest`，只在传入 limit 时写 `TlvType::Limit`。
 - `ProtocolClient` 第一版使用阻塞 socket；这是 CLI 调试工具的实现选择，不改变服务端非阻塞 Reactor 路线。
 - loopback 发送测试最初失败不是生产发送逻辑问题，而是测试在 server accept/read 线程 join 前读取 `packet_`；修正为先 `server.wait()` 再断言。
-- Step 42 不增加新的协议枚举、TLV 字段、MySQL schema、Redis key 或服务端 handler。
+- Step 41 不增加新的协议枚举、TLV 字段、MySQL schema、Redis key 或服务端 handler。

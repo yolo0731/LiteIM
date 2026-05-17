@@ -1,5 +1,24 @@
 # LiteIM Progress
 
+## 2026-05-17 Step Route Renumber After Step40
+
+用户要求直接重排 Step 40 之后的路线，并同步所有 Markdown。
+
+采用的新编号：
+
+- CLI -> Step 41。
+- Python E2E -> Step 42。
+- benchmark -> Step 43。
+- gMock / ASan / UBSan -> Step 44。
+- Qt -> Step 45-52。
+- final docs -> Step 53。
+
+实现内容：
+
+- 重命名 post-Step40 教程文件为 `step41_cli_client.md`、`step42_python_e2e.md`、`step43_benchmark_tool.md`、`step44_test_coverage_sanitizers.md`。
+- 同步 `/home/yolo/jianli/PROJECT_MEMORY.md`、README、tutorials 和 process Markdown 中的路线编号。
+- 保持 C++ / CMake / 测试源码不变；本次是文档路线重排。
+
 ## 2026-05-17 Markdown Drift Sync
 
 用户要求同步所有 Markdown，保证旧 C++ assistant 路线不再漂移。
@@ -47,9 +66,9 @@
 - 当前面向读者文档旧 assistant 路线关键字扫描：无输出。
 - 旧 assistant 教程文件已删除。
 
-## 2026-05-16 Post-Step45 Review Hardening
+## 2026-05-16 Post-Step44 Review Hardening
 
-本次按评审结论执行 Step 45 后的必要收口，不拆 Step 46。
+本次按评审结论执行 Step 44 后的必要收口，不拆 Step 45。
 
 实现内容：
 
@@ -84,10 +103,10 @@
 
 用户确认采用方案 A 后，本次清理目标是让 LiteIM 目录更干净：
 
-- 删除 Step 46 GitHub Actions CI，不把“每次提交都跑测试”作为项目本身的一部分。
-- Qt 客户端阶段从 Step 47-54 前移为 Step 46-53，最终展示文档从 Step 55 前移为 Step 54。
+- 删除原 GitHub Actions CI Step，不把“每次提交都跑测试”作为项目本身的一部分。
+- Qt 客户端阶段现在是 Step 45-52，最终展示文档现在是 Step 53。
 - `task_plan.md`、`findings.md`、`progress.md` 移入 `docs/process/`。
-- `tutorials/` 移入 `docs/tutorials/`，删除原 Step 46 CI 教程。
+- `tutorials/` 移入 `docs/tutorials/`，删除原 CI 教程。
 - 保留 `docs/debug_cases/`。
 - 清理本地 `build-asan/`、`build-asan-plan/` 和 `tests/e2e/__pycache__/`，并补充 `.gitignore`。
 
@@ -99,15 +118,15 @@
 验证结果：
 
 - `git diff --check`：通过。
-- 根目录清理检查：`task_plan.md`、`findings.md`、`progress.md`、`tutorials/`、`.github/`、`build-asan/`、`build-asan-plan/`、`tests/e2e/__pycache__/` 和 `docs/tutorials/step46_github_actions_ci.md` 均不存在。
+- 根目录清理检查：`task_plan.md`、`findings.md`、`progress.md`、`tutorials/`、`.github/`、`build-asan/`、`build-asan-plan/`、`tests/e2e/__pycache__/` 和旧 CI 教程均不存在。
 - `docs/process/` 下保留 `task_plan.md`、`findings.md`、`progress.md`。
-- `docs/tutorials/` 下保留 Step 00-45 共 46 个教程文件；所有教程最后一个主章节仍是 `## 10. 面试常见追问`。
+- `docs/tutorials/` 下保留 Step 00-44 共 46 个教程文件；所有教程最后一个主章节仍是 `## 10. 面试常见追问`。
 - 路径级旧路线扫描无输出：没有真实 `server/net`、`server/protocol`、`*SQLite*`、`*InMemory*` 或 `*step15_sqlite*` 文件路径残留。
-- Markdown 路线扫描只剩本清理记录中“删除 Step 46 GitHub Actions CI”的说明；`PROJECT_MEMORY.md` 当前路线已改为 Step 42-45 工具验证、Step 46-53 Qt、Step 54 最终文档。
+- Markdown 路线扫描只剩本清理记录中“删除原 GitHub Actions CI Step”的说明；`PROJECT_MEMORY.md` 当前路线已改为 Step 41-44 工具验证、Step 45-52 Qt、Step 53 最终文档。
 
 ## 2026-05-16 Repository CI Infrastructure
 
-用户重新确认：CI 有价值，但不要单独拆成 Step 46。本次将 CI 作为仓库基础设施补回。
+用户重新确认：CI 有价值，但不要单独拆成独立 Step。本次将 CI 作为仓库基础设施补回。
 
 实现内容：
 
@@ -121,8 +140,8 @@
 
 边界：
 
-- 不恢复 Step 46 CI 教程。
-- 不修改 Step 路线；当前仍是 Step 42-45 工具验证、Step 46-53 Qt、Step 54 最终文档。
+- 不恢复 CI 教程。
+- 不修改 Step 路线；当前仍是 Step 41-44 工具验证、Step 45-52 Qt、Step 53 最终文档。
 - 不修改 C++ 源码、协议、MySQL schema、Redis key、Qt 或 PersonaAgent。
 - 继续保护进入本任务前已有的用户侧源码改动。
 
@@ -132,17 +151,17 @@
 - `ctest --test-dir build -L unit --output-on-failure`：301/301 通过。
 - `ctest --test-dir build -N -L integration`：发现 70 个 integration / Docker / E2E 测试，workflow 的 integration job 可筛中目标。
 - `git diff --check`：通过。
-- `.github/workflows/ci.yml` 已存在；`docs/tutorials/step46_github_actions_ci.md` 仍不存在。
+- `.github/workflows/ci.yml` 已存在；GitHub Actions CI 教程仍不存在。
 
-## 2026-05-16 Step 45 Test Coverage, gMock, ASan/UBSan
+## 2026-05-16 Step 44 Test Coverage, gMock, ASan/UBSan
 
-本次进入 `Step 45：补齐单元测试覆盖率 + gMock + ASan/UBSan`。
+本次进入 `Step 44：补齐单元测试覆盖率 + gMock + ASan/UBSan`。
 
 开始状态：
 
-- Step 44 已完成并记录为 benchmark tooling；Step 45 只补测试、CTest 标签和 sanitizer 构建，不修改服务端协议、MySQL schema、Redis key、Qt 或压测工具行为。
+- Step 43 已完成并记录为 benchmark tooling；Step 44 只补测试、CTest 标签和 sanitizer 构建，不修改服务端协议、MySQL schema、Redis key、Qt 或压测工具行为。
 - 工作区已有用户侧未提交改动：`include/liteim/service/GroupService.hpp`、`include/liteim/service/HistoryService.hpp`、`src/service/GroupService.cpp`、`src/service/HistoryService.cpp`、`src/storage/GroupDao.cpp`，以及未跟踪 `build-asan-plan/`。本 Step 不回滚、不清理，并在提交时精确排除。
-- `session-catchup.py` 提示的是历史概念问答，不对应当前 Step 45 代码实现。
+- `session-catchup.py` 提示的是历史概念问答，不对应当前 Step 44 代码实现。
 
 TDD RED 计划：
 
@@ -177,9 +196,9 @@ Sanitizer 验证：
 
 文档同步：
 
-- 新增 `docs/tutorials/step45_test_coverage_sanitizers.md`，保持固定 0-10 教程模板，最后一节为 `面试常见追问`。
-- 更新 README，记录 Step 45 runtime、gMock 覆盖、CTest label 筛选和 sanitizer 构建命令。
-- 更新 `docs/process/task_plan.md`、`docs/process/findings.md` 和本文件，记录 Step 45 边界、RED/GREEN、标签和 sanitizer 结果。
+- 新增 `docs/tutorials/step44_test_coverage_sanitizers.md`，保持固定 0-10 教程模板，最后一节为 `面试常见追问`。
+- 更新 README，记录 Step 44 runtime、gMock 覆盖、CTest label 筛选和 sanitizer 构建命令。
+- 更新 `docs/process/task_plan.md`、`docs/process/findings.md` 和本文件，记录 Step 44 边界、RED/GREEN、标签和 sanitizer 结果。
 
 最终验证：
 
@@ -193,25 +212,25 @@ Sanitizer 验证：
 - `cmake --build build -j2`：通过。
 - `ctest --test-dir build --output-on-failure`：371/371 通过。
 - `git diff --check`：通过。
-- Step 45 教程标题扫描：保持 0-10，最后主章节是 `## 10. 面试常见追问`。
+- Step 44 教程标题扫描：保持 0-10，最后主章节是 `## 10. 面试常见追问`。
 - 路径级 stale-route scan：未发现旧路线文件路径。
 - `timeout 2s ./build/server/liteim_server || test $? -eq 124`：通过，server 启动后由 bounded smoke 发送 SIGTERM 并通过 signalfd 退出。
 
 收尾注意：
 
-- Step 45 提交继续排除进入本 Step 前已有的用户侧改动：`include/liteim/service/GroupService.hpp`、`include/liteim/service/HistoryService.hpp`、`src/service/GroupService.cpp`、`src/service/HistoryService.cpp`、`src/storage/GroupDao.cpp`，以及未跟踪 `build-asan-plan/`。
+- Step 44 提交继续排除进入本 Step 前已有的用户侧改动：`include/liteim/service/GroupService.hpp`、`include/liteim/service/HistoryService.hpp`、`src/service/GroupService.cpp`、`src/service/HistoryService.cpp`、`src/storage/GroupDao.cpp`，以及未跟踪 `build-asan-plan/`。
 - 本次生成的本地构建目录 `build-asan/` 和 Python `__pycache__` 不纳入 Git。
 
-## 2026-05-16 Step 43 Python E2E
+## 2026-05-16 Step 42 Python E2E
 
-本次进入 `Step 43：实现 Python 端到端测试`。
+本次进入 `Step 42：实现 Python 端到端测试`。
 
 开始状态：
 
-- Step 42 已提交：`feat(client): add command line im client`。
+- Step 41 已提交：`feat(client): add command line im client`。
 - 用户确认 MySQL / Redis 在 Docker 环境中运行；本 Step 验证会使用 `docker compose -f docker/docker-compose.yml up -d --wait`。
 - 工作区仍保留 进入该任务前已有的用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。本 Step 不应把这些改动混入提交。
-- `session-catchup.py` 提示的是旧路线概念问答，不对应当前 Step 43 代码改动。
+- `session-catchup.py` 提示的是旧路线概念问答，不对应当前 Step 42 代码改动。
 
 概念计划：
 
@@ -243,8 +262,8 @@ TDD GREEN：
 
 文档完成：
 
-- 更新 `README.md`：记录 Python 3、Step 43 runtime、E2E 运行命令和测试边界。
-- 新增 `docs/tutorials/step43_python_e2e.md`，按固定 0-10 模板讲解 E2E 边界、接口、运行流程和测试设计。
+- 更新 `README.md`：记录 Python 3、Step 42 runtime、E2E 运行命令和测试边界。
+- 新增 `docs/tutorials/step42_python_e2e.md`，按固定 0-10 模板讲解 E2E 边界、接口、运行流程和测试设计。
 
 最终验证：
 
@@ -254,14 +273,14 @@ TDD GREEN：
 - `ctest --test-dir build -R LiteIME2E --output-on-failure`：通过，6/6 tests passed。
 - `ctest --test-dir build --output-on-failure`：通过，344/344 tests passed。
 - `git diff --check`：通过。
-- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" docs/tutorials/step43_python_e2e.md README.md`：无输出。
-- `rg -n "^## " docs/tutorials/step43_python_e2e.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" docs/tutorials/step42_python_e2e.md README.md`：无输出。
+- `rg -n "^## " docs/tutorials/step42_python_e2e.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
 - `.gitkeep` 和旧 `server/net`、`server/protocol`、SQLite、`InMemoryStorage`、`step15_sqlite` 路径扫描无输出。
 - `timeout 2s ./build/server/liteim_server || test $? -eq 124`：通过，server 监听 `0.0.0.0:9000` 后收到 SIGTERM 并通过 signalfd 退出。
 
 收尾注意：
 
-- Step 43 提交需要继续排除进入本 Step 前已有的用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。
+- Step 42 提交需要继续排除进入本 Step 前已有的用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。
 
 ## 2026-05-15 Step 38 GroupService
 
@@ -606,7 +625,7 @@ TDD 过程：
 已完成文档修复：
 
 - 将原独立存储/缓存契约小重构正式纳入 `Step 31：MySqlStorage 和 RedisCache 聚合适配层`。
-- 将原 Step 31 `SessionManager and OnlineService` 后移为 Step 32，并把后续业务、CLI/测试、Qt、最终文档阶段编号整体顺延为 Step 32-41、Step 42-45、Step 46-53、Step 54。
+- 将原 Step 31 `SessionManager and OnlineService` 后移为 Step 32；当前后续路线为 Step 32-40 业务、Step 41-44 工具验证、Step 45-52 Qt、Step 53。
 - 新增 `docs/tutorials/step31_storage_cache_adapters.md`，按固定教程结构讲解 `MySqlStorage : IStorage`、`RedisCache : ICache`、事务边界、Redis 缓存边界、测试和面试追问。
 - 更新 `/home/yolo/jianli/PROJECT_MEMORY.md`、README、`docs/process/task_plan.md`、`docs/process/findings.md`、本文件，以及 Step 21 / Step 23 / Step 26 教程里的旧编号和 Pre-Step 说法。
 
@@ -3126,15 +3145,15 @@ TDD GREEN：
 - 提交完成：`feat(service): add heartbeat ttl refresh`。
 
 
-## 2026-05-16 Step 42 CLI Client
+## 2026-05-16 Step 41 CLI Client
 
-本次进入 `Step 42：实现 CLI 测试客户端`。
+本次进入 `Step 41：实现 CLI 测试客户端`。
 
 开始状态：
 
 - 旧 assistant 路线后来已被移除。
 - 工作区仍保留 进入该任务前已有的用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。本 Step 不应把这些注释改动混入提交。
-- Step 42 目标是先提供协议调试 CLI，不提前实现 Python E2E、bench、Qt 或 PersonaAgent。
+- Step 41 目标是先提供协议调试 CLI，不提前实现 Python E2E、bench、Qt 或 PersonaAgent。
 
 概念计划：
 
@@ -3166,9 +3185,9 @@ TDD GREEN：
 
 文档完成：
 
-- 更新 `README.md`：记录 `liteim_cli`、命令示例、Step 42 runtime 和测试命令。
-- 新增 `docs/tutorials/step42_cli_client.md`，按固定 0-10 模板讲解 CLI 边界、接口、运行流程、测试设计和面试追问。
-- 更新 `docs/process/task_plan.md` / `docs/process/findings.md` / `docs/process/progress.md` 记录 Step 42 过程。
+- 更新 `README.md`：记录 `liteim_cli`、命令示例、Step 41 runtime 和测试命令。
+- 新增 `docs/tutorials/step41_cli_client.md`，按固定 0-10 模板讲解 CLI 边界、接口、运行流程、测试设计和面试追问。
+- 更新 `docs/process/task_plan.md` / `docs/process/findings.md` / `docs/process/progress.md` 记录 Step 41 过程。
 
 最终验证：
 
@@ -3176,14 +3195,14 @@ TDD GREEN：
 - `docker compose -f docker/docker-compose.yml up -d --wait`：通过，MySQL / Redis healthy。
 - `ctest --test-dir build --output-on-failure`：通过，338/338 tests passed。
 - `git diff --check`：通过。
-- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" docs/tutorials/step42_cli_client.md README.md`：无输出。
-- `rg -n "^## " docs/tutorials/step42_cli_client.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" docs/tutorials/step41_cli_client.md README.md`：无输出。
+- `rg -n "^## " docs/tutorials/step41_cli_client.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
 - `.gitkeep` 和旧 `server/net`、`server/protocol`、SQLite、`InMemoryStorage`、`step15_sqlite` 路径扫描无输出。
 - `timeout 2s ./build/server/liteim_server || test $? -eq 124`：通过，server 监听 `0.0.0.0:9000` 后收到 SIGTERM 并通过 signalfd 退出。
 
 收尾注意：
 
-- Step 42 提交需要继续排除进入本 Step 前已有的用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。
+- Step 41 提交需要继续排除进入本 Step 前已有的用户侧注释改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。
 
 收尾完成：
 
@@ -3254,15 +3273,15 @@ TDD GREEN：
 
 - 提交完成：`feat(chat): add recent history pagination`。
 
-## 2026-05-16 Step 44 Benchmark Tool
+## 2026-05-16 Step 43 Benchmark Tool
 
-本次进入 `Step 44：实现自研压测工具`。
+本次进入 `Step 43：实现自研压测工具`。
 
 开始状态：
 
-- Step 43 已提交：`64ec246 test(e2e): add python end to end tests`。
+- Step 42 已提交：`64ec246 test(e2e): add python end to end tests`。
 - 工作区仍保留 进入该任务前已有的用户侧改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。本 Step 不应把这些改动混入提交。
-- 用户的 MySQL / Redis 在 Docker 环境运行；Step 44 的真实运行验证继续使用 `docker compose -f docker/docker-compose.yml up -d --wait`。
+- 用户的 MySQL / Redis 在 Docker 环境运行；Step 43 的真实运行验证继续使用 `docker compose -f docker/docker-compose.yml up -d --wait`。
 
 概念计划：
 
@@ -3303,13 +3322,13 @@ TDD GREEN：
 - `git diff --check`：通过。
 - `.gitkeep` 检查：无输出。
 - 旧路线路径检查：无 `server/net`、`server/protocol`、`SQLite`、`InMemory`、`step15_sqlite` 残留。
-- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" docs/tutorials/step44_benchmark_tool.md README.md`：无输出。
-- `rg -n "^## " docs/tutorials/step44_benchmark_tool.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" docs/tutorials/step43_benchmark_tool.md README.md`：无输出。
+- `rg -n "^## " docs/tutorials/step43_benchmark_tool.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
 - `timeout 2s ./build/server/liteim_server || test $? -eq 124`：通过，server 监听 `0.0.0.0:9000` 后收到 SIGTERM 并通过 signalfd 退出。
 
 收尾注意：
 
-- Step 44 提交需要继续排除进入本 Step 前已有的用户侧改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。
+- Step 43 提交需要继续排除进入本 Step 前已有的用户侧改动：`include/liteim/service/GroupService.hpp`、`src/service/GroupService.cpp`、`src/storage/GroupDao.cpp`。
 
 收尾完成：
 

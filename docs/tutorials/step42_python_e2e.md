@@ -1,16 +1,16 @@
-# Step 43：Python 端到端测试
+# Step 42：Python 端到端测试
 
 ## 0. 本 Step 结论
 
-- 目标：Step 43 用 Python 黑盒 E2E 测试验证 `liteim_server` 的真实 TCP/TLV 聊天闭环。
-- 前置依赖：依赖 Step 42 CLI 已确认的协议流程，以及 Step 34-41 服务端业务 handler。
+- 目标：Step 42 用 Python 黑盒 E2E 测试验证 `liteim_server` 的真实 TCP/TLV 聊天闭环。
+- 前置依赖：依赖 Step 41 CLI 已确认的协议流程，以及 Step 34-40 服务端业务 handler。
 - 主要交付：新增 `tests/e2e/` Python 测试、最小 TLV codec/client、server 启停 helper 和 CTest wiring。
 - 依赖边界：MySQL / Redis 使用 Docker Compose 默认环境，Python 测试不直接访问数据库或 Redis。
 - 协议边界：不改 C++ MessageType、TlvType、Packet 格式、schema、Redis key 或服务端 handler。
 
 ## 1. 为什么需要这个 Step
 
-Step 42 的 CLI 已经可以手工调试协议，但手工命令不能稳定覆盖回归风险。Step 43 增加 Python E2E，是为了从“真实客户端视角”验证服务端：
+Step 41 的 CLI 已经可以手工调试协议，但手工命令不能稳定覆盖回归风险。Step 42 增加 Python E2E，是为了从“真实客户端视角”验证服务端：
 
 - 能从 TCP 连接读入 TLV 请求。
 - 能把请求分发到业务线程池。
@@ -157,7 +157,7 @@ Receiver OfflineMessagesRequest(limit=10)
 
 ### 1. Python codec 保持最小
 
-Python 只实现 Step 43 需要的字段和类型，不复制整个 C++ 协议层。这样测试保持可读，也避免 Python helper 变成第二套业务实现。
+Python 只实现 Step 42 需要的字段和类型，不复制整个 C++ 协议层。这样测试保持可读，也避免 Python helper 变成第二套业务实现。
 
 ### 2. 随机用户名避免 seed 密码问题
 
@@ -195,7 +195,7 @@ git diff --check
 
 ## 9. 面试表达
 
-> Step 43 补了 Python 黑盒 E2E。Python 只实现最小 TLV codec 和阻塞 TCP client，通过 CTest 启动当前构建出的 `liteim_server`，用真实协议覆盖注册登录、私聊、群聊、离线、历史、心跳、错误密码、登录限流和慢客户端回压。
+> Step 42 补了 Python 黑盒 E2E。Python 只实现最小 TLV codec 和阻塞 TCP client，通过 CTest 启动当前构建出的 `liteim_server`，用真实协议覆盖注册登录、私聊、群聊、离线、历史、心跳、错误密码、登录限流和慢客户端回压。
 
 展开说：
 
@@ -209,7 +209,7 @@ git diff --check
 
 ### 为什么 E2E 不直接查 MySQL 表？
 
-Step 43 是黑盒测试。它要验证客户端能否通过 TCP/TLV 协议拿到正确结果。MySQL 表结构、DAO 和事务细节已经由 C++ storage/service 测试覆盖；E2E 如果直接查表，会把黑盒测试变成半集成测试，也会增加耦合。
+Step 42 是黑盒测试。它要验证客户端能否通过 TCP/TLV 协议拿到正确结果。MySQL 表结构、DAO 和事务细节已经由 C++ storage/service 测试覆盖；E2E 如果直接查表，会把黑盒测试变成半集成测试，也会增加耦合。
 
 ### 为什么每个测试模块都启动一次 server？
 
