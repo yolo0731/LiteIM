@@ -6,7 +6,7 @@
 - 前置依赖：依赖 Step 31 的 `IStorage` / `ICache` 聚合适配层、Step 32 的 `OnlineService`、Step 33 的 `MessageRouter`、Step 34 的登录绑定和 Step 35 的 service 接入模式。
 - 主要交付：新增 `ChatService`、私聊 service 测试、server runtime handler 注册和本文档。
 - 线程边界：私聊 handler 注册为 `BusinessThread`，MySQL / Redis 阻塞调用不进入 Reactor I/O 线程。
-- 范围控制：本 Step 只做单进程私聊发送，不做群聊、离线消息拉取、历史查询、跨节点转发、可靠 ACK 重试或 BotGateway。
+- 范围控制：本 Step 只做单进程私聊发送，不做群聊、离线消息拉取、历史查询、跨节点转发或可靠 ACK 重试。
 
 ## 1. 为什么需要这个 Step
 
@@ -51,7 +51,7 @@ MessageRouter
 
 ### 本 Step 不做
 
-- 不实现群聊消息、离线消息拉取、历史查询、消息撤回、已读回执、可靠投递 ACK、跨节点在线路由或 BotGateway。
+- 不实现群聊消息、离线消息拉取、历史查询、消息撤回、已读回执、可靠投递 ACK 或跨节点在线路由。
 - 不修改 MySQL schema，不新增协议枚举或 TLV 字段。
 - 不做好友关系校验；当前 Step 只要求接收方用户存在。
 - 不把 MySQL / Redis 阻塞调用放到 Reactor I/O 线程。

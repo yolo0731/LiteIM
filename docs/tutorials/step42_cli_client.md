@@ -10,7 +10,7 @@
 
 ## 1. 为什么需要这个 Step
 
-到 Step 41 为止，LiteIM 服务端已经能处理注册、登录、好友、私聊、群聊、离线消息、历史消息、心跳和 EchoBot。但是没有一个稳定的命令行工具直接按 TLV 协议连上 server。
+到 Step 40 为止，LiteIM 服务端已经能处理注册、登录、好友、私聊、群聊、离线消息、历史消息和心跳。但是没有一个稳定的命令行工具直接按 TLV 协议连上 server。
 
 Step 42 的作用是：
 
@@ -142,7 +142,7 @@ stdin line
     -> stdout
 ```
 
-### 2. 群聊 mention bot
+### 2. 手动群聊
 
 真实命令例子：
 
@@ -150,10 +150,10 @@ stdin line
 register cli_alice secret CLI Alice
 login cli_alice secret
 join-group 2001
-group 2001 hi @mira_bot
+group 2001 hello team
 ```
 
-如果新注册用户成功加入 `group_id=2001`，并且 `mira_bot` 也是该群成员，服务端会保存用户原始群消息，再由 Step 41 的 `BotService` 保存并推送 EchoBot 群回复。CLI 只看到普通 `GroupMessageResponse` 和 `GroupMessagePush`，不需要理解 bot 专用协议。
+如果新注册用户成功加入 `group_id=2001`，服务端会保存用户群消息，并向在线群成员发送普通 `GroupMessagePush`。CLI 只看到普通 `GroupMessageResponse` 和 `GroupMessagePush`，不需要理解任何 AI 或额外专用协议。
 
 ### 3. 后台心跳
 
@@ -248,6 +248,6 @@ IM 连接不是纯 request/response。用户发送私聊后，另一个客户端
 
 当前 TLV body 是重复字段流，不带嵌套 message 对象。`describePacket()` 的目标是调试可见性，不改变协议结构。后续如果客户端 UI 需要严格分组，可以在客户端侧按字段重复序列做更强解析。
 
-### CLI 能不能直接用 `mira_bot` 登录？
+### CLI 和后续 PersonaAgent BotClient 有什么关系？
 
-Step 42 不要求。Step 41 的 C++ EchoBot 通过服务端内置 `BotOptions` 识别 seed 用户 `mira_bot`，不是通过真实 BotClient 登录。后续 PersonaAgent BotClient 阶段才需要准备可登录密码 hash 或注册流程。
+CLI 是手工调试客户端，PersonaAgent BotClient 是后续 Python 长连接客户端。两者都走同一套普通账号协议：注册/登录、接收 `PrivateMessagePush`，再按普通私聊发送回复。LiteIM 不知道这个账号背后是真人、脚本还是 LLM。

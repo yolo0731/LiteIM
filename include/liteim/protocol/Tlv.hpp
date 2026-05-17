@@ -34,9 +34,6 @@ enum class TlvType : std::uint16_t {
 
     ErrorCode = 90,
     ErrorMessage = 91,
-
-    BotId = 100,
-    PersonaId = 101,
 };
 
 const char* toString(TlvType type) noexcept;

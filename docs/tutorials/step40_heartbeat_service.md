@@ -39,7 +39,7 @@ Step 40 解决的问题是：
 - 不关闭连接，不清理 `SessionManager` 绑定。
 - 不新增心跳 request / response TLV 字段。
 - 不新增 metrics 模块；当前第一版通过 warning 日志暴露 Redis 刷新失败。
-- 不实现客户端重连策略、断线提示 UI、BotGateway 或跨节点在线状态路由。
+- 不实现客户端重连策略、断线提示 UI 或跨节点在线状态路由。
 
 ## 3. 文件变化
 

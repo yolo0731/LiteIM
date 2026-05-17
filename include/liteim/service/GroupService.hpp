@@ -12,12 +12,9 @@
 
 namespace liteim {
 
-class BotService;
-
 class GroupService {
 public:
-    GroupService(IStorage& storage, ICache& cache, OnlineService& online_service,
-                 BotService* bot_service = nullptr);
+    GroupService(IStorage& storage, ICache& cache, OnlineService& online_service);
 
     Status registerHandlers(MessageRouter& router);
     // 处理创建群请求,返回创建的群信息
@@ -38,7 +35,6 @@ private:
     IStorage& storage_;
     ICache& cache_;
     OnlineService& online_service_;
-    BotService* bot_service_{nullptr};
 };
 
 }  // namespace liteim

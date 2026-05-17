@@ -174,7 +174,6 @@ LITEIM_REDIS_PORT
 ```text
 1001 alice
 1002 bob
-9001 mira_bot
 ```
 
 固定群：
@@ -188,14 +187,12 @@ LITEIM_REDIS_PORT
 ```text
 5001 alice -> bob
 5002 alice -> dev_group
-5003 mira_bot -> alice
 ```
 
 固定离线消息：
 
 ```text
 user 1002 pending message 5001
-user 1001 pending message 5003
 ```
 
 脚本使用 `ON DUPLICATE KEY UPDATE`，可以重复执行。最后把 users、chat_groups、messages、offline_messages 的自增起点调到 `10000`，避免后续测试自动创建的数据和 seed id 冲突。
@@ -277,7 +274,7 @@ SQL 脚本自身按依赖顺序执行：
 
 ### 5. 该项目代码在实际应用中的具体数据例子
 
-初始化脚本会写入真实开发数据：`users` 里有 `user_id=1001` 的 `alice`、`user_id=1002` 的 `bob`、`user_id=9001` 的 `mira_bot`；`messages` 里有 `message_id=5001`、`conversation_type=1`、`conversation_id=10011002`、文本 `hello bob`。历史分页依赖 `idx_messages_history(conversation_type, conversation_id, message_id)`，离线拉取依赖 `offline_messages(user_id=1002, message_id=5001, delivered=0)`。
+初始化脚本会写入真实开发数据：`users` 里有 `user_id=1001` 的 `alice`、`user_id=1002` 的 `bob`；`messages` 里有 `message_id=5001`、`conversation_type=1`、`conversation_id=10011002`、文本 `hello bob`。历史分页依赖 `idx_messages_history(conversation_type, conversation_id, message_id)`，离线拉取依赖 `offline_messages(user_id=1002, message_id=5001, delivered=0)`。
 
 ## 6. 关键实现点
 
@@ -328,7 +325,7 @@ Step 22 先把本地 MySQL / Redis 环境和 schema 固定下来。
 ### 容易被追问
 
 - 为什么 MySQL 是主线依赖？
-- 为什么 seed 里放 `mira_bot`？
+- 为什么 seed 只放普通开发用户？
 
 ## 10. 面试常见追问
 
@@ -336,6 +333,6 @@ Step 22 先把本地 MySQL / Redis 环境和 schema 固定下来。
 
 LiteIM 的消息、用户、好友、群组和离线消息都需要可恢复的持久化来源。Redis 只保存在线状态、未读数和登录失败窗口，不能替代 MySQL。
 
-### Q2：为什么 seed 里放 `mira_bot`？
+### Q2：为什么 seed 只放普通开发用户？
 
-PersonaAgent 后续要作为普通 Bot 用户接入 LiteIM。seed 先提供稳定开发账号，BotGateway 和用户类型迁移仍留到后续 Step。
+LiteIM 不在 C++ 服务端区分 AI/Bot 身份，也不依赖固定 bot seed 用户。后续 PersonaAgent 需要账号时，由 Python BotClient 使用普通注册/登录流程或配置好的普通账号接入。

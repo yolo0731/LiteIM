@@ -3,7 +3,6 @@
 #include "liteim/base/ErrorCode.hpp"
 #include "liteim/base/Logger.hpp"
 #include "liteim/protocol/TlvCodec.hpp"
-#include "liteim/service/BotService.hpp"
 #include "liteim/service/MessagePacketBuilder.hpp"
 #include "liteim/service/Validation.hpp"
 
@@ -55,12 +54,10 @@ Status privateConversationId(std::uint64_t sender_id, std::uint64_t receiver_id,
 
 }  // namespace
 
-ChatService::ChatService(IStorage& storage, ICache& cache, OnlineService& online_service,
-                         BotService* bot_service)
+ChatService::ChatService(IStorage& storage, ICache& cache, OnlineService& online_service)
     : storage_(storage),
       cache_(cache),
-      online_service_(online_service),
-      bot_service_(bot_service) {}
+      online_service_(online_service) {}
 
 Status ChatService::registerHandlers(MessageRouter& router) {
     return router.registerHandler(
@@ -117,7 +114,6 @@ Status ChatService::handlePrivateMessage(const MessageRouter::RouterRequest& req
     if (!conversation_status.isOk()) {
         return conversation_status;
     }
-    bool receiver_is_bot = bot_service_ != nullptr && bot_service_->isBotUser(receiver_id);
 
     // 检查接收用户是否在线，如果在线就直接发消息，否则就存离线消息和未读计数
     Session::Ptr receiver_session;
@@ -126,9 +122,6 @@ Status ChatService::handlePrivateMessage(const MessageRouter::RouterRequest& req
     receiver_online = session_status.isOk();
     if (!session_status.isOk() && session_status.code() != ErrorCode::NotFound) {
         return session_status;
-    }
-    if (receiver_is_bot && receiver_online) {
-        receiver_is_bot = false;
     }
 
     // 构建消息
@@ -140,8 +133,7 @@ Status ChatService::handlePrivateMessage(const MessageRouter::RouterRequest& req
 
     // 如果离线，offline_user_ids数组里放 receiver_id，然后在 saveMessageWithOfflineRecipients 里插入到offline_messages表里
     const std::vector<std::uint64_t> offline_user_ids =
-        (!receiver_is_bot && !receiver_online) ? std::vector<std::uint64_t>{receiver_id}
-                                               : std::vector<std::uint64_t>{};
+        !receiver_online ? std::vector<std::uint64_t>{receiver_id} : std::vector<std::uint64_t>{};
 
     // 保存消息记录，如果接收用户离线就同时保存离线消息记录，然后把数据库生成/补齐后的完整消息信息放到 saved_message 里返回（包括 message_id 和 created_at_ms）
     MessageRecord saved_message;
@@ -151,13 +143,7 @@ Status ChatService::handlePrivateMessage(const MessageRouter::RouterRequest& req
         return save_status;
     }
 
-    if (receiver_is_bot) {
-        const auto bot_status =
-            bot_service_->handlePrivateMessageToBot(saved_message, request.session);
-        if (!bot_status.isOk()) {
-            return bot_status;
-        }
-    } else if (receiver_online) {
+    if (receiver_online) {
         // 在线：直接把消息推送给接收用户
         Packet push;
         push.header.msg_type = MessageType::PrivateMessagePush;

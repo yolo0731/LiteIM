@@ -1,29 +1,55 @@
 # LiteIM Progress
 
+## 2026-05-17 Retire C++ Bot Route
+
+用户确认原来的 Step 41 不再需要，直接从 LiteIM 中移除 C++ BotGateway/EchoBot 路线。
+
+实现内容：
+
+- 删除 `BotGateway` / `BotService` / C++ EchoBot 相关头文件、实现、CMake 源文件和测试。
+- 删除 `MessageType` 中的 `BotChatRequest` / `BotChatResponse` / `BotMessagePush`，并让 600/601/602 回到 unknown。
+- 删除 `TlvType` 中的 `BotId` / `PersonaId`，并让 100/101 回到 unknown。
+- `ChatService` / `GroupService` 构造函数不再注入 bot 服务，所有账号都按普通在线/离线用户处理。
+- `server/main.cpp` 不再构造 C++ EchoBot 或 bot 服务。
+- `scripts/seed_test_data.sql` 不再创建固定 bot 用户、bot 好友、bot 群成员、bot 消息或 bot 离线消息，并清理旧 seed 中的 `user_id=9001` 数据。
+- 删除旧 `docs/tutorials/step41_bot_gateway.md`，同步 README、PROJECT_MEMORY、Step 3/5/22/27/42/43 教程和 process 文档。
+
+当前已验证：
+
+- `ctest --test-dir build -R MessageType --output-on-failure` 在测试先行阶段按预期失败，证明 600/601/602 当时仍被识别为 bot 类型。
+- `cmake --build build --target liteim_tests -j2`：bot route 删除后已通过一次。
+- `ctest --test-dir build -R "MessageType|ChatService|GroupService" --output-on-failure`：26/26 通过。
+- `cmake --build build -j2`：通过。
+- `ctest --test-dir build -R "MessageType|TlvType|ChatService|GroupService" --output-on-failure`：28/28 通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：MySQL / Redis healthy。
+- 重新执行 `scripts/seed_test_data.sql` 后查询确认：`users(user_id=9001)` 为 0，bot 相关 messages 为 0。
+- `ctest --test-dir build --output-on-failure`：380/380 通过。
+- `git diff --check`：通过。
+- 源码/测试/SQL 扫描 `BotChat|BotMessagePush|BotId|PersonaId|BotGateway|BotService|EchoBot|BotOptions|mira_bot|@mira_bot|Mira Bot|dev_hash_mira`：无输出。
+- 当前面向读者文档扫描 `BotChat|BotMessagePush|BotId|PersonaId|BotGateway|BotService|EchoBot|BotOptions|mira_bot|@mira_bot|Mira Bot|AI Bot|普通 Bot 用户|Bot 用户|Bot 路由|特殊用户`：无输出。
+- `test ! -e docs/tutorials/step41_bot_gateway.md`：通过，旧 Step 41 教程已删除。
+
 ## 2026-05-16 Post-Step45 Review Hardening
 
 本次按评审结论执行 Step 45 后的必要收口，不拆 Step 46。
 
 实现内容：
 
-- 修复 Bot 在线让位：`mira_bot` 有真实在线 session 时，`ChatService` / `GroupService` 把消息当普通用户流量投递，不再被 EchoBot fallback 拦截。
-- 修复 Bot post-save push 语义：bot 回复已经写入 MySQL 后，推送失败只记录 warning，不把发送方响应变成失败，避免客户端重试制造重复消息。
 - 统一部分 Redis 降级策略：好友列表在线状态查询失败时降级为 offline；离线消息响应已组装后，Redis unread 清理失败不阻塞 MySQL delivered 标记。
 - 将离线消息拉取 limit 下推到 `IStorage` / `MySqlStorage` / `OfflineMessageDao`，SQL 使用 `LIMIT ?`，避免先全量查询再内存截断。
 - 增加服务层输入边界：username/nickname <= 64 bytes，password <= 128 bytes，group name <= 128 bytes，message text <= 8192 bytes；benchmark 同步拒绝过长 username prefix 和超过服务上限的 message size。
 - 给 `liteim_server` 增加 `--config <path>`；不传时尝试读取 `config/liteim.conf`，不存在则使用 defaults。
-- 增加 `tests/e2e/test_bot.py`，覆盖真实 TCP/TLV 私聊 `mira_bot` echo；E2E helper 增加 `LITEIM_E2E_STRICT=1`，CI 中 server 启动失败会 fail 而不是 skip。
+- E2E helper 增加 `LITEIM_E2E_STRICT=1`，CI 中 server 启动失败会 fail 而不是 skip。
 - 修复 ASan/UBSan CI 红点：fd-exhaustion 单测在 ASan runtime 下跳过，因为 sanitizer 自身会占用额外 fd，使该资源耗尽测试不稳定。
 - 修复 CTest 多标签：GoogleTest discovery 通过 `TEST_INCLUDE_FILES` 在 CTest 阶段为 `mysql` / `redis` / `docker` 补真实多标签。
 - 提取 `MessagePacketBuilder`，把 5 处重复的消息 TLV 字段编码收拢到一个 service helper。
-- 更新 README 和 process docs，说明 config、service limits、history newest-first、bench 指标归属、bot handoff、E2E strict、CI/sanitizer 边界。
+- 更新 README 和 process docs，说明 config、service limits、history newest-first、bench 指标归属、E2E strict、CI/sanitizer 边界。
 
 当前已验证：
 
 - `cmake --build build -j2`：通过。
-- `ctest --test-dir build -R "Bot|ChatService|GroupService|OfflineMessageService|HistoryService|FriendService|ConfigTest|PacketTest|BenchmarkOptions" --output-on-failure`：77/77 通过。
+- `ctest --test-dir build -R "ChatService|GroupService|OfflineMessageService|HistoryService|FriendService|ConfigTest|PacketTest|BenchmarkOptions" --output-on-failure`：相关测试通过。
 - `docker compose -f docker/docker-compose.yml up -d --wait`：MySQL / Redis healthy。
-- `LITEIM_E2E_STRICT=1 ctest --test-dir build -R "LiteIME2E.test_bot" --output-on-failure`：1/1 通过。
 - `ctest --test-dir build -N -L mysql`：38 个测试可被 `mysql` 标签筛中。
 - `ctest --test-dir build -N -L redis`：30 个测试可被 `redis` 标签筛中。
 - `ctest --test-dir build-asan -R "AcceptorTest.FdExhaustionRejectsPendingConnectionWithoutLaterCallback" --output-on-failure`：按预期 skip，ASan 目标测试不再失败。

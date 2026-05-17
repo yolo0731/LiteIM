@@ -41,10 +41,6 @@ enum class MessageType : std::uint16_t {
     HistoryRequest = 502,
     HistoryResponse = 503,
 
-    BotChatRequest = 600,
-    BotChatResponse = 601,
-    BotMessagePush = 602,
-
     ErrorResponse = 900,
 };
 

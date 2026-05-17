@@ -41,7 +41,7 @@ Step 39 解决的问题是：
 - 不做历史消息全文搜索或关键字搜索。
 - 不做撤回消息、删除消息、已读回执或 ACK。
 - 不做 CLI / Qt 历史加载 UI。
-- 不做 HeartbeatService 或 BotGateway。
+- 不做 HeartbeatService。
 
 ## 3. 文件变化
 

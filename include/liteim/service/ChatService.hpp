@@ -12,12 +12,9 @@
 
 namespace liteim {
 
-class BotService;
-
 class ChatService {
 public:
-    ChatService(IStorage& storage, ICache& cache, OnlineService& online_service,
-                BotService* bot_service = nullptr);
+    ChatService(IStorage& storage, ICache& cache, OnlineService& online_service);
     // 注册私聊消息到 MessageRouter
     Status registerHandlers(MessageRouter& router);
     // 真正处理私聊消息
@@ -31,7 +28,6 @@ private:
     IStorage& storage_;
     ICache& cache_;
     OnlineService& online_service_;
-    BotService* bot_service_{nullptr};
 };
 
 }  // namespace liteim

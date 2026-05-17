@@ -116,7 +116,7 @@ void setMessageCallback(MessageCallback callback);
 
 如果不设置 callback，`TcpServer` 默认把收到的 `Packet` 原样发回客户端，也就是 echo。
 
-这个设计让 Step 16 可以先验证网络底座；后续业务 Step 再把 callback 接到登录、聊天、群组和 Bot 路由。
+这个设计让 Step 16 可以先验证网络底座；后续业务 Step 再把 callback 接到登录、聊天、群组、离线消息、历史消息和心跳服务。
 
 ### `start()`
 

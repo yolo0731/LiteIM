@@ -60,12 +60,6 @@ const char* toString(MessageType type) noexcept {
         return "HISTORY_REQUEST";
     case MessageType::HistoryResponse:
         return "HISTORY_RESPONSE";
-    case MessageType::BotChatRequest:
-        return "BOT_CHAT_REQUEST";
-    case MessageType::BotChatResponse:
-        return "BOT_CHAT_RESPONSE";
-    case MessageType::BotMessagePush:
-        return "BOT_MESSAGE_PUSH";
     case MessageType::ErrorResponse:
         return "ERROR_RESPONSE";
     case MessageType::Unknown:
@@ -90,7 +84,6 @@ bool isRequestType(MessageType type) noexcept {
     case MessageType::GroupMessageRequest:
     case MessageType::OfflineMessagesRequest:
     case MessageType::HistoryRequest:
-    case MessageType::BotChatRequest:
         return true;
     case MessageType::Unknown:
     case MessageType::HeartbeatResponse:
@@ -108,8 +101,6 @@ bool isRequestType(MessageType type) noexcept {
     case MessageType::GroupMessagePush:
     case MessageType::OfflineMessagesResponse:
     case MessageType::HistoryResponse:
-    case MessageType::BotChatResponse:
-    case MessageType::BotMessagePush:
     case MessageType::ErrorResponse:
         return false;
     }
@@ -132,7 +123,6 @@ bool isResponseType(MessageType type) noexcept {
     case MessageType::GroupMessageResponse:
     case MessageType::OfflineMessagesResponse:
     case MessageType::HistoryResponse:
-    case MessageType::BotChatResponse:
     case MessageType::ErrorResponse:
         return true;
     case MessageType::Unknown:
@@ -151,8 +141,6 @@ bool isResponseType(MessageType type) noexcept {
     case MessageType::GroupMessagePush:
     case MessageType::OfflineMessagesRequest:
     case MessageType::HistoryRequest:
-    case MessageType::BotChatRequest:
-    case MessageType::BotMessagePush:
         return false;
     }
 
@@ -163,7 +151,6 @@ bool isPushType(MessageType type) noexcept {
     switch (type) {
     case MessageType::PrivateMessagePush:
     case MessageType::GroupMessagePush:
-    case MessageType::BotMessagePush:
         return true;
     case MessageType::Unknown:
     case MessageType::HeartbeatRequest:
@@ -192,8 +179,6 @@ bool isPushType(MessageType type) noexcept {
     case MessageType::OfflineMessagesResponse:
     case MessageType::HistoryRequest:
     case MessageType::HistoryResponse:
-    case MessageType::BotChatRequest:
-    case MessageType::BotChatResponse:
     case MessageType::ErrorResponse:
         return false;
     }

@@ -11,7 +11,6 @@ TEST(MessageTypeTest, CoreTypesReturnReadableNames) {
                  "PRIVATE_MESSAGE_REQUEST");
     EXPECT_STREQ(liteim::toString(liteim::MessageType::ListGroupsRequest), "LIST_GROUPS_REQUEST");
     EXPECT_STREQ(liteim::toString(liteim::MessageType::GroupMessagePush), "GROUP_MESSAGE_PUSH");
-    EXPECT_STREQ(liteim::toString(liteim::MessageType::BotChatRequest), "BOT_CHAT_REQUEST");
     EXPECT_STREQ(liteim::toString(liteim::MessageType::ErrorResponse), "ERROR_RESPONSE");
 }
 
@@ -28,7 +27,7 @@ TEST(MessageTypeTest, RequestTypesAreClassified) {
         liteim::MessageType::PrivateMessageRequest, liteim::MessageType::CreateGroupRequest,
         liteim::MessageType::JoinGroupRequest,      liteim::MessageType::ListGroupsRequest,
         liteim::MessageType::GroupMessageRequest,   liteim::MessageType::OfflineMessagesRequest,
-        liteim::MessageType::HistoryRequest,        liteim::MessageType::BotChatRequest,
+        liteim::MessageType::HistoryRequest,
     };
 
     for (const auto type : request_types) {
@@ -46,8 +45,7 @@ TEST(MessageTypeTest, ResponseTypesAreClassified) {
         liteim::MessageType::PrivateMessageResponse, liteim::MessageType::CreateGroupResponse,
         liteim::MessageType::JoinGroupResponse,      liteim::MessageType::ListGroupsResponse,
         liteim::MessageType::GroupMessageResponse,   liteim::MessageType::OfflineMessagesResponse,
-        liteim::MessageType::HistoryResponse,        liteim::MessageType::BotChatResponse,
-        liteim::MessageType::ErrorResponse,
+        liteim::MessageType::HistoryResponse,        liteim::MessageType::ErrorResponse,
     };
 
     for (const auto type : response_types) {
@@ -61,7 +59,6 @@ TEST(MessageTypeTest, PushTypesAreClassified) {
     constexpr std::array push_types{
         liteim::MessageType::PrivateMessagePush,
         liteim::MessageType::GroupMessagePush,
-        liteim::MessageType::BotMessagePush,
     };
 
     for (const auto type : push_types) {
@@ -74,6 +71,9 @@ TEST(MessageTypeTest, PushTypesAreClassified) {
 TEST(MessageTypeTest, UnknownTypesAreNotClassified) {
     constexpr std::array unknown_types{
         liteim::MessageType::Unknown,
+        static_cast<liteim::MessageType>(600),
+        static_cast<liteim::MessageType>(601),
+        static_cast<liteim::MessageType>(602),
         static_cast<liteim::MessageType>(65535),
     };
 

@@ -8,6 +8,23 @@
 - `LiteIM/docs/process/task_plan.md`、`LiteIM/docs/process/findings.md` 和 `LiteIM/docs/process/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-17 C++ Bot Route Retirement Findings
+
+用户确认原来的 Step 41 不再需要，直接从 LiteIM 中移除 C++ BotGateway/EchoBot 路线。
+
+当前采用的边界：
+
+- LiteIM 不定义 AI/Bot 身份识别，不保留 `BotGateway`、`BotService`、`EchoBotGateway` 或 `BotOptions`。
+- LiteIM 不启用也不保留 `BotChatRequest`、`BotChatResponse`、`BotMessagePush`、`BotId`、`PersonaId` 等 bot/agent 专用协议常量。
+- `ChatService` 和 `GroupService` 按普通账号处理所有用户：在线则 push，离线则写 offline/unread，不因为账号未来可能由 LLM 控制而分支。
+- MySQL seed 只保留普通开发用户和开发群，不再固定创建 `mira_bot` 或 bot 群成员。
+- PersonaAgent 后续通过 Python BotClient 使用普通账号注册/登录/收发私聊消息；LLM、RAG、风格、安全和回复策略全部属于项目二。
+
+暂缓项：
+
+- 不重排已经完成的 Step 42-45 编号，避免大范围文档迁移；旧 Step 41 教程文件直接删除，路线中 Step 41 留空。
+- 不在 LiteIM C++ 服务端加入 Agent 配置、模型调用、群聊 @ 策略或 AI 回复模板。
+
 ## 2026-05-16 Post-Step45 Review Hardening Findings
 
 本次根据外部评审和本地复核执行的是 Step 45 后的收口修复，不新开 Step 46，也不改变 Qt / PersonaAgent 路线。
@@ -15,12 +32,12 @@
 当前采用的边界：
 
 - CI 仍属于 Step 45 验证能力和仓库基础设施，不单独拆成 Step 46。
-- 不修改 MySQL schema、Redis key、TCP/TLV wire format、公开 MessageType/TlvType 编号、Qt 或 PersonaAgent。
-- 对运行时正确性问题直接修复：`mira_bot` 在线时让真实 session 接管，EchoBot 只作为离线兜底；bot 回复已经落库后 push 失败只告警。
+- 不修改 MySQL schema、Redis key、Qt 或 PersonaAgent；本条记录中的旧 C++ assistant 路线已在 2026-05-17 被移除。
+- 对运行时正确性问题直接修复：离线消息、好友在线状态、输入边界、配置加载和测试稳定性问题按局部方案收敛。
 - 对可靠性问题做局部收敛：离线消息 limit 下推到 SQL，好友在线状态和离线 unread 清理按 Redis best-effort 降级。
 - 对输入边界做服务层前置校验：username/nickname 64 bytes，password 128 bytes，group name 128 bytes，message text 8192 bytes。
-- 对可维护性做低风险重构：提取 `MessagePacketBuilder`，消除 Chat/Group/History/Offline/Bot 五处重复消息 TLV 拼接。
-- 对 CI 假绿/假红做修复：Python E2E 增加 strict 模式，新增 bot E2E，ASan 下跳过 fd-exhaustion 这种受 sanitizer runtime fd 占用影响的单测。
+- 对可维护性做低风险重构：提取 `MessagePacketBuilder`，消除 Chat/Group/History/Offline 等消息 TLV 拼接重复。
+- 对 CI 假绿/假红做修复：Python E2E 增加 strict 模式，ASan 下跳过 fd-exhaustion 这种受 sanitizer runtime fd 占用影响的单测。
 
 暂缓项：
 

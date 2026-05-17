@@ -50,10 +50,6 @@ const char* toString(TlvType type) noexcept {
         return "ERROR_CODE";
     case TlvType::ErrorMessage:
         return "ERROR_MESSAGE";
-    case TlvType::BotId:
-        return "BOT_ID";
-    case TlvType::PersonaId:
-        return "PERSONA_ID";
     case TlvType::Unknown:
         return "UNKNOWN";
     }

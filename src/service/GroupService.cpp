@@ -3,7 +3,6 @@
 #include "liteim/base/ErrorCode.hpp"
 #include "liteim/base/Logger.hpp"
 #include "liteim/protocol/TlvCodec.hpp"
-#include "liteim/service/BotService.hpp"
 #include "liteim/service/MessagePacketBuilder.hpp"
 #include "liteim/service/Validation.hpp"
 
@@ -44,12 +43,10 @@ bool containsMember(const std::vector<GroupMemberRecord>& members, std::uint64_t
 
 }  // namespace
 
-GroupService::GroupService(IStorage& storage, ICache& cache, OnlineService& online_service,
-                           BotService* bot_service)
+GroupService::GroupService(IStorage& storage, ICache& cache, OnlineService& online_service)
     : storage_(storage),
       cache_(cache),
-      online_service_(online_service),
-      bot_service_(bot_service) {}
+      online_service_(online_service) {}
 
 Status GroupService::registerHandlers(MessageRouter& router) {
     const auto create_status = router.registerHandler(
@@ -239,7 +236,6 @@ Status GroupService::handleGroupMessage(const MessageRouter::RouterRequest& requ
     // 区分在线成员和离线成员，在线成员直接推送消息，离线成员把消息存到离线消息表里，并在缓存里增加未读计数
     std::vector<Session::Ptr> online_sessions;
     std::vector<std::uint64_t> offline_user_ids;
-    bool online_bot_member = false;
     // 跳过发送者自己
     for (const auto& member : members) {
         if (member.user_id == sender_id) {
@@ -251,14 +247,7 @@ Status GroupService::handleGroupMessage(const MessageRouter::RouterRequest& requ
             online_service_.getSessionByUser(member.user_id, member_session);
         // 在线成员，指针放进 online_sessions，后面保存消息后直接推送
         if (session_status.isOk()) {
-            if (bot_service_ != nullptr && bot_service_->isBotUser(member.user_id)) {
-                online_bot_member = true;
-            }
             online_sessions.push_back(std::move(member_session));
-            continue;
-        }
-        if (bot_service_ != nullptr && bot_service_->isBotUser(member.user_id) &&
-            session_status.code() == ErrorCode::NotFound) {
             continue;
         }
         // 离线成员，user_id 放进 offline_user_ids，后面存离线消息和增加未读计数
@@ -307,14 +296,6 @@ Status GroupService::handleGroupMessage(const MessageRouter::RouterRequest& requ
         const auto send_status = session->sendPacket(push);
         if (!send_status.isOk()) {
             return send_status;
-        }
-    }
-
-    if (!online_bot_member && bot_service_ != nullptr &&
-        bot_service_->shouldHandleGroupMention(saved_message, members)) {
-        const auto bot_status = bot_service_->handleGroupMention(saved_message, members);
-        if (!bot_status.isOk()) {
-            return bot_status;
         }
     }
 

@@ -487,8 +487,6 @@ std::string describePacket(const Packet& packet) {
     appendUint64FieldDescription(fields, TlvType::ErrorCode, "error_code", stream);
     appendStringFieldDescription(fields, TlvType::ErrorMessage, "error", stream);
     appendStringFieldDescription(fields, TlvType::MessageText, "text", stream);
-    appendUint64FieldDescription(fields, TlvType::BotId, "bot_id", stream);
-    appendUint64FieldDescription(fields, TlvType::PersonaId, "persona_id", stream);
 
     return stream.str();
 }

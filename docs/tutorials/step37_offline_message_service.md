@@ -49,7 +49,7 @@ PrivateMessageRequest
 - 不修改 `MessageRouter` 支持多 response。
 - 不实现可靠 ACK 和重试。
 - 不删除 `offline_messages` 历史记录，只标记 delivered。
-- 不实现群聊、历史分页、跨节点路由或 BotGateway。
+- 不实现群聊、历史分页或跨节点路由。
 
 ## 3. 文件变化
 

@@ -3,7 +3,6 @@ pkg_check_modules(OPENSSL REQUIRED IMPORTED_TARGET openssl)
 
 add_library(liteim_service STATIC
     AuthService.cpp
-    BotService.cpp
     ChatService.cpp
     FriendService.cpp
     GroupService.cpp

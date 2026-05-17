@@ -281,7 +281,7 @@ Session::handleRead()
     -> MessageRouter::route(session, packet)
 ```
 
-Router 是 Step 34-41 的业务入口骨架：
+Router 是 Step 34-40 的业务入口骨架：
 
 - Step 34：注册登录 handler。
 - Step 35：好友 handler。
@@ -289,7 +289,6 @@ Router 是 Step 34-41 的业务入口骨架：
 - Step 38：群聊 handler。
 - Step 39：历史消息 handler。
 - Step 40：完整心跳 service handler。
-- Step 41：BotGateway handler。
 
 ### 2. 上下层调用关系
 

@@ -6,7 +6,7 @@
 - 前置依赖：依赖 Step 0-34 已建立的工程、协议或运行时基础。
 - 主要交付：`FriendService 好友业务` 的文件变化、接口契约、运行流程、测试和面试表达。
 - 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
-- 范围控制：本 Step 不实现好友申请审批、黑名单、备注名、删除好友、私聊、群聊、离线消息、历史消息、HeartbeatService 或 BotGateway。
+- 范围控制：本 Step 不实现好友申请审批、黑名单、备注名、删除好友、私聊、群聊、离线消息、历史消息或 HeartbeatService。
 
 ## 1. 为什么需要这个 Step
 
@@ -59,7 +59,7 @@ ListFriendsRequest
 
 ### 本 Step 不做
 
-- 不实现好友申请审批、黑名单、备注名、删除好友、私聊、群聊、离线消息、历史消息、HeartbeatService 或 BotGateway。
+- 不实现好友申请审批、黑名单、备注名、删除好友、私聊、群聊、离线消息、历史消息或 HeartbeatService。
 
 ## 3. 文件变化
 

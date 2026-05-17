@@ -49,7 +49,6 @@ add_executable(liteim_tests
     service/offline_message_service_test.cpp
     service/history_service_test.cpp
     service/heartbeat_service_test.cpp
-    service/bot_service_test.cpp
     service/service_mock_boundary_test.cpp
     client_cli/cli_protocol_test.cpp
     bench/benchmark_test.cpp
@@ -130,7 +129,6 @@ if(Python3_Interpreter_FOUND)
         test_offline
         test_heartbeat
         test_backpressure
-        test_bot
     )
 
     foreach(e2e_test IN LISTS LITEIM_E2E_TESTS)

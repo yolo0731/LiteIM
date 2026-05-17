@@ -3,6 +3,17 @@ USE liteim;
 SET NAMES utf8mb4;
 SET @now_ms = CAST(UNIX_TIMESTAMP(CURRENT_TIMESTAMP(3)) * 1000 AS SIGNED);
 
+DELETE FROM offline_messages
+WHERE user_id = 9001 OR message_id IN (SELECT message_id FROM messages WHERE sender_id = 9001 OR receiver_id = 9001);
+DELETE FROM messages
+WHERE sender_id = 9001 OR receiver_id = 9001 OR conversation_id = 10019001;
+DELETE FROM group_members
+WHERE user_id = 9001;
+DELETE FROM friendships
+WHERE user_id = 9001 OR friend_id = 9001;
+DELETE FROM users
+WHERE user_id = 9001;
+
 INSERT INTO users (
     user_id,
     username,
@@ -13,8 +24,7 @@ INSERT INTO users (
     updated_at_ms
 ) VALUES
     (1001, 'alice', 'dev_hash_alice', 'dev_salt_alice', 'Alice', @now_ms, @now_ms),
-    (1002, 'bob', 'dev_hash_bob', 'dev_salt_bob', 'Bob', @now_ms, @now_ms),
-    (9001, 'mira_bot', 'dev_hash_mira_bot', 'dev_salt_mira_bot', 'Mira Bot', @now_ms, @now_ms)
+    (1002, 'bob', 'dev_hash_bob', 'dev_salt_bob', 'Bob', @now_ms, @now_ms)
 ON DUPLICATE KEY UPDATE
     password_hash = VALUES(password_hash),
     password_salt = VALUES(password_salt),
@@ -23,9 +33,7 @@ ON DUPLICATE KEY UPDATE
 
 INSERT INTO friendships (user_id, friend_id, created_at_ms) VALUES
     (1001, 1002, @now_ms),
-    (1002, 1001, @now_ms),
-    (1001, 9001, @now_ms),
-    (9001, 1001, @now_ms)
+    (1002, 1001, @now_ms)
 ON DUPLICATE KEY UPDATE
     created_at_ms = VALUES(created_at_ms);
 
@@ -44,8 +52,7 @@ ON DUPLICATE KEY UPDATE
 
 INSERT INTO group_members (group_id, user_id, joined_at_ms) VALUES
     (2001, 1001, @now_ms),
-    (2001, 1002, @now_ms),
-    (2001, 9001, @now_ms)
+    (2001, 1002, @now_ms)
 ON DUPLICATE KEY UPDATE
     joined_at_ms = VALUES(joined_at_ms);
 
@@ -59,8 +66,7 @@ INSERT INTO messages (
     created_at_ms
 ) VALUES
     (5001, 1, 10011002, 1001, 1002, 'hello bob', @now_ms),
-    (5002, 2, 2001, 1001, 2001, 'welcome to dev_group', @now_ms),
-    (5003, 1, 10019001, 9001, 1001, 'I am Mira Bot.', @now_ms)
+    (5002, 2, 2001, 1001, 2001, 'welcome to dev_group', @now_ms)
 ON DUPLICATE KEY UPDATE
     conversation_type = VALUES(conversation_type),
     conversation_id = VALUES(conversation_id),
@@ -76,8 +82,7 @@ INSERT INTO offline_messages (
     created_at_ms,
     delivered_at_ms
 ) VALUES
-    (1002, 5001, 0, @now_ms, NULL),
-    (1001, 5003, 0, @now_ms, NULL)
+    (1002, 5001, 0, @now_ms, NULL)
 ON DUPLICATE KEY UPDATE /* 如果主键冲突，更新消息状态 */
     delivered = VALUES(delivered),
     created_at_ms = VALUES(created_at_ms),

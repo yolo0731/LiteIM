@@ -12,11 +12,11 @@ TEST(TlvTypeTest, CoreTypesReturnReadableNames) {
     EXPECT_STREQ(liteim::toString(liteim::TlvType::MessageText), "MESSAGE_TEXT");
     EXPECT_STREQ(liteim::toString(liteim::TlvType::UnreadCount), "UNREAD_COUNT");
     EXPECT_STREQ(liteim::toString(liteim::TlvType::ErrorMessage), "ERROR_MESSAGE");
-    EXPECT_STREQ(liteim::toString(liteim::TlvType::BotId), "BOT_ID");
-    EXPECT_STREQ(liteim::toString(liteim::TlvType::PersonaId), "PERSONA_ID");
 }
 
 TEST(TlvTypeTest, UnknownTypeReturnsUnknown) {
     EXPECT_STREQ(liteim::toString(liteim::TlvType::Unknown), "UNKNOWN");
+    EXPECT_STREQ(liteim::toString(static_cast<liteim::TlvType>(100)), "UNKNOWN");
+    EXPECT_STREQ(liteim::toString(static_cast<liteim::TlvType>(101)), "UNKNOWN");
     EXPECT_STREQ(liteim::toString(static_cast<liteim::TlvType>(65535)), "UNKNOWN");
 }

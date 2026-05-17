@@ -6,7 +6,7 @@
 - 前置依赖：依赖 Step 27 `GroupDao`、Step 31 `IStorage` / `ICache` 适配层、Step 32 `OnlineService`、Step 33 `MessageRouter`、Step 36 私聊投递模式和 Step 37 离线消息拉取能力。
 - 主要交付：新增 `GroupService`、扩展 `IStorage::findGroupById()` / `getGroupsForUser()`、新增 service 测试、server runtime handler 注册和本文档。
 - 线程边界：所有群聊 handler 都通过 business `ThreadPool` 执行，MySQL / Redis 阻塞调用不进入 Reactor I/O 线程。
-- 范围控制：第一版只做基础群聊，不做复杂权限、公告、禁言、已读回执、广播优化、可靠 ACK、跨节点路由或 BotGateway。
+- 范围控制：第一版只做基础群聊，不做复杂权限、公告、禁言、已读回执、广播优化、可靠 ACK 或跨节点路由。
 
 ## 1. 为什么需要这个 Step
 
@@ -45,7 +45,7 @@ GroupMessageRequest
 - 不做群消息已读回执。
 - 不做大群广播优化或消息队列。
 - 不做可靠 ACK / 重试 / client message id 去重。
-- 不做跨节点路由或 BotGateway。
+- 不做跨节点路由。
 
 ## 3. 文件变化
 

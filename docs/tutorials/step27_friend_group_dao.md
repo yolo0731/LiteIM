@@ -372,7 +372,7 @@ validate group_id
 
 ### 5. 该项目代码在实际应用中的具体数据例子
 
-seed 数据里 Alice (`user_id=1001`) 和 Bob (`user_id=1002`) 是好友，`FriendDao::getFriends(1001)` 返回 Bob 的公开资料而不是 password hash。群 `group_id=2001` 的 owner 是 Alice，成员有 `1001`、`1002`、`9001`；`GroupDao::removeGroupMember(2001, 1001)` 会拒绝移除 owner，避免群仍指向 owner_id 但成员表缺失 owner。
+seed 数据里 Alice (`user_id=1001`) 和 Bob (`user_id=1002`) 是好友，`FriendDao::getFriends(1001)` 返回 Bob 的公开资料而不是 password hash。群 `group_id=2001` 的 owner 是 Alice，成员有 `1001`、`1002`；`GroupDao::removeGroupMember(2001, 1001)` 会拒绝移除 owner，避免群仍指向 owner_id 但成员表缺失 owner。
 
 ## 6. 关键实现点
 
