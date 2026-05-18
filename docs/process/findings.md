@@ -8,6 +8,23 @@
 - `LiteIM/docs/process/task_plan.md`、`LiteIM/docs/process/findings.md` 和 `LiteIM/docs/process/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-19 Step 48 Qt Three-Column Main Window Findings
+
+当前采用的边界：
+
+- Step 48 只实现登录后的 Qt 主窗口布局，不实现 Step 49 的真实 `ConversationModel`、联系人列表、群列表、未读数、消息加载或 push 更新。
+- 三栏布局使用 `QSplitter`：`SideBar` 固定窄宽度，`ConversationListWidget` 限制中等宽度，`ChatPage` 使用 stretch 占据剩余空间。
+- `SideBar` 提供 messages / contacts / groups / agent / settings 五个入口；`agent` 只是普通联系人入口占位，不代表 C++ 服务端存在 AI/assistant 身份或特殊协议。
+- `ConversationListWidget` 目前只展示占位列表，目的是给 Step 49 的 model-driven 列表留出稳定挂载点。
+- `ChatPage` 显示当前用户昵称和在线状态，同时保留聊天区和输入框占位；输入框禁用，避免提前实现发消息。
+- 样式统一写在 `client_qt/resources/qss/app.qss`，C++ 代码只负责结构和信号连接。
+
+TDD 记录：
+
+- RED 测试覆盖主窗口三栏对象、左侧五个按钮、顶部用户状态、左侧切换驱动中间区域变化、resize 后列宽仍可用。
+- RED 首次运行 `LiteIMQtClient.Step48` 失败于现有空 `MainWindow` 缺少 `mainSplitter` / `sideBar` / `conversationListWidget` / `chatPage`。
+- GREEN 后 `LiteIMQtClient.Step48` 通过，随后 `LiteIMQtClient.Step46|Step47|Step48` 组合回归通过。
+
 ## 2026-05-18 Step 47 Qt Login and Register Window Findings
 
 当前采用的边界：

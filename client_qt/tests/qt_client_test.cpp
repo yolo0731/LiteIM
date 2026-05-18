@@ -17,10 +17,13 @@
 #include <QByteArray>
 #include <QCoreApplication>
 #include <QElapsedTimer>
+#include <QLabel>
 #include <QLineEdit>
 #include <QHostAddress>
+#include <QListWidget>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QSplitter>
 #include <QSpinBox>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -439,4 +442,101 @@ TEST(QtClientAppTest, LoginSuccessOpensMainWindowAndClosesLoginWindow) {
     ASSERT_NE(opened_window, nullptr);
     EXPECT_TRUE(opened_window->isVisible());
     opened_window->close();
+}
+
+TEST(QtMainWindowTest, StartsWithThreeColumnChatLayout) {
+    liteim::client::MainWindow window;
+    window.resize(1200, 760);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* splitter = window.findChild<QSplitter*>("mainSplitter");
+    auto* side_bar = window.findChild<QWidget*>("sideBar");
+    auto* middle = window.findChild<QWidget*>("conversationListWidget");
+    auto* chat_page = window.findChild<QWidget*>("chatPage");
+    ASSERT_NE(splitter, nullptr);
+    ASSERT_NE(side_bar, nullptr);
+    ASSERT_NE(middle, nullptr);
+    ASSERT_NE(chat_page, nullptr);
+
+    EXPECT_NE(window.findChild<QPushButton*>("navMessagesButton"), nullptr);
+    EXPECT_NE(window.findChild<QPushButton*>("navContactsButton"), nullptr);
+    EXPECT_NE(window.findChild<QPushButton*>("navGroupsButton"), nullptr);
+    EXPECT_NE(window.findChild<QPushButton*>("navAgentButton"), nullptr);
+    EXPECT_NE(window.findChild<QPushButton*>("navSettingsButton"), nullptr);
+
+    auto* nickname = window.findChild<QLabel*>("currentUserNicknameLabel");
+    auto* online_status = window.findChild<QLabel*>("onlineStatusLabel");
+    ASSERT_NE(nickname, nullptr);
+    ASSERT_NE(online_status, nullptr);
+    EXPECT_FALSE(nickname->text().isEmpty());
+    EXPECT_TRUE(online_status->text().contains(QStringLiteral("Online")));
+
+    EXPECT_GE(side_bar->width(), 60);
+    EXPECT_LE(side_bar->width(), 96);
+    EXPECT_GE(middle->width(), 260);
+    EXPECT_LE(middle->width(), 380);
+    EXPECT_GT(chat_page->width(), middle->width());
+}
+
+TEST(QtMainWindowTest, SidebarButtonsSwitchMiddleArea) {
+    liteim::client::MainWindow window;
+    window.resize(1200, 760);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* title = window.findChild<QLabel*>("conversationSectionTitle");
+    auto* list = window.findChild<QListWidget*>("conversationListItems");
+    auto* contacts = window.findChild<QPushButton*>("navContactsButton");
+    auto* groups = window.findChild<QPushButton*>("navGroupsButton");
+    auto* agent = window.findChild<QPushButton*>("navAgentButton");
+    ASSERT_NE(title, nullptr);
+    ASSERT_NE(list, nullptr);
+    ASSERT_NE(contacts, nullptr);
+    ASSERT_NE(groups, nullptr);
+    ASSERT_NE(agent, nullptr);
+
+    EXPECT_EQ(title->text(), QStringLiteral("Messages"));
+    EXPECT_GT(list->count(), 0);
+
+    contacts->click();
+    QCoreApplication::processEvents();
+    EXPECT_EQ(title->text(), QStringLiteral("Contacts"));
+    ASSERT_GT(list->count(), 0);
+    EXPECT_TRUE(list->item(0)->text().contains(QStringLiteral("Contacts")));
+
+    groups->click();
+    QCoreApplication::processEvents();
+    EXPECT_EQ(title->text(), QStringLiteral("Groups"));
+    ASSERT_GT(list->count(), 0);
+    EXPECT_TRUE(list->item(0)->text().contains(QStringLiteral("Groups")));
+
+    agent->click();
+    QCoreApplication::processEvents();
+    EXPECT_EQ(title->text(), QStringLiteral("Agent"));
+    ASSERT_GT(list->count(), 0);
+    EXPECT_TRUE(list->item(0)->text().contains(QStringLiteral("Agent")));
+}
+
+TEST(QtMainWindowTest, ResizeKeepsColumnsUsable) {
+    liteim::client::MainWindow window;
+    window.resize(900, 600);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* side_bar = window.findChild<QWidget*>("sideBar");
+    auto* middle = window.findChild<QWidget*>("conversationListWidget");
+    auto* chat_page = window.findChild<QWidget*>("chatPage");
+    ASSERT_NE(side_bar, nullptr);
+    ASSERT_NE(middle, nullptr);
+    ASSERT_NE(chat_page, nullptr);
+
+    window.resize(1320, 780);
+    QCoreApplication::processEvents();
+
+    EXPECT_GE(side_bar->width(), 60);
+    EXPECT_LE(side_bar->width(), 96);
+    EXPECT_GE(middle->width(), 260);
+    EXPECT_GE(chat_page->width(), 500);
+    EXPECT_GE(chat_page->height(), 520);
 }

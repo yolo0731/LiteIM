@@ -8,20 +8,26 @@ set(CMAKE_AUTORCC ON)
 
 add_library(liteim_qt_client_core STATIC
     include/liteim_client/AuthController.hpp
+    include/liteim_client/ChatPage.hpp
     include/liteim_client/ClientApp.hpp
     include/liteim_client/ClientSession.hpp
+    include/liteim_client/ConversationListWidget.hpp
     include/liteim_client/LoginWindow.hpp
     include/liteim_client/MainWindow.hpp
     include/liteim_client/PacketCodec.hpp
     include/liteim_client/RegisterDialog.hpp
+    include/liteim_client/SideBar.hpp
     include/liteim_client/TcpClient.hpp
     src/AuthController.cpp
+    src/ChatPage.cpp
     src/ClientApp.cpp
     src/ClientSession.cpp
+    src/ConversationListWidget.cpp
     src/LoginWindow.cpp
     src/MainWindow.cpp
     src/PacketCodec.cpp
     src/RegisterDialog.cpp
+    src/SideBar.cpp
     src/TcpClient.cpp
 )
 
@@ -100,6 +106,13 @@ add_test(
 )
 set_tests_properties(LiteIMQtClient.Step47 PROPERTIES LABELS unit)
 
+add_test(
+    NAME LiteIMQtClient.Step48
+    COMMAND liteim_qt_client_tests
+        --gtest_filter=QtMainWindowTest.*
+)
+set_tests_properties(LiteIMQtClient.Step48 PROPERTIES LABELS unit)
+
 get_target_property(LITEIM_QT_CORE_LIBRARY Qt${QT_VERSION_MAJOR}::Core IMPORTED_LOCATION_RELEASE)
 if(NOT LITEIM_QT_CORE_LIBRARY)
     get_target_property(LITEIM_QT_CORE_LIBRARY Qt${QT_VERSION_MAJOR}::Core IMPORTED_LOCATION)
@@ -116,6 +129,10 @@ set_tests_properties(LiteIMQtClient.Step46
         ENVIRONMENT "LD_LIBRARY_PATH=${LITEIM_QT_TEST_LD_LIBRARY_PATH}:$ENV{LD_LIBRARY_PATH};QT_QPA_PLATFORM=offscreen"
 )
 set_tests_properties(LiteIMQtClient.Step47
+    PROPERTIES
+        ENVIRONMENT "LD_LIBRARY_PATH=${LITEIM_QT_TEST_LD_LIBRARY_PATH}:$ENV{LD_LIBRARY_PATH};QT_QPA_PLATFORM=offscreen"
+)
+set_tests_properties(LiteIMQtClient.Step48
     PROPERTIES
         ENVIRONMENT "LD_LIBRARY_PATH=${LITEIM_QT_TEST_LD_LIBRARY_PATH}:$ENV{LD_LIBRARY_PATH};QT_QPA_PLATFORM=offscreen"
 )

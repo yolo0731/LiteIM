@@ -1,5 +1,47 @@
 # LiteIM Progress
 
+## 2026-05-19 Step 48 Qt Three-Column Main Window
+
+本次进入 `Step 48：实现 Qt 常见 IM 三栏主窗口`。
+
+恢复路线：
+
+- `PROJECT_MEMORY.md` 定义 Step 48 范围为 Qt 主界面布局：`MainWindow`、左侧 `SideBar`、中间 `ConversationListWidget`、右侧 `ChatPage`、消息/联系人/群组/普通 Agent 联系人入口/设置按钮、顶部当前用户昵称和在线状态、resize 后自适应。
+- 本 Step 不实现 Step 49 的真实会话模型、联系人模型、群组模型、未读红点、消息加载、push 更新、心跳重连或 PersonaAgent 行为。
+- Agent 入口只是普通联系人入口占位，LiteIM C++ 服务端仍不识别 AI 身份。
+
+TDD RED：
+
+- 新增 `QtMainWindowTest`，覆盖三栏对象名、左侧五个按钮、当前用户昵称/在线状态、中间区域切换、resize 后布局可用。
+- 首次运行 `ctest --test-dir build-qt -R LiteIMQtClient.Step48 --output-on-failure` 按预期失败：现有空 `MainWindow` 没有 `mainSplitter`、`sideBar`、`conversationListWidget`、`chatPage`。
+
+GREEN 实现：
+
+- 新增 `SideBar`，固定窄宽度，提供 messages / contacts / groups / agent / settings 五个入口和选中状态。
+- 新增 `ConversationListWidget`，中间区域根据左侧 section 切换标题和占位列表。
+- 新增 `ChatPage`，右侧展示当前用户昵称、在线状态、聊天区占位和禁用输入框。
+- 重写 `MainWindow`，使用 `QSplitter` 组合三栏，左栏固定，中栏限制宽度，右栏自适应。
+- 更新 `app.qss`，集中维护三栏、导航按钮、列表、状态和占位聊天区样式。
+- `client_qt/CMakeLists.txt` 注册新 Qt 源文件和 `LiteIMQtClient.Step48`。
+- `README.md` 和 `docs/tutorials/step48_qt_three_column_main_window.md` 已同步 Step 48 边界、运行流程、测试设计和面试表达。
+
+当前验证：
+
+- `cmake -S . -B build-qt -DLITEIM_BUILD_QT_CLIENT=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`：通过。
+- `cmake --build build-qt --target liteim_qt_client_tests -j2`：通过。
+- `ctest --test-dir build-qt -R LiteIMQtClient.Step48 --output-on-failure`：1/1 通过。
+- `ctest --test-dir build-qt -R "LiteIMQtClient.Step46|LiteIMQtClient.Step47|LiteIMQtClient.Step48" --output-on-failure`：3/3 通过。
+- `cmake --build build-qt --target liteim_qt_client -j2`：通过。
+- `LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/home/yolo/anaconda3/lib QT_QPA_PLATFORM=offscreen timeout 2s ./build-qt/client_qt/liteim_qt_client || test $? -eq 124`：通过，Qt 客户端进入事件循环后被 timeout 终止。
+- `cmake -S . -B build`：通过，默认构建不查找 Qt。
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -L unit --output-on-failure`：311/311 通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：MySQL / Redis healthy。
+- `ctest --test-dir build --output-on-failure`：381/381 通过。
+- `git diff --check`：通过。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" README.md docs/tutorials/step48_qt_three_column_main_window.md`：无输出。
+- `rg -n "^## " docs/tutorials/step48_qt_three_column_main_window.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
+
 ## 2026-05-18 Step 47 Qt Login and Register Window
 
 本次进入 `Step 47：实现 Qt 登录和注册窗口`。

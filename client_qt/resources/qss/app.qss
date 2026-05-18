@@ -7,3 +7,95 @@ QWidget {
     font-size: 14px;
     color: #17201a;
 }
+
+QWidget#mainWindowRoot {
+    background: #f5f0e8;
+}
+
+QWidget#sideBar {
+    background: #1c2a22;
+}
+
+QWidget#conversationListWidget {
+    background: #fff8ed;
+    border-right: 1px solid #dfd3c4;
+}
+
+QWidget#chatPage {
+    background: #faf7ef;
+}
+
+QLabel#conversationSectionTitle,
+QLabel#chatTitleLabel {
+    font-size: 20px;
+    font-weight: 700;
+    color: #17201a;
+}
+
+QLabel#currentUserNicknameLabel {
+    color: #2f3d34;
+    font-weight: 600;
+}
+
+QLabel#onlineStatusLabel {
+    color: #28784f;
+    font-weight: 600;
+}
+
+QPushButton#navMessagesButton,
+QPushButton#navContactsButton,
+QPushButton#navGroupsButton,
+QPushButton#navAgentButton,
+QPushButton#navSettingsButton {
+    color: #d9e7dc;
+    background: transparent;
+    border: 0;
+    border-radius: 12px;
+    padding: 8px 4px;
+}
+
+QPushButton#navMessagesButton:checked,
+QPushButton#navContactsButton:checked,
+QPushButton#navGroupsButton:checked,
+QPushButton#navAgentButton:checked,
+QPushButton#navSettingsButton:checked {
+    color: #17201a;
+    background: #f0c46a;
+}
+
+QLineEdit#conversationSearchEdit {
+    background: #f1e7d7;
+    border: 1px solid #deccb6;
+    border-radius: 12px;
+    padding: 8px 12px;
+}
+
+QListWidget#conversationListItems {
+    background: transparent;
+    border: 0;
+    outline: 0;
+}
+
+QListWidget#conversationListItems::item {
+    border-radius: 12px;
+    padding: 12px;
+    margin: 4px 0;
+}
+
+QListWidget#conversationListItems::item:selected {
+    background: #ead8bd;
+}
+
+QLabel#chatMessageAreaPlaceholder {
+    color: #8b7c6b;
+    background: #fffaf1;
+    border: 1px dashed #d7c7b0;
+    border-radius: 18px;
+}
+
+QTextEdit#chatInputEdit {
+    background: #fffaf1;
+    border: 1px solid #d7c7b0;
+    border-radius: 14px;
+    padding: 10px;
+}
