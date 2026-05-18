@@ -1,6 +1,7 @@
 build/
 build-asan/
 build-asan-plan/
+build-qt/
 cmake-build-*/
 .codex
 __pycache__/

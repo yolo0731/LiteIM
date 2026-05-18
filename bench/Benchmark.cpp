@@ -2,8 +2,8 @@
 
 #include "ClientCli.hpp"
 #include "liteim/base/ErrorCode.hpp"
-#include "liteim/protocol/MessageType.hpp"
 #include "liteim/protocol/MessageLimits.hpp"
+#include "liteim/protocol/MessageType.hpp"
 #include "liteim/protocol/Packet.hpp"
 #include "liteim/protocol/TlvCodec.hpp"
 
@@ -54,10 +54,7 @@ Status parseUnsigned(const std::string& value, const char* field, std::uint64_t&
     return Status::ok();
 }
 
-Status requireValue(int argc,
-                    const char* const argv[],
-                    int& index,
-                    const char* option,
+Status requireValue(int argc, const char* const argv[], int& index, const char* option,
                     std::string& value) {
     if (index + 1 >= argc) {
         return invalidOption(std::string(option) + " requires a value");
@@ -129,19 +126,15 @@ std::string makeRunId() {
     return stream.str();
 }
 
-std::string makeUsername(const BenchmarkOptions& options,
-                         const std::string& run_id,
-                         const char* role,
-                         std::uint32_t index) {
+std::string makeUsername(const BenchmarkOptions& options, const std::string& run_id,
+                         const char* role, std::uint32_t index) {
     std::ostringstream stream;
     stream << options.username_prefix << '_' << role << '_' << index << '_' << run_id;
     return stream.str();
 }
 
-Status makeRegisterPacket(const std::string& username,
-                          const std::string& password,
-                          std::uint64_t seq_id,
-                          Packet& packet) {
+Status makeRegisterPacket(const std::string& username, const std::string& password,
+                          std::uint64_t seq_id, Packet& packet) {
     packet = Packet{};
     packet.header.msg_type = MessageType::RegisterRequest;
     packet.header.seq_id = seq_id;
@@ -157,10 +150,8 @@ Status makeRegisterPacket(const std::string& username,
     return appendString(TlvType::Nickname, username, packet.body);
 }
 
-Status makeLoginPacket(const std::string& username,
-                       const std::string& password,
-                       std::uint64_t seq_id,
-                       Packet& packet) {
+Status makeLoginPacket(const std::string& username, const std::string& password,
+                       std::uint64_t seq_id, Packet& packet) {
     packet = Packet{};
     packet.header.msg_type = MessageType::LoginRequest;
     packet.header.seq_id = seq_id;
@@ -172,10 +163,8 @@ Status makeLoginPacket(const std::string& username,
     return appendString(TlvType::Password, password, packet.body);
 }
 
-Status makePrivatePacket(std::uint64_t receiver_id,
-                         const std::string& payload,
-                         std::uint64_t seq_id,
-                         Packet& packet) {
+Status makePrivatePacket(std::uint64_t receiver_id, const std::string& payload,
+                         std::uint64_t seq_id, Packet& packet) {
     packet = Packet{};
     packet.header.msg_type = MessageType::PrivateMessageRequest;
     packet.header.seq_id = seq_id;
@@ -187,9 +176,7 @@ Status makePrivatePacket(std::uint64_t receiver_id,
     return appendString(TlvType::MessageText, payload, packet.body);
 }
 
-Status waitForResponse(cli::ProtocolClient& client,
-                       std::uint64_t seq_id,
-                       MessageType expected_type,
+Status waitForResponse(cli::ProtocolClient& client, std::uint64_t seq_id, MessageType expected_type,
                        Packet& response) {
     for (;;) {
         Packet packet;
@@ -213,9 +200,7 @@ Status waitForResponse(cli::ProtocolClient& client,
     }
 }
 
-Status request(cli::ProtocolClient& client,
-               const Packet& packet,
-               MessageType expected_type,
+Status request(cli::ProtocolClient& client, const Packet& packet, MessageType expected_type,
                Packet& response) {
     auto status = client.sendPacket(packet);
     if (!status.isOk()) {
@@ -233,10 +218,8 @@ Status extractUserId(const Packet& packet, std::uint64_t& user_id) {
     return getUint64(fields, TlvType::UserId, user_id);
 }
 
-Status registerAndLogin(cli::ProtocolClient& client,
-                        const BenchmarkOptions& options,
-                        const std::string& username,
-                        std::uint64_t& next_seq,
+Status registerAndLogin(cli::ProtocolClient& client, const BenchmarkOptions& options,
+                        const std::string& username, std::uint64_t& next_seq,
                         std::uint64_t& user_id) {
     Packet packet;
     auto status = makeRegisterPacket(username, options.password, next_seq++, packet);
@@ -261,9 +244,11 @@ Status registerAndLogin(cli::ProtocolClient& client,
     return request(client, packet, MessageType::LoginResponse, response);
 }
 
+// 采样当前进程的 CPU 和内存使用情况，基于 Linux 的 /proc/self/stat 和 /proc/self/status 实现
 ResourceSample sampleProcessResources() {
     ResourceSample sample;
 
+    // 读取 VmRSS 行获取内存使用量，单位 KB
     std::ifstream status_file("/proc/self/status");
     std::string line;
     while (std::getline(status_file, line)) {
@@ -274,6 +259,7 @@ ResourceSample sampleProcessResources() {
         }
     }
 
+    // 读取 utime 和 stime 字段获取 CPU 时间
     std::ifstream stat_file("/proc/self/stat");
     std::string stat_line;
     if (std::getline(stat_file, stat_line)) {
@@ -301,6 +287,7 @@ ResourceSample sampleProcessResources() {
 
 }  // namespace
 
+// 解析命令行参数
 Status parseBenchmarkOptions(int argc, const char* const argv[], BenchmarkOptions& options) {
     options = BenchmarkOptions{};
 
@@ -382,6 +369,7 @@ Status parseBenchmarkOptions(int argc, const char* const argv[], BenchmarkOption
     return validateOptions(options);
 }
 
+// 统计延迟
 LatencySummary summarizeLatencies(std::vector<std::chrono::microseconds> latencies) {
     LatencySummary summary;
     summary.count = static_cast<std::uint64_t>(latencies.size());
@@ -397,8 +385,8 @@ LatencySummary summarizeLatencies(std::vector<std::chrono::microseconds> latenci
     summary.average_us = static_cast<double>(total) / static_cast<double>(latencies.size());
 
     const auto percentile = [&latencies](double quantile) {
-        const auto rank = static_cast<std::size_t>(
-            std::ceil(quantile * static_cast<double>(latencies.size())));
+        const auto rank =
+            static_cast<std::size_t>(std::ceil(quantile * static_cast<double>(latencies.size())));
         const auto index = std::max<std::size_t>(1, rank) - 1U;
         return static_cast<std::uint64_t>(
             latencies[std::min(index, latencies.size() - 1U)].count());
@@ -410,6 +398,7 @@ LatencySummary summarizeLatencies(std::vector<std::chrono::microseconds> latenci
     return summary;
 }
 
+// 生成指定大小的消息内容
 std::string makePayload(std::size_t size) {
     static constexpr const char* kSeed = "liteim-load-";
     std::string payload;
@@ -420,6 +409,7 @@ std::string makePayload(std::size_t size) {
     return payload;
 }
 
+// 生成压测报告
 std::string renderReport(const BenchmarkResult& result, ReportFormat format) {
     std::ostringstream stream;
     stream << std::setprecision(6);
@@ -486,20 +476,22 @@ The benchmark uses one receiver connection and connections-1 sender connections.
 All clients register unique users, log in, and send ordinary PrivateMessageRequest packets.)";
 }
 
+// 执行压测并返回结果
 Status runBenchmark(const BenchmarkOptions& options, BenchmarkResult& result) {
     auto status = validateOptions(options);
     if (!status.isOk()) {
         return status;
     }
-
+    // 初始化结果
     result = BenchmarkResult{};
     result.options = options;
     result.connection_attempts = options.connections;
-
+    // 生成运行 ID，用于构造唯一用户名
     const auto run_id = makeRunId();
     const auto payload = makePayload(options.message_size);
     std::uint64_t next_setup_seq = 1;
 
+    // 建立一个接收连接，负责接收所有发件人的消息，确保消息能够正确送达并计算延迟
     cli::ProtocolClient receiver;
     status = receiver.connectTo(options.host, options.port);
     if (!status.isOk()) {
@@ -516,6 +508,7 @@ Status runBenchmark(const BenchmarkOptions& options, BenchmarkResult& result) {
     }
     ++result.connection_success;
 
+    // 启动 receiver_thread 不断读取消息直到压测结束，避免服务器端发送的消息导致发送线程阻塞无法继续压测
     std::atomic<bool> drain_receiver{true};
     std::thread receiver_thread([&receiver, &drain_receiver]() {
         while (drain_receiver.load()) {
@@ -527,6 +520,7 @@ Status runBenchmark(const BenchmarkOptions& options, BenchmarkResult& result) {
         }
     });
 
+    // 多个用户同时给同一个用户发私聊消息
     std::vector<std::unique_ptr<cli::ProtocolClient>> senders;
     senders.reserve(options.connections - 1U);
     for (std::uint32_t index = 1; index < options.connections; ++index) {
@@ -584,7 +578,8 @@ Status runBenchmark(const BenchmarkOptions& options, BenchmarkResult& result) {
 
                 Packet response;
                 const auto request_start = std::chrono::steady_clock::now();
-                local_status = request(*client, packet, MessageType::PrivateMessageResponse, response);
+                local_status =
+                    request(*client, packet, MessageType::PrivateMessageResponse, response);
                 const auto request_end = std::chrono::steady_clock::now();
                 if (!local_status.isOk()) {
                     ++request_errors;
@@ -592,9 +587,8 @@ Status runBenchmark(const BenchmarkOptions& options, BenchmarkResult& result) {
                 }
 
                 ++request_success;
-                local_latencies.push_back(
-                    std::chrono::duration_cast<std::chrono::microseconds>(request_end -
-                                                                          request_start));
+                local_latencies.push_back(std::chrono::duration_cast<std::chrono::microseconds>(
+                    request_end - request_start));
                 if (options.send_interval_ms > 0) {
                     std::this_thread::sleep_for(
                         std::chrono::milliseconds(options.send_interval_ms));
@@ -623,12 +617,12 @@ Status runBenchmark(const BenchmarkOptions& options, BenchmarkResult& result) {
         receiver_thread.join();
     }
 
+    // 统计结果
     result.request_success = request_success.load();
     result.error_count += request_errors.load();
     result.elapsed_ms = static_cast<std::uint64_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
-    const auto elapsed_seconds =
-        std::max(0.001, static_cast<double>(result.elapsed_ms) / 1000.0);
+    const auto elapsed_seconds = std::max(0.001, static_cast<double>(result.elapsed_ms) / 1000.0);
     result.qps = static_cast<double>(result.request_success) / elapsed_seconds;
     result.latency = summarizeLatencies(std::move(latencies));
     result.memory_kb = resource_end.memory_kb;
