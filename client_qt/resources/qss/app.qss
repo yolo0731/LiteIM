@@ -1,0 +1,9 @@
+QMainWindow {
+    background: #f5f0e8;
+}
+
+QWidget {
+    font-family: "Noto Sans", "Microsoft YaHei", sans-serif;
+    font-size: 14px;
+    color: #17201a;
+}

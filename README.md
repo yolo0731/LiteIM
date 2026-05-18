@@ -103,6 +103,15 @@ cmake -S . -B build
 cmake --build build
 ```
 
+Build the optional Qt Widgets client only when Qt development packages are available:
+
+```bash
+cmake -S . -B build-qt -DLITEIM_BUILD_QT_CLIENT=ON
+cmake --build build-qt --target liteim_qt_client
+```
+
+The default build keeps `LITEIM_BUILD_QT_CLIENT=OFF`, so server, CLI, benchmark, and tests do not require Qt.
+
 Run the server executable:
 
 ```bash
@@ -354,6 +363,10 @@ LiteIM/
 │   └── timer/
 ├── server/
 ├── client_cli/
+├── client_qt/
+│   ├── include/liteim_client/
+│   ├── src/
+│   └── resources/
 ├── bench/
 ├── scripts/
 │   ├── init_mysql.sql
@@ -380,7 +393,8 @@ Directory conventions:
 
 - Public headers live under `include/liteim/<module>/`.
 - Library implementations live under `src/<module>/`.
-- Executable entry points live under `server/`, `client_cli/`, and `bench/`; future GUI clients belong in `client_qt/`.
+- Executable entry points live under `server/`, `client_cli/`, `client_qt/`, and `bench/`.
+- `client_qt/` is optional and only builds when `LITEIM_BUILD_QT_CLIENT=ON`; its resources must not use third-party IM product branding.
 - `.github/workflows/` contains repository CI automation.
 - `docs/tutorials/` contains per-step teaching notes.
 - `docs/process/` contains active planning, findings, and progress memory.

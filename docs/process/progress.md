@@ -1,5 +1,49 @@
 # LiteIM Progress
 
+## 2026-05-18 Step 45 Qt Client Foundation
+
+本次进入 `Step 45：Qt 客户端基础工程和资源规范`。
+
+恢复路线：
+
+- 当前 `PROJECT_MEMORY.md` 明确 Step 45 是 Qt Widgets 客户端基础工程，不是旧路线中的测试硬化。
+- Step 45 范围：`LITEIM_BUILD_QT_CLIENT` 可选构建、`client_qt/include/liteim_client/`、`client_qt/src/`、`resources/qss/app.qss`、图标资源规范文档和空窗口。
+- 不做 Step 46 以后的 Qt 协议、`QTcpSocket`、登录注册、三栏主窗口、消息气泡或心跳。
+
+环境发现：
+
+- `cmake --find-package` 未找到 Qt6 或 Qt5 Widgets。
+- 后续使用 `-DLITEIM_BUILD_QT_CLIENT=ON` 实际配置发现 Anaconda 提供 Qt5 Widgets：`/home/yolo/anaconda3/lib/cmake/Qt5Widgets`，因此不需要安装系统包即可验证 Qt target。
+
+TDD RED：
+
+- 新增 `tests/cmake/qt_client_foundation_test.sh`，注册 CTest `LiteIMCMake.QtClientFoundation`。
+- 重新配置后运行 `ctest --test-dir build -R LiteIMCMake.QtClientFoundation --output-on-failure`，按预期失败：`missing LITEIM_BUILD_QT_CLIENT option`。
+
+GREEN 实现：
+
+- 根 `CMakeLists.txt` 增加 `LITEIM_BUILD_QT_CLIENT`，默认 `OFF`，开启后才 `add_subdirectory(client_qt)`。
+- 新增 `client_qt/CMakeLists.txt`，查找 Qt Widgets，构建 `liteim_qt_client`。
+- 新增 `MainWindow.hpp/.cpp` 和 Qt `main.cpp`，启动空 `QMainWindow` 并加载 `:/qss/app.qss`。
+- 新增 `resources/liteim_client.qrc`、`resources/qss/app.qss` 和 `resources/icons/README.md`，明确禁止使用第三方 IM 产品品牌资源。
+- 修正 `qt_client_foundation_test.sh`，允许 README 说明禁用品牌，但禁止实际资源文件和文件名包含 WeChat/Weixin 品牌。
+
+当前验证：
+
+- `cmake -S . -B build`：通过，默认构建不查找 Qt。
+- `ctest --test-dir build -R LiteIMCMake.QtClientFoundation --output-on-failure`：通过。
+- `cmake --build build --target liteim_server liteim_tests -j2`：通过。
+- `ctest --test-dir build -R "LiteIMCMake.QtClientFoundation|ConfigTest" --output-on-failure`：12/12 通过。
+- `cmake -S . -B /tmp/liteim-qt-check -DLITEIM_BUILD_QT_CLIENT=ON`：通过。
+- `cmake --build /tmp/liteim-qt-check --target liteim_qt_client -j2`：通过。
+- `QT_QPA_PLATFORM=offscreen timeout 2s /tmp/liteim-qt-check/client_qt/liteim_qt_client || test $? -eq 124`：通过，空窗口进入事件循环。
+- `cmake --build build -j2`：通过。
+- `ctest --test-dir build -L unit --output-on-failure`：311/311 通过。
+- `bash -lc 'timeout 2s ./build/server/liteim_server --config <(printf "%s\n" "server.port = 19001" "server.io_threads = 4" "server.business_threads = 4") || test $? -eq 124'`：通过，server 收到 SIGTERM 并关闭。
+- `git diff --check`：通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：MySQL / Redis healthy。
+- `ctest --test-dir build --output-on-failure`：381/381 通过。
+
 ## 2026-05-17 Python BotClient Wording Review
 
 用户指出 Step 41 教程里“Qt Client、Python BotClient 和 CLI 共享同一套服务端协议”会让人误以为当前已经实现 Python BotClient。

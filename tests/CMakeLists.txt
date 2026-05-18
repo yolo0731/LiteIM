@@ -120,6 +120,12 @@ add_test(
 set_tests_properties(LiteIMServerSignalTest.TerminatesOnSigterm PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(LiteIMServerSignalTest.TerminatesOnSigterm PROPERTIES LABELS "integration;mysql;redis;docker")
 
+add_test(
+    NAME LiteIMCMake.QtClientFoundation
+    COMMAND /bin/bash ${CMAKE_CURRENT_SOURCE_DIR}/cmake/qt_client_foundation_test.sh ${PROJECT_SOURCE_DIR}
+)
+set_tests_properties(LiteIMCMake.QtClientFoundation PROPERTIES LABELS unit)
+
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
     set(LITEIM_E2E_TESTS

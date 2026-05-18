@@ -8,6 +8,21 @@
 - `LiteIM/docs/process/task_plan.md`、`LiteIM/docs/process/findings.md` 和 `LiteIM/docs/process/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-18 Step 45 Qt Client Foundation Findings
+
+当前采用的边界：
+
+- 以 `/home/yolo/jianli/PROJECT_MEMORY.md` 为准，当前 Step 45 是 `Qt 客户端基础工程和资源规范`；旧 memory 中 Step 45=测试硬化的记录已经被后续路线重排覆盖。
+- 本 Step 只创建可选 Qt Widgets 工程骨架、空窗口、QSS 和图标资源规范；不实现 `PacketCodec`、`QTcpSocket`、登录注册、三栏主窗口、消息气泡、心跳或 PersonaAgent 功能。
+- 默认 CMake 构建必须不受 Qt 影响；只有 `-DLITEIM_BUILD_QT_CLIENT=ON` 才进入 `client_qt`。
+- Qt 资源不得使用 WeChat / Weixin / 微信品牌、图标、名称或素材。
+- 当前本机 `cmake --find-package Qt6/Qt5` 的快速探测没有找到系统 Qt，但实际 `-DLITEIM_BUILD_QT_CLIENT=ON` 配置能通过 Anaconda Qt5 CMake package，`Qt5Widgets_DIR=/home/yolo/anaconda3/lib/cmake/Qt5Widgets`；因此本 Step 可完成 Qt-enabled compile 验证，不需要安装系统包。
+
+TDD 记录：
+
+- 已新增 `LiteIMCMake.QtClientFoundation` CTest 元数据测试，首次重新配置后运行失败于 `missing LITEIM_BUILD_QT_CLIENT option`，这是 Step 45 RED。
+- 实现后 `LiteIMCMake.QtClientFoundation` 通过；`cmake --build /tmp/liteim-qt-check --target liteim_qt_client -j2` 通过；`QT_QPA_PLATFORM=offscreen timeout 2s /tmp/liteim-qt-check/client_qt/liteim_qt_client || test $? -eq 124` 通过。
+
 ## 2026-05-17 Markdown Drift Sync Findings
 
 本次用户要求同步所有 Markdown，避免旧路线漂移。扫描范围是 `/home/yolo/jianli` 下 54 个 Markdown 文件，排除 LiteIM build 输出。
