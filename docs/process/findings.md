@@ -8,6 +8,23 @@
 - `LiteIM/docs/process/task_plan.md`、`LiteIM/docs/process/findings.md` 和 `LiteIM/docs/process/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-18 Step 46 Qt PacketCodec and TcpClient Findings
+
+当前采用的边界：
+
+- Step 46 只实现 Qt 客户端协议/网络基础，不实现登录注册 UI、三栏聊天界面、消息气泡、心跳重连或 PersonaAgent。
+- Qt 客户端不复用服务端 `Session`；服务端 `Session` 属于 epoll Reactor，Qt 端使用 `QTcpSocket` 和信号槽。
+- `PacketCodec` 不重新实现 wire format，而是复用 `liteim_protocol` 的 `Packet`、`TlvCodec`、`FrameDecoder`，只做 `QByteArray` / `QString` 适配。
+- `TcpClient` 是 QObject，公开 `connected`、`disconnected`、`packetReceived`、`errorOccurred` 信号；`packetReceived` 使用值传递的 `liteim::Packet` 并注册 Qt metatype，便于 `QSignalSpy` 和后续 UI 连接。
+- `ClientSession` 是 Qt 客户端本地状态，不访问 MySQL / Redis，不和服务端在线状态混用；它只管理 seq_id、pending request、user_id、token 和 session_id。
+- 当前本机 Qt 来自 Anaconda Qt5。Qt test 二进制会通过 Anaconda Qt 引入旧 `libstdc++.so.6`，因此 `LiteIMQtClient.Step46` 的 CTest 环境把 `/usr/lib/x86_64-linux-gnu` 放在 Anaconda Qt lib 前，避免缺少 `GLIBCXX_3.4.32` 的假失败。
+
+TDD 记录：
+
+- RED 测试覆盖 Qt 编码后服务端可解析、服务端编码后 Qt 可解码、半包/粘包、pending/login 状态、连接失败 error 信号、发送 Packet 和 packetReceived 信号。
+- 重新配置 Qt build 后，RED 按预期失败于缺少 `liteim_client/ClientSession.hpp`。
+- GREEN 后 `ctest --test-dir build-qt -R LiteIMQtClient.Step46 --output-on-failure` 通过。
+
 ## 2026-05-18 Step 45 Qt Client Foundation Findings
 
 当前采用的边界：

@@ -1,5 +1,46 @@
 # LiteIM Progress
 
+## 2026-05-18 Step 46 Qt PacketCodec and TcpClient
+
+本次进入 `Step 46：实现 Qt PacketCodec 和 TcpClient`。
+
+恢复路线：
+
+- `PROJECT_MEMORY.md` 定义 Step 46 范围为 Qt 端协议和网络基础：PacketCodec、客户端 FrameDecoder、QTcpSocket TcpClient、连接/断开/收包/错误信号，以及 ClientSession 管理 seq_id、pending request 和登录态。
+- 本 Step 不实现登录/注册窗口、三栏聊天界面、消息气泡、心跳重连或 PersonaAgent。
+- 当前 `client_qt` 已存在未提交中文注释差异；这些不改变行为，后续实现保留并增量修改，不回滚用户已有改动。
+
+TDD RED：
+
+- 新增 Qt 侧 `liteim_qt_client_tests`，覆盖 PacketCodec wire format、半包/粘包、ClientSession、TcpClient 连接失败、发送 Packet 和 packetReceived 信号。
+- 首次直接构建 `liteim_qt_client_tests` 失败于旧 `build-qt` 尚未重新配置，目标不存在；重新配置后按预期失败于缺少 `liteim_client/ClientSession.hpp`。
+
+GREEN 实现：
+
+- `client_qt/CMakeLists.txt` 增加 `liteim_qt_client_core`，开启 `CMAKE_AUTOMOC`，链接 Qt Widgets / Network，并注册 `LiteIMQtClient.Step46`。
+- 新增 `PacketCodec`，把 Qt `QByteArray` / `QString` 适配到现有 `liteim_protocol`，复用 `encodePacket()`、`TlvCodec` 和 `FrameDecoder`。
+- 新增 `TcpClient`，使用 `QTcpSocket` 支持连接、断开、发送 Packet、readyRead 解码、`connected` / `disconnected` / `packetReceived` / `errorOccurred` 信号。
+- 新增 `ClientSession`，管理客户端本地 seq_id、pending request、user_id、token 和 session_id。
+- 针对当前 Anaconda Qt 运行时库顺序，给 `LiteIMQtClient.Step46` 设置 CTest `LD_LIBRARY_PATH`，让系统 `libstdc++` 优先于 Anaconda 旧 `libstdc++`。
+
+当前验证：
+
+- `cmake -S . -B build-qt -DLITEIM_BUILD_QT_CLIENT=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`：通过。
+- `cmake --build build-qt --target liteim_qt_client_tests -j2`：通过。
+- `LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/home/yolo/anaconda3/lib ./build-qt/client_qt/liteim_qt_client_tests`：6/6 通过。
+- `ctest --test-dir build-qt -R LiteIMQtClient.Step46 --output-on-failure`：1/1 通过。
+- `cmake --build build-qt --target liteim_qt_client -j2`：通过。
+- `cmake -S . -B build && cmake --build build --target liteim_tests -j2`：通过，默认构建不依赖 Qt。
+- `ctest --test-dir build -L unit --output-on-failure`：311/311 通过。
+- `ctest --test-dir build-qt -R "LiteIMQtClient.Step46|LiteIMCMake.QtClientFoundation" --output-on-failure`：2/2 通过。
+- `LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/home/yolo/anaconda3/lib QT_QPA_PLATFORM=offscreen timeout 2s ./build-qt/client_qt/liteim_qt_client || test $? -eq 124`：通过，Qt 客户端进入事件循环后被 timeout 终止。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：MySQL / Redis healthy。
+- `ctest --test-dir build --output-on-failure`：381/381 通过。
+- `git diff --check`：通过。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" README.md docs/tutorials/step46_qt_packet_tcp_client.md`：无输出。
+- `rg -n "^## " docs/tutorials/step46_qt_packet_tcp_client.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
+- `timeout 2s ./build/server/liteim_server --config <(printf '%s\n' 'server.port = 19001' 'server.io_threads = 4' 'server.business_threads = 4') || test $? -eq 124`：通过，server 监听 `0.0.0.0:19001` 后收到 SIGTERM 并通过 signalfd 退出。
+
 ## 2026-05-18 Step 45 Qt Client Foundation
 
 本次进入 `Step 45：Qt 客户端基础工程和资源规范`。
