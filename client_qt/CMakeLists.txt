@@ -7,13 +7,21 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
 add_library(liteim_qt_client_core STATIC
+    include/liteim_client/AuthController.hpp
+    include/liteim_client/ClientApp.hpp
     include/liteim_client/ClientSession.hpp
+    include/liteim_client/LoginWindow.hpp
     include/liteim_client/MainWindow.hpp
     include/liteim_client/PacketCodec.hpp
+    include/liteim_client/RegisterDialog.hpp
     include/liteim_client/TcpClient.hpp
+    src/AuthController.cpp
+    src/ClientApp.cpp
     src/ClientSession.cpp
+    src/LoginWindow.cpp
     src/MainWindow.cpp
     src/PacketCodec.cpp
+    src/RegisterDialog.cpp
     src/TcpClient.cpp
 )
 
@@ -78,8 +86,19 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(liteim_qt_client_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-add_test(NAME LiteIMQtClient.Step46 COMMAND liteim_qt_client_tests)
+add_test(
+    NAME LiteIMQtClient.Step46
+    COMMAND liteim_qt_client_tests
+        --gtest_filter=QtPacketCodecTest.*:QtClientSessionTest.*:QtTcpClientTest.*
+)
 set_tests_properties(LiteIMQtClient.Step46 PROPERTIES LABELS unit)
+
+add_test(
+    NAME LiteIMQtClient.Step47
+    COMMAND liteim_qt_client_tests
+        --gtest_filter=QtLoginWindowTest.*:QtRegisterDialogTest.*:QtAuthControllerTest.*:QtClientAppTest.*
+)
+set_tests_properties(LiteIMQtClient.Step47 PROPERTIES LABELS unit)
 
 get_target_property(LITEIM_QT_CORE_LIBRARY Qt${QT_VERSION_MAJOR}::Core IMPORTED_LOCATION_RELEASE)
 if(NOT LITEIM_QT_CORE_LIBRARY)
@@ -94,5 +113,9 @@ endif()
 
 set_tests_properties(LiteIMQtClient.Step46
     PROPERTIES
-        ENVIRONMENT "LD_LIBRARY_PATH=${LITEIM_QT_TEST_LD_LIBRARY_PATH}:$ENV{LD_LIBRARY_PATH}"
+        ENVIRONMENT "LD_LIBRARY_PATH=${LITEIM_QT_TEST_LD_LIBRARY_PATH}:$ENV{LD_LIBRARY_PATH};QT_QPA_PLATFORM=offscreen"
+)
+set_tests_properties(LiteIMQtClient.Step47
+    PROPERTIES
+        ENVIRONMENT "LD_LIBRARY_PATH=${LITEIM_QT_TEST_LD_LIBRARY_PATH}:$ENV{LD_LIBRARY_PATH};QT_QPA_PLATFORM=offscreen"
 )

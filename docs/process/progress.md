@@ -1,5 +1,45 @@
 # LiteIM Progress
 
+## 2026-05-18 Step 47 Qt Login and Register Window
+
+本次进入 `Step 47：实现 Qt 登录和注册窗口`。
+
+恢复路线：
+
+- `PROJECT_MEMORY.md` 定义 Step 47 范围为 Qt 客户端入口：`LoginWindow`、服务器地址/端口输入、用户名/密码输入、登录按钮、注册按钮、`RegisterDialog`、登录成功打开 `MainWindow`、登录失败显示服务端错误，以及记住最近服务器地址和用户名。
+- 设计重点是登录/注册通过 `AuthController` 发送协议请求，UI 只展示状态，不直接操作 `QTcpSocket`。
+- 本 Step 不实现三栏聊天主界面、消息气泡、好友/会话列表、历史加载、心跳重连、服务端协议变更或 PersonaAgent。
+
+TDD RED：
+
+- 新增 Qt 侧测试，覆盖登录窗口输入禁用、注册弹窗输入禁用、注册成功后继续登录、错误响应显示服务端错误、登录成功进入主窗口。
+- 首次构建 Step 47 Qt 测试按预期失败于缺少 `liteim_client/AuthController.hpp`。
+
+GREEN 实现：
+
+- 新增 `AuthController`，封装 `RegisterRequest` / `LoginRequest` 发送、`RegisterResponse` / `LoginResponse` / `ErrorResponse` 解析、busy 状态和本地登录态写入。
+- 新增 `LoginWindow`，提供服务器地址、端口、用户名、密码、登录按钮、注册按钮和状态提示，并通过 `QSettings` 记住服务器地址、端口和用户名。
+- 新增 `RegisterDialog`，提供注册用户名、密码、可选昵称和提交/取消按钮。
+- 新增 `ClientApp`，把登录成功后的主窗口创建逻辑从 `main.cpp` 抽出为可测桥接函数。
+- `client_qt/CMakeLists.txt` 把 Step 46 和 Step 47 Qt 测试拆成两个 CTest 入口，并为 QWidget 测试设置 `QT_QPA_PLATFORM=offscreen`。
+- `README.md` 和 `docs/tutorials/step47_qt_login_register.md` 已同步 Step 47 边界、运行流程、测试设计和面试表达。
+
+当前验证：
+
+- `cmake -S . -B build-qt -DLITEIM_BUILD_QT_CLIENT=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`：通过。
+- `cmake --build build-qt --target liteim_qt_client_tests -j2`：通过。
+- `ctest --test-dir build-qt -R "LiteIMQtClient.Step46|LiteIMQtClient.Step47" --output-on-failure`：2/2 通过。
+- `cmake --build build-qt --target liteim_qt_client -j2`：通过。
+- `LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/home/yolo/anaconda3/lib QT_QPA_PLATFORM=offscreen timeout 2s ./build-qt/client_qt/liteim_qt_client || test $? -eq 124`：通过，Qt 客户端进入事件循环后被 timeout 终止。
+- `cmake -S . -B build`：通过，默认构建不查找 Qt。
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -L unit --output-on-failure`：311/311 通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：MySQL / Redis healthy。
+- `ctest --test-dir build --output-on-failure`：381/381 通过。
+- `git diff --check`：通过。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" README.md docs/tutorials/step47_qt_login_register.md`：无输出。
+- `rg -n "^## " docs/tutorials/step47_qt_login_register.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
+
 ## 2026-05-18 Step 46 Qt PacketCodec and TcpClient
 
 本次进入 `Step 46：实现 Qt PacketCodec 和 TcpClient`。

@@ -1,4 +1,5 @@
-#include "liteim_client/MainWindow.hpp"
+#include "liteim_client/ClientApp.hpp"
+#include "liteim_client/LoginWindow.hpp"
 
 #include <QApplication>
 #include <QFile>
@@ -27,9 +28,10 @@ int main(int argc, char* argv[]) {
     // 加载app.qss
     loadApplicationStyle(app);
 
-    // 创建主窗口对象并显示
-    liteim::client::MainWindow window;
-    window.show();
+    // 先进入登录窗口，登录成功后再打开主窗口
+    liteim::client::LoginWindow login_window;
+    liteim::client::connectLoginWindowToMainWindow(login_window, app);
+    login_window.show();
 
     // 进入应用程序的事件循环，等待用户交互
     return QApplication::exec();

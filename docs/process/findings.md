@@ -8,6 +8,23 @@
 - `LiteIM/docs/process/task_plan.md`、`LiteIM/docs/process/findings.md` 和 `LiteIM/docs/process/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-18 Step 47 Qt Login and Register Window Findings
+
+当前采用的边界：
+
+- Step 47 只实现 Qt 登录/注册入口，不实现三栏主界面、好友/会话列表、消息气泡、历史加载、心跳重连或 PersonaAgent。
+- UI 层不直接操作 `QTcpSocket`；`LoginWindow` 和 `RegisterDialog` 只收集输入、显示状态、响应 `AuthController` 信号。
+- `AuthController` 复用 Step 46 的 `TcpClient`、`PacketCodec` 和 `ClientSession`，发送普通 `RegisterRequest` / `LoginRequest`，解析 `RegisterResponse` / `LoginResponse` / `ErrorResponse`。
+- 登录成功后写入 Qt 客户端本地 `ClientSession` 登录态；服务端当前 `LoginResponse` 返回 `SessionId`，没有 token 字段，因此 Qt 客户端把 token 留空，把 `SessionId` 作为字符串保存在本地 session。
+- `ClientApp` 是很薄的启动桥接层，只负责把 `LoginWindow::loginSucceeded` 连接到创建 `MainWindow` 并关闭登录窗口；该抽取是为了让“登录成功进入主窗口”能被单测覆盖。
+- `QSettings` 只记住最近一次服务器地址、端口和用户名，不保存密码。
+
+TDD 记录：
+
+- RED 测试覆盖登录窗口空输入禁用、注册弹窗空输入禁用、注册成功后继续登录、错误响应显示服务端错误、登录成功打开主窗口。
+- 首次 Qt 测试构建按预期失败于缺少 `liteim_client/AuthController.hpp`。
+- GREEN 后 `LiteIMQtClient.Step46` 和 `LiteIMQtClient.Step47` 均通过；默认 `build` 仍不进入 Qt 子目录。
+
 ## 2026-05-18 Step 46 Qt PacketCodec and TcpClient Findings
 
 当前采用的边界：
