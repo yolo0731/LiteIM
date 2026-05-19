@@ -68,19 +68,28 @@ QLineEdit#conversationSearchEdit {
     padding: 8px 12px;
 }
 
-QListWidget#conversationListItems {
+QListView#conversationListItems,
+QListWidget#contactListItems,
+QListWidget#groupListItems,
+QListWidget#settingsListItems {
     background: transparent;
     border: 0;
     outline: 0;
 }
 
-QListWidget#conversationListItems::item {
+QListView#conversationListItems::item,
+QListWidget#contactListItems::item,
+QListWidget#groupListItems::item,
+QListWidget#settingsListItems::item {
     border-radius: 12px;
     padding: 12px;
     margin: 4px 0;
 }
 
-QListWidget#conversationListItems::item:selected {
+QListView#conversationListItems::item:selected,
+QListWidget#contactListItems::item:selected,
+QListWidget#groupListItems::item:selected,
+QListWidget#settingsListItems::item:selected {
     background: #ead8bd;
 }
 

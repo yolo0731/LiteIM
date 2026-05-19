@@ -1,5 +1,43 @@
 # LiteIM Progress
 
+## 2026-05-19 Step 49 Qt Conversation Contact Unread
+
+本次进入 `Step 49：实现会话列表、联系人列表和未读数`。
+
+恢复路线：
+
+- `PROJECT_MEMORY.md` 定义 Step 49 范围为 Qt 侧 `ConversationModel`、会话列表、联系人列表、群组列表、未读红点，以及收到 push 后更新摘要/未读的 UI 行为。
+- 本 Step 不修改服务端协议、MySQL schema、Redis key、真实消息发送、历史加载、离线拉取或 PersonaAgent runtime。
+- PersonaAgent 仍然是普通联系人或普通会话对象，不在 `SideBar` 顶级导航中出现。
+
+TDD RED：
+
+- 新增 `QtConversationModelTest`，覆盖 incoming message 更新摘要、会话置顶、本地未读 +1、当前会话不加未读、已读清零和新会话创建。
+- 新增 `QtContactListWidgetTest`，覆盖联系人式列表显示在线状态和未读数。
+- 新增 `QtMainWindowStep49Test`，覆盖主窗口中间栏使用 model-backed Messages，并能切换 Contacts / Groups。
+- 首次构建 `liteim_qt_client_tests` 按预期失败于缺少 `liteim_client/model/ConversationModel.hpp`。
+
+GREEN 实现：
+
+- 新增 `client_qt/include/liteim_client/model/ConversationModel.hpp` 和 `client_qt/src/model/ConversationModel.cpp`。
+- 新增 `ContactListWidget`，复用好友和群组列表渲染。
+- 重写 `ConversationListWidget` 的中间列表区域：Messages 使用 `QListView + ConversationModel`，并通过内部 delegate 绘制头像、摘要、时间和红色未读 badge；Contacts / Groups / Settings 通过 `QStackedWidget` 切换。
+- 在 Qt 本地 demo seed data 中加入好友在线/离线状态、群成员数量和普通 `PersonaAgent` 联系人占位项。
+- 更新 `app.qss`，让 `QListView#conversationListItems`、`contactListItems`、`groupListItems` 和 `settingsListItems` 共用中间列表样式。
+- 更新 `client_qt/src/CMakeLists.txt`、`client_qt/tests/CMakeLists.txt`、README、Step49 教程和 process 文档。
+
+当前验证：
+
+- `ctest --test-dir build-qt -R LiteIMQtClient.Step49 --output-on-failure`：通过。
+- `cmake -S . -B build-qt -DLITEIM_BUILD_QT_CLIENT=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`：通过。
+- `cmake --build build-qt --target liteim_qt_client_tests liteim_qt_client -j2`：通过。
+- `ctest --test-dir build-qt -R "LiteIMQtClient.Step46|LiteIMQtClient.Step47|LiteIMQtClient.Step48|LiteIMQtClient.Step49|LiteIMCMake.QtClientFoundation" --output-on-failure`：5/5 通过。
+- `LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/home/yolo/anaconda3/lib QT_QPA_PLATFORM=offscreen timeout 2s ./build-qt/client_qt/liteim_qt_client || test $? -eq 124`：通过，Qt 客户端进入事件循环后被 timeout 终止。
+- `cmake -S . -B build`：通过，默认构建不查找 Qt。
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -L unit --output-on-failure`：311/311 通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait && ctest --test-dir build --output-on-failure`：381/381 通过。
+
 ## 2026-05-19 Step 48 Sidebar Agent Entry Cleanup
 
 本次按用户选择采用方案 A：未来 PersonaAgent 是普通账号对象，只出现在联系人列表或会话列表里，不在 `SideBar` 顶级导航建立特殊 Agent 分类。
@@ -28,8 +66,8 @@
 
 实现内容：
 
-- 将 Qt 头文件从 `client_qt/include/liteim_client/` 平铺目录移动到 `app`、`auth`、`network`、`protocol`、`ui` 子目录。
-- 将 Qt 实现文件从 `client_qt/src/` 平铺目录移动到对应的 `app`、`auth`、`network`、`protocol`、`ui` 子目录，保留 `src/main.cpp` 作为入口。
+- 将当时已有 Qt 头文件从 `client_qt/include/liteim_client/` 平铺目录移动到 `app`、`auth`、`network`、`protocol`、`ui` 子目录；Step 49 后新增 `model` 目录。
+- 将当时已有 Qt 实现文件从 `client_qt/src/` 平铺目录移动到对应的 `app`、`auth`、`network`、`protocol`、`ui` 子目录，保留 `src/main.cpp` 作为入口；Step 49 后新增 `src/model`。
 - 更新所有源码、测试和文档 include 路径，例如 `liteim_client/ui/MainWindow.hpp`、`liteim_client/network/TcpClient.hpp`、`liteim_client/protocol/PacketCodec.hpp`。
 - 将 `client_qt/CMakeLists.txt` 拆成顶层入口、`client_qt/src/CMakeLists.txt` 和 `client_qt/tests/CMakeLists.txt`。
 - 保留 `liteim_qt_client_core`、`liteim_qt_client`、`liteim_qt_client_tests` target 名和 `LiteIMQtClient.Step46/47/48` CTest 名。
@@ -176,7 +214,7 @@ GREEN 实现：
 恢复路线：
 
 - 当前 `PROJECT_MEMORY.md` 明确 Step 45 是 Qt Widgets 客户端基础工程，不是旧路线中的测试硬化。
-- Step 45 范围：`LITEIM_BUILD_QT_CLIENT` 可选构建、`client_qt/include/liteim_client/{app,auth,network,protocol,ui}/`、`client_qt/src/{app,auth,network,protocol,ui}/`、`resources/qss/app.qss`、图标资源规范文档和空窗口。
+- Step 45 范围：`LITEIM_BUILD_QT_CLIENT` 可选构建、当时的 `client_qt/include/liteim_client/{ui}/`、`client_qt/src/{ui}/`、`resources/qss/app.qss`、图标资源规范文档和空窗口；后续重构扩展为 `app/auth/network/protocol/ui`，Step 49 再加入 `model`。
 - 不做 Step 46 以后的 Qt 协议、`QTcpSocket`、登录注册、三栏主窗口、消息气泡或心跳。
 
 环境发现：

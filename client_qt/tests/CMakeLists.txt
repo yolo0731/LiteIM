@@ -60,5 +60,9 @@ liteim_add_qt_client_step_test(
 )
 liteim_add_qt_client_step_test(
     LiteIMQtClient.Step48
-    "QtMainWindowTest.*"
+    "QtMainWindowTest.StartsWithThreeColumnChatLayout:QtMainWindowTest.SidebarButtonsSwitchMiddleArea:QtMainWindowTest.ResizeKeepsColumnsUsable"
+)
+liteim_add_qt_client_step_test(
+    LiteIMQtClient.Step49
+    "QtConversationModelTest.*:QtContactListWidgetTest.*:QtMainWindowStep49Test.*"
 )

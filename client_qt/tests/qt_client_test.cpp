@@ -1,9 +1,11 @@
 #include "liteim_client/auth/AuthController.hpp"
 #include "liteim_client/app/ClientApp.hpp"
+#include "liteim_client/model/ConversationModel.hpp"
 #include "liteim_client/network/ClientSession.hpp"
 #include "liteim_client/ui/LoginWindow.hpp"
 #include "liteim_client/ui/MainWindow.hpp"
 #include "liteim_client/protocol/PacketCodec.hpp"
+#include "liteim_client/ui/ContactListWidget.hpp"
 #include "liteim_client/ui/RegisterDialog.hpp"
 #include "liteim_client/network/TcpClient.hpp"
 
@@ -13,6 +15,7 @@
 #include "liteim/protocol/TlvCodec.hpp"
 
 #include <QAbstractSocket>
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QByteArray>
 #include <QCoreApplication>
@@ -20,6 +23,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QHostAddress>
+#include <QListView>
 #include <QListWidget>
 #include <QPushButton>
 #include <QSignalSpy>
@@ -486,36 +490,43 @@ TEST(QtMainWindowTest, SidebarButtonsSwitchMiddleArea) {
     QCoreApplication::processEvents();
 
     auto* title = window.findChild<QLabel*>("conversationSectionTitle");
-    auto* list = window.findChild<QListWidget*>("conversationListItems");
+    auto* conversation_list = window.findChild<QListView*>("conversationListItems");
     auto* contacts = window.findChild<QPushButton*>("navContactsButton");
     auto* groups = window.findChild<QPushButton*>("navGroupsButton");
     auto* settings = window.findChild<QPushButton*>("navSettingsButton");
     ASSERT_NE(title, nullptr);
-    ASSERT_NE(list, nullptr);
+    ASSERT_NE(conversation_list, nullptr);
     ASSERT_NE(contacts, nullptr);
     ASSERT_NE(groups, nullptr);
     ASSERT_NE(settings, nullptr);
 
     EXPECT_EQ(title->text(), QStringLiteral("Messages"));
-    EXPECT_GT(list->count(), 0);
+    ASSERT_NE(conversation_list->model(), nullptr);
+    EXPECT_GT(conversation_list->model()->rowCount(), 0);
 
     contacts->click();
     QCoreApplication::processEvents();
     EXPECT_EQ(title->text(), QStringLiteral("Contacts"));
-    ASSERT_GT(list->count(), 0);
-    EXPECT_TRUE(list->item(0)->text().contains(QStringLiteral("Contacts")));
+    auto* contact_list = window.findChild<QListWidget*>("contactListItems");
+    ASSERT_NE(contact_list, nullptr);
+    ASSERT_GT(contact_list->count(), 0);
+    EXPECT_TRUE(contact_list->item(0)->text().contains(QStringLiteral("Alice")));
 
     groups->click();
     QCoreApplication::processEvents();
     EXPECT_EQ(title->text(), QStringLiteral("Groups"));
-    ASSERT_GT(list->count(), 0);
-    EXPECT_TRUE(list->item(0)->text().contains(QStringLiteral("Groups")));
+    auto* group_list = window.findChild<QListWidget*>("groupListItems");
+    ASSERT_NE(group_list, nullptr);
+    ASSERT_GT(group_list->count(), 0);
+    EXPECT_TRUE(group_list->item(0)->text().contains(QStringLiteral("LiteIM Dev Group")));
 
     settings->click();
     QCoreApplication::processEvents();
     EXPECT_EQ(title->text(), QStringLiteral("Settings"));
-    ASSERT_GT(list->count(), 0);
-    EXPECT_TRUE(list->item(0)->text().contains(QStringLiteral("Settings")));
+    auto* settings_list = window.findChild<QListWidget*>("settingsListItems");
+    ASSERT_NE(settings_list, nullptr);
+    ASSERT_GT(settings_list->count(), 0);
+    EXPECT_TRUE(settings_list->item(0)->text().contains(QStringLiteral("Settings")));
 }
 
 TEST(QtMainWindowTest, ResizeKeepsColumnsUsable) {
@@ -539,4 +550,181 @@ TEST(QtMainWindowTest, ResizeKeepsColumnsUsable) {
     EXPECT_GE(middle->width(), 260);
     EXPECT_GE(chat_page->width(), 500);
     EXPECT_GE(chat_page->height(), 520);
+}
+
+TEST(QtConversationModelTest, IncomingMessageUpdatesSummaryAndUnreadCount) {
+    liteim::client::ConversationModel model;
+    model.setConversations({
+        {QStringLiteral("private:1002"),
+         liteim::client::ConversationKind::Private,
+         QStringLiteral("Bob"),
+         QStringLiteral("old message"),
+         QStringLiteral("09:30"),
+         QStringLiteral("B"),
+         1},
+    });
+
+    model.applyIncomingMessage({QStringLiteral("private:1002"),
+                                liteim::client::ConversationKind::Private,
+                                QStringLiteral("Bob"),
+                                QStringLiteral("new message"),
+                                QStringLiteral("09:41"),
+                                QStringLiteral("B")});
+
+    ASSERT_EQ(model.rowCount(), 1);
+    const auto index = model.index(0, 0);
+    EXPECT_EQ(model.data(index, liteim::client::ConversationModel::TitleRole).toString(),
+              QStringLiteral("Bob"));
+    EXPECT_EQ(model.data(index, liteim::client::ConversationModel::LastMessageRole).toString(),
+              QStringLiteral("new message"));
+    EXPECT_EQ(model.data(index, liteim::client::ConversationModel::TimestampRole).toString(),
+              QStringLiteral("09:41"));
+    EXPECT_EQ(model.data(index, liteim::client::ConversationModel::UnreadCountRole).toInt(), 2);
+    EXPECT_EQ(model.totalUnreadCount(), 2);
+}
+
+TEST(QtConversationModelTest, ActiveConversationDoesNotIncreaseUnreadAndCanBeMarkedRead) {
+    liteim::client::ConversationModel model;
+    model.setConversations({
+        {QStringLiteral("private:1002"),
+         liteim::client::ConversationKind::Private,
+         QStringLiteral("Bob"),
+         QStringLiteral("old message"),
+         QStringLiteral("09:30"),
+         QStringLiteral("B"),
+         3},
+    });
+
+    model.applyIncomingMessage({QStringLiteral("private:1002"),
+                                liteim::client::ConversationKind::Private,
+                                QStringLiteral("Bob"),
+                                QStringLiteral("visible message"),
+                                QStringLiteral("09:42"),
+                                QStringLiteral("B")},
+                               QStringLiteral("private:1002"));
+
+    auto index = model.index(0, 0);
+    EXPECT_EQ(model.data(index, liteim::client::ConversationModel::UnreadCountRole).toInt(), 3);
+
+    model.markConversationRead(QStringLiteral("private:1002"));
+
+    index = model.index(0, 0);
+    EXPECT_EQ(model.data(index, liteim::client::ConversationModel::UnreadCountRole).toInt(), 0);
+    EXPECT_EQ(model.totalUnreadCount(), 0);
+}
+
+TEST(QtConversationModelTest, IncomingMessageMovesConversationToTopOrCreatesOne) {
+    liteim::client::ConversationModel model;
+    model.setConversations({
+        {QStringLiteral("private:1001"),
+         liteim::client::ConversationKind::Private,
+         QStringLiteral("Alice"),
+         QStringLiteral("first"),
+         QStringLiteral("09:10"),
+         QStringLiteral("A"),
+         0},
+        {QStringLiteral("group:2001"),
+         liteim::client::ConversationKind::Group,
+         QStringLiteral("LiteIM Dev Group"),
+         QStringLiteral("group old"),
+         QStringLiteral("09:00"),
+         QStringLiteral("G"),
+         0},
+    });
+
+    model.applyIncomingMessage({QStringLiteral("group:2001"),
+                                liteim::client::ConversationKind::Group,
+                                QStringLiteral("LiteIM Dev Group"),
+                                QStringLiteral("group new"),
+                                QStringLiteral("10:00"),
+                                QStringLiteral("G")});
+
+    ASSERT_EQ(model.rowCount(), 2);
+    EXPECT_EQ(model.data(model.index(0, 0), liteim::client::ConversationModel::ConversationIdRole)
+                  .toString(),
+              QStringLiteral("group:2001"));
+    EXPECT_EQ(model.data(model.index(0, 0), liteim::client::ConversationModel::UnreadCountRole)
+                  .toInt(),
+              1);
+
+    model.applyIncomingMessage({QStringLiteral("private:3001"),
+                                liteim::client::ConversationKind::Private,
+                                QStringLiteral("PersonaAgent"),
+                                QStringLiteral("future bot account placeholder"),
+                                QStringLiteral("10:01"),
+                                QStringLiteral("P")});
+
+    ASSERT_EQ(model.rowCount(), 3);
+    EXPECT_EQ(model.data(model.index(0, 0), liteim::client::ConversationModel::ConversationIdRole)
+                  .toString(),
+              QStringLiteral("private:3001"));
+    EXPECT_EQ(model.data(model.index(0, 0), liteim::client::ConversationModel::UnreadCountRole)
+                  .toInt(),
+              1);
+}
+
+TEST(QtContactListWidgetTest, RendersContactsWithOnlineStateAndUnreadBadge) {
+    liteim::client::ContactListWidget widget(QStringLiteral("contactListItems"), nullptr);
+    widget.setItems({
+        {QStringLiteral("Alice"), QStringLiteral("Online"), QStringLiteral("A"), true, 0},
+        {QStringLiteral("PersonaAgent"),
+         QStringLiteral("Future BotClient account"),
+         QStringLiteral("P"),
+         false,
+         2},
+    });
+
+    auto* list = widget.findChild<QListWidget*>("contactListItems");
+    ASSERT_NE(list, nullptr);
+    ASSERT_EQ(list->count(), 2);
+    EXPECT_TRUE(list->item(0)->text().contains(QStringLiteral("Alice")));
+    EXPECT_TRUE(list->item(0)->text().contains(QStringLiteral("Online")));
+    EXPECT_TRUE(list->item(1)->text().contains(QStringLiteral("PersonaAgent")));
+    EXPECT_TRUE(list->item(1)->text().contains(QStringLiteral("2")));
+}
+
+TEST(QtMainWindowStep49Test, ShowsModelBackedConversationContactAndGroupLists) {
+    liteim::client::MainWindow window;
+    window.resize(1200, 760);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* conversation_list = window.findChild<QListView*>("conversationListItems");
+    ASSERT_NE(conversation_list, nullptr);
+    ASSERT_NE(conversation_list->model(), nullptr);
+    ASSERT_GT(conversation_list->model()->rowCount(), 0);
+    const auto first = conversation_list->model()->index(0, 0);
+    EXPECT_FALSE(conversation_list->model()
+                     ->data(first, liteim::client::ConversationModel::TitleRole)
+                     .toString()
+                     .isEmpty());
+    EXPECT_GE(conversation_list->model()
+                  ->data(first, liteim::client::ConversationModel::UnreadCountRole)
+                  .toInt(),
+              0);
+
+    auto* contacts = window.findChild<QPushButton*>("navContactsButton");
+    ASSERT_NE(contacts, nullptr);
+    contacts->click();
+    QCoreApplication::processEvents();
+
+    auto* contact_list = window.findChild<QListWidget*>("contactListItems");
+    ASSERT_NE(contact_list, nullptr);
+    ASSERT_GT(contact_list->count(), 0);
+    bool has_agent_contact = false;
+    for (int i = 0; i < contact_list->count(); ++i) {
+        has_agent_contact = has_agent_contact ||
+                            contact_list->item(i)->text().contains(QStringLiteral("PersonaAgent"));
+    }
+    EXPECT_TRUE(has_agent_contact);
+
+    auto* groups = window.findChild<QPushButton*>("navGroupsButton");
+    ASSERT_NE(groups, nullptr);
+    groups->click();
+    QCoreApplication::processEvents();
+
+    auto* group_list = window.findChild<QListWidget*>("groupListItems");
+    ASSERT_NE(group_list, nullptr);
+    ASSERT_GT(group_list->count(), 0);
+    EXPECT_TRUE(group_list->item(0)->text().contains(QStringLiteral("members")));
 }

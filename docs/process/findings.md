@@ -8,12 +8,29 @@
 - `LiteIM/docs/process/task_plan.md`、`LiteIM/docs/process/findings.md` 和 `LiteIM/docs/process/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-19 Step 49 Qt Conversation Contact Unread Findings
+
+当前采用的边界：
+
+- Step 49 只实现 Qt 客户端侧会话列表、联系人列表、群组列表和本地未读显示行为。
+- 新增 `ConversationModel` 作为会话摘要数据源，`ConversationListWidget` 的 Messages 页面使用 `QListView` 绑定该 model，并用内部 delegate 绘制头像、摘要、时间和红色未读 badge，不再把消息列表文本散落在 widget 里。
+- 新增 `ContactListWidget` 复用联系人式列表渲染好友和群组；好友 subtitle 表达 Online / Offline，群组 subtitle 表达成员数量。
+- 当前联系人、群组和 PersonaAgent 条目都是 Qt 本地 demo seed data，不从 MySQL / Redis 加载。
+- 当前未读数是本地临时计数：非当前会话 incoming message 加一，当前会话 incoming message 不加，`markConversationRead()` 清零。
+- PersonaAgent 继续作为普通联系人/会话对象出现，不作为 `SideBar` 顶级分类，不引入 C++ 服务端 AI 身份。
+
+TDD 记录：
+
+- RED 在 `qt_client_test.cpp` 中先引入 `liteim_client/model/ConversationModel.hpp` 和 Step49 断言，首次构建失败于缺少该头文件。
+- GREEN 增加 `ConversationModel`、`ContactListWidget`、会话 item delegate、中间栏 `QStackedWidget`、Step49 CTest、QSS 列表样式和文档。
+- Qt Step46/47/48/49 plus Qt foundation、Qt offscreen startup、默认 unit 和 Docker-backed 全量 CTest 均已通过；完整命令记录在 `progress.md`。
+
 ## 2026-05-19 Qt Client Local Structure Refactor Findings
 
 当前采用的边界：
 
 - 本次是 `client_qt` 局部结构重构，不是新的功能 Step；不修改服务端协议、MySQL schema、Redis key、真实 Qt 数据模型、未读数、消息加载、push 更新或 PersonaAgent 行为。
-- Qt 客户端物理目录按职责分成 `app`、`auth`、`network`、`protocol`、`ui`：应用装配、认证流程、QTcpSocket/客户端会话、协议适配和 QWidget 组件各自归位。
+- Qt 客户端当时的物理目录按职责分成 `app`、`auth`、`network`、`protocol`、`ui`：应用装配、认证流程、QTcpSocket/客户端会话、协议适配和 QWidget 组件各自归位；Step 49 后新增 `model` 目录承载 Qt 客户端数据模型。
 - CMake 采用分级结构：`client_qt/CMakeLists.txt` 只负责 Qt 查找、AUTOMOC/AUTORCC 和公共 warning helper；`client_qt/src/CMakeLists.txt` 负责 `liteim_qt_client_core` / `liteim_qt_client`；`client_qt/tests/CMakeLists.txt` 负责 `liteim_qt_client_tests` 和 Step46/47/48 CTest。
 - 保留一个 `liteim_qt_client_core` target，不拆成多个 Qt 子库；当前体量下目录分层已经足够，拆更多 target 会增加链接和 AUTOMOC 复杂度。
 - 保留原有 target 名、CTest 名、Qt offscreen 测试环境和 Anaconda Qt `LD_LIBRARY_PATH` 规避逻辑；显式设置 Qt executable/test 的 `RUNTIME_OUTPUT_DIRECTORY`，让原来的 `build-qt/client_qt/liteim_qt_client` 运行命令继续可用。

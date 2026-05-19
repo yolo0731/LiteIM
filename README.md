@@ -25,7 +25,7 @@ PersonaAgent is intentionally a separate Python service. LiteIM exposes only the
 - MySQL C API wrapper with RAII connection ownership, prepared statements, a fixed-size connection pool, and users-table DAO access.
 - Custom TLV binary protocol with TCP sticky-packet / half-packet handling.
 - Safe cross-thread connection access through `EventLoop::runInLoop()` and `EventLoop::queueInLoop()`.
-- Command-line protocol debug client, Python E2E tests, local benchmark tooling, and future Qt Widgets three-column chat client.
+- Command-line protocol debug client, Python E2E tests, local benchmark tooling, and optional Qt Widgets three-column chat client.
 
 ## Architecture
 
@@ -84,7 +84,7 @@ Important boundaries:
 - `liteim_service`: `SessionManager`, `OnlineService`, `MessageRouter`, `AuthService`, `FriendService`, `ChatService`, `GroupService`, `OfflineMessageService`, `HistoryService`, `HeartbeatService`, and shared service helpers for validation and message TLV response building. `SessionManager` / `OnlineService` provide in-process user/session binding plus Redis-backed online-state synchronization, and runtime session close cleanup removes current online state through the business pool. `MessageRouter` parses request TLVs, dispatches handlers inline or through the business `ThreadPool`, and sends responses back through `Session::sendPacket()`. `AuthService` handles register/login with MySQL users, Redis login-failure limiting, PBKDF2-HMAC-SHA256 password hashing, login-time session binding, and service-level username/nickname/password length validation before database access. `FriendService` handles add-friend and friend-list requests with MySQL friendships; Redis online-status lookup failure degrades that friend's online field to offline instead of failing the whole list. `ChatService` handles private-message requests by validating the logged-in sender, enforcing the service message-size limit, saving the message through `IStorage`, pushing to an in-process online receiver, or recording offline delivery plus unread count for an offline receiver. `GroupService` handles basic create/join/list group flows and group-message routing, validates group-name/message-text lengths, saves group messages through `IStorage`, pushes to in-process online members, and records offline delivery plus unread counts for offline members. If the message and offline row are already saved, Redis unread increment failure is logged but does not turn the sender response into a failure. `OfflineMessageService` handles client-triggered `OfflineMessagesRequest`, asks storage for only the requested batch size, returns pending offline messages, marks the delivered batch, and treats Redis unread-counter clearing as best-effort after the MySQL response data is assembled. `HistoryService` handles `HistoryRequest`, validates that the logged-in user can read the private or group conversation, applies default/max cursor pagination limits, and returns repeated TLV message fields from `IStorage::getHistory()`. `HeartbeatService` handles `HeartbeatRequest` in the business pool, returns `HeartbeatResponse` for valid heartbeats, and refreshes Redis online TTL only for logged-in sessions. LiteIM has no C++ AI/assistant identity service: an external LLM-controlled account logs in and sends messages exactly like any other account. Redis TTL/unread refresh failures are logged as degraded side effects when the message source of truth is already saved. Repeated login uses a kick-old-keep-new policy.
 - `liteim_client_cli`: command parsing, TLV `Packet` construction, debug packet formatting, and a blocking TCP protocol client used by the `liteim_cli` executable.
 - `liteim_bench_core` / `liteim_bench`: local benchmark helpers and executable for generating ordinary register/login/private-message load, sender request/response RTT percentiles, QPS, error count, client-process RSS, client-process CPU usage, and JSON or Markdown reports.
-- `liteim_qt_client_core` / `liteim_qt_client`: optional Qt Widgets client components built only with `LITEIM_BUILD_QT_CLIENT=ON`. The core target wraps the shared LiteIM Packet/TLV protocol for Qt, decodes TCP half/sticky packets, provides a `QTcpSocket` based `TcpClient`, keeps client-side seq_id, pending-request, and login state in `ClientSession`, exposes `AuthController`, `LoginWindow`, and `RegisterDialog` for login/register entry flow, and builds the `MainWindow` three-column shell with `SideBar`, `ConversationListWidget`, and `ChatPage`.
+- `liteim_qt_client_core` / `liteim_qt_client`: optional Qt Widgets client components built only with `LITEIM_BUILD_QT_CLIENT=ON`. The core target wraps the shared LiteIM Packet/TLV protocol for Qt, decodes TCP half/sticky packets, provides a `QTcpSocket` based `TcpClient`, keeps client-side seq_id, pending-request, and login state in `ClientSession`, exposes `AuthController`, `LoginWindow`, and `RegisterDialog` for login/register entry flow, and builds the `MainWindow` three-column shell with `SideBar`, model-driven `ConversationListWidget`, reusable `ContactListWidget`, and `ChatPage`. Step 49 keeps conversation/contact/group data local-demo-only until later server loading steps; unread badges are painted from local temporary counters updated by simulated incoming-message hooks.
 
 ## Build And Test
 
@@ -114,7 +114,7 @@ cmake --build build-qt --target liteim_qt_client
 Run the Qt client protocol tests from the Qt-enabled build:
 
 ```bash
-ctest --test-dir build-qt -R LiteIMQtClient.Step46 --output-on-failure
+ctest --test-dir build-qt -R "LiteIMQtClient.Step46|LiteIMQtClient.Step47|LiteIMQtClient.Step48|LiteIMQtClient.Step49|LiteIMCMake.QtClientFoundation" --output-on-failure
 ```
 
 The default build keeps `LITEIM_BUILD_QT_CLIENT=OFF`, so server, CLI, benchmark, and tests do not require Qt. The current local Qt package is discovered from Anaconda Qt5; the Qt CTest entry sets `LD_LIBRARY_PATH` so the system `libstdc++` stays ahead of Anaconda's older `libstdc++`.
@@ -239,7 +239,9 @@ Step 45 starts the optional Qt Widgets client project without affecting the defa
 
 Step 47 adds the Qt login/register entry flow. `LoginWindow` collects server address, port, username, and password; `RegisterDialog` collects account registration fields; and `AuthController` sends normal `RegisterRequest` / `LoginRequest` packets through `TcpClient`. On `LoginResponse`, the client records local login state and opens `MainWindow`. On `ErrorResponse`, the login window displays the server error message. The UI layer does not manipulate `QTcpSocket` directly.
 
-Step 48 implements the Qt main-window shell as a familiar three-column IM layout. `SideBar` provides messages, contacts, groups, and settings entries; `ConversationListWidget` switches the middle placeholder list by selected entry; and `ChatPage` shows the chat area plus the current user nickname and online state. The visual direction follows common WeChat-style IM interaction patterns, but LiteIM does not use WeChat branding, logos, icons, names, screenshots, or assets. This Step is layout-only: real conversation/contact models, unread badges, message loading, push-driven updates, and any future PersonaAgent ordinary contact/conversation item begin in later Qt Steps.
+Step 48 implements the Qt main-window shell as a familiar three-column IM layout. `SideBar` provides messages, contacts, groups, and settings entries; `ConversationListWidget` switches the middle list area by selected entry; and `ChatPage` shows the chat area plus the current user nickname and online state. The visual direction follows common WeChat-style IM interaction patterns, but LiteIM does not use WeChat branding, logos, icons, names, screenshots, or assets.
+
+Step 49 adds Qt-side model-driven conversation/contact/group list behavior. `ConversationModel` stores conversation id, type, title, last-message summary, timestamp, avatar text, and unread count; `ConversationListWidget` uses a `QListView` backed by that model for Messages, paints avatar/summary/time/unread badge rows through a Qt delegate, and switches Contacts / Groups / Settings through a middle-column stack; `ContactListWidget` renders reusable contact-like rows for friends and groups. The current friend/group/persona entries are demo seed data inside the Qt client, not loaded from MySQL/Redis yet. The unread count shown by Step 49 is a local temporary counter updated by `applyIncomingMessage()` and cleared by `markConversationRead()`; later Qt steps will connect it to real server push/offline/unread flows. A future PersonaAgent-controlled account is represented only as an ordinary contact/conversation item, not as a special sidebar category or C++ server identity.
 
 Start MySQL and Redis:
 
@@ -381,6 +383,7 @@ LiteIM/
 │   ├── include/liteim_client/
 │   │   ├── app/
 │   │   ├── auth/
+│   │   ├── model/
 │   │   ├── network/
 │   │   ├── protocol/
 │   │   └── ui/
@@ -388,6 +391,7 @@ LiteIM/
 │   │   ├── CMakeLists.txt
 │   │   ├── app/
 │   │   ├── auth/
+│   │   ├── model/
 │   │   ├── network/
 │   │   ├── protocol/
 │   │   └── ui/
@@ -421,7 +425,7 @@ Directory conventions:
 - Public headers live under `include/liteim/<module>/`.
 - Library implementations live under `src/<module>/`.
 - Executable entry points live under `server/`, `client_cli/`, `client_qt/`, and `bench/`.
-- `client_qt/` is optional and only builds when `LITEIM_BUILD_QT_CLIENT=ON`; its Qt code is grouped by `app`, `auth`, `network`, `protocol`, and `ui`, while its resources must not use third-party IM product branding.
+- `client_qt/` is optional and only builds when `LITEIM_BUILD_QT_CLIENT=ON`; its Qt code is grouped by `app`, `auth`, `model`, `network`, `protocol`, and `ui`, while its resources must not use third-party IM product branding.
 - `.github/workflows/` contains repository CI automation.
 - `docs/tutorials/` contains per-step teaching notes.
 - `docs/process/` contains active planning, findings, and progress memory.
