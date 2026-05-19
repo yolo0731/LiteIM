@@ -66,3 +66,7 @@ liteim_add_qt_client_step_test(
     LiteIMQtClient.Step49
     "QtConversationModelTest.*:QtContactListWidgetTest.*:QtMainWindowStep49Test.*"
 )
+liteim_add_qt_client_step_test(
+    LiteIMQtClient.Step50
+    "QtChatPageTest.*:QtChatInputBarTest.*"
+)

@@ -8,6 +8,23 @@
 - `LiteIM/docs/process/task_plan.md`、`LiteIM/docs/process/findings.md` 和 `LiteIM/docs/process/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-19 Step 50 Qt Chat Page Bubble History Findings
+
+当前采用的边界：
+
+- Step 50 只实现 Qt 右侧聊天页 UI 行为和可测试信号边界，不修改服务端协议、MySQL schema、Redis key 或 PersonaAgent runtime。
+- 新增 `ChatInputBar`，负责空消息禁用、发送按钮、Enter 发送和 Shift+Enter 换行。
+- 新增 `MessageBubble`，负责左右气泡、文本自动换行、时间显示、outgoing 发送状态，以及群聊 incoming 消息的发送者昵称。
+- `ChatPage` 从占位区升级为滚动消息区，支持 `openConversation()`、`setMessages()`、`appendMessage()` 和 `updateMessageStatus()`。
+- 打开会话时发出 `historyRequested(conversation_id, 0)`，加载更早消息时用当前最早非零 `message_id` 作为 `before_message_id` 游标。
+- 输入栏发送后先追加本地 outgoing `Sending` 气泡，再发出 `sendMessageRequested(conversation_id, text)`；真实私聊/群聊 packet 编码和历史响应解析留给 Step 51。
+- 视觉交互参考常见微信式三栏 IM 的左右气泡体验，但不使用微信品牌、logo、名称、图标、截图或素材。
+
+TDD 记录：
+
+- RED 在 `qt_client_test.cpp` 中先引入 `liteim_client/ui/ChatInputBar.hpp` / `MessageBubble.hpp` 并新增 Step50 断言，首次构建失败于缺少 `ChatInputBar.hpp`。
+- GREEN 增加 `ChatInputBar`、`MessageBubble`、聊天页滚动消息区、Step50 CTest、QSS 气泡/输入栏样式和文档。
+
 ## 2026-05-19 Step 49 Qt Conversation Contact Unread Findings
 
 当前采用的边界：

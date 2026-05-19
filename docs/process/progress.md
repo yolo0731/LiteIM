@@ -1,5 +1,45 @@
 # LiteIM Progress
 
+## 2026-05-19 Step 50 Qt Chat Page Bubbles History
+
+本次进入 `Step 50：实现聊天窗口、消息气泡和历史消息加载`。
+
+恢复路线：
+
+- `PROJECT_MEMORY.md` 定义 Step 50 范围为 Qt 右侧 `ChatPage`、`MessageBubble`、`ChatInputBar`、左右气泡、自动换行、时间、发送状态、历史加载和 Enter / Shift+Enter 行为。
+- 本 Step 不修改服务端协议、MySQL schema、Redis key、真实私聊/群聊发包、历史响应解析、心跳断线或 PersonaAgent runtime。
+- PersonaAgent 仍然只是未来通过普通账号接入的外部 BotClient；Qt 这里只实现普通会话消息展示组件。
+
+TDD RED：
+
+- 新增 `QtChatPageTest`，覆盖打开会话触发最近历史请求、发送文本出现 outgoing 发送中气泡、空消息不能发送、收到私聊 incoming 消息出现左侧气泡、群聊 incoming 显示发送者昵称、加载更早历史使用最早 `message_id`。
+- 新增 `QtChatInputBarTest`，覆盖 Enter 发送和 Shift+Enter 换行。
+- 首次构建 `liteim_qt_client_tests` 按预期失败于缺少 `liteim_client/ui/ChatInputBar.hpp`。
+
+GREEN 实现：
+
+- 新增 `ChatInputBar`，封装 `QTextEdit + Send`，支持空输入禁用、Enter 发送、Shift+Enter 换行。
+- 新增 `MessageBubble`，封装左右气泡、文本、时间、发送状态和群聊发送者昵称。
+- 重写 `ChatPage`，用 `QScrollArea` 展示消息列表，打开会话时发出 `historyRequested(conversation_id, 0)`，加载更早消息时发出 `historyRequested(conversation_id, earliest_message_id)`，输入发送后先追加本地 outgoing `Sending` 气泡再发出 `sendMessageRequested`。
+- 更新 `app.qss`，补充聊天页、气泡、输入栏和发送按钮样式。
+- 更新 `client_qt/src/CMakeLists.txt`、`client_qt/tests/CMakeLists.txt`、README、Step50 教程和 process 文档。
+
+当前验证：
+
+- `cmake --build build-qt --target liteim_qt_client_tests -j2 && ctest --test-dir build-qt -R LiteIMQtClient.Step50 --output-on-failure`：通过。
+- `cmake -S . -B build-qt -DLITEIM_BUILD_QT_CLIENT=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`：通过。
+- `cmake --build build-qt --target liteim_qt_client_tests liteim_qt_client -j2`：通过。
+- `ctest --test-dir build-qt -R "LiteIMQtClient.Step46|LiteIMQtClient.Step47|LiteIMQtClient.Step48|LiteIMQtClient.Step49|LiteIMQtClient.Step50|LiteIMCMake.QtClientFoundation" --output-on-failure`：6/6 通过。
+- `LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/home/yolo/anaconda3/lib QT_QPA_PLATFORM=offscreen timeout 2s ./build-qt/client_qt/liteim_qt_client || test $? -eq 124`：通过，Qt 客户端进入事件循环后被 timeout 终止。
+- `cmake -S . -B build`：通过，默认构建不查找 Qt。
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -L unit --output-on-failure`：311/311 通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：MySQL / Redis healthy。
+- `ctest --test-dir build --output-on-failure`：381/381 通过。
+- `git diff --check`：通过。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" README.md docs/tutorials/step50_qt_chat_page_bubbles_history.md`：无输出。
+- `rg -n "^## " docs/tutorials/step50_qt_chat_page_bubbles_history.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
+
 ## 2026-05-19 Step 49 Qt Conversation Contact Unread
 
 本次进入 `Step 49：实现会话列表、联系人列表和未读数`。

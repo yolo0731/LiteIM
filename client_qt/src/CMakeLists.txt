@@ -5,11 +5,13 @@ add_library(liteim_qt_client_core STATIC
     ../include/liteim_client/network/ClientSession.hpp
     ../include/liteim_client/network/TcpClient.hpp
     ../include/liteim_client/protocol/PacketCodec.hpp
+    ../include/liteim_client/ui/ChatInputBar.hpp
     ../include/liteim_client/ui/ChatPage.hpp
     ../include/liteim_client/ui/ContactListWidget.hpp
     ../include/liteim_client/ui/ConversationListWidget.hpp
     ../include/liteim_client/ui/LoginWindow.hpp
     ../include/liteim_client/ui/MainWindow.hpp
+    ../include/liteim_client/ui/MessageBubble.hpp
     ../include/liteim_client/ui/RegisterDialog.hpp
     ../include/liteim_client/ui/SideBar.hpp
     app/ClientApp.cpp
@@ -18,11 +20,13 @@ add_library(liteim_qt_client_core STATIC
     network/ClientSession.cpp
     network/TcpClient.cpp
     protocol/PacketCodec.cpp
+    ui/ChatInputBar.cpp
     ui/ChatPage.cpp
     ui/ContactListWidget.cpp
     ui/ConversationListWidget.cpp
     ui/LoginWindow.cpp
     ui/MainWindow.cpp
+    ui/MessageBubble.cpp
     ui/RegisterDialog.cpp
     ui/SideBar.cpp
 )

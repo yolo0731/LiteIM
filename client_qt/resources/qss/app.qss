@@ -93,16 +93,79 @@ QListWidget#settingsListItems::item:selected {
     background: #ead8bd;
 }
 
-QLabel#chatMessageAreaPlaceholder {
-    color: #8b7c6b;
-    background: #fffaf1;
-    border: 1px dashed #d7c7b0;
-    border-radius: 18px;
+QScrollArea#chatMessageArea {
+    background: #f7f3eb;
+    border: 0;
+}
+
+QWidget#chatMessagesContainer {
+    background: #f7f3eb;
+}
+
+QPushButton#loadEarlierMessagesButton {
+    color: #526257;
+    background: transparent;
+    border: 0;
+    padding: 6px 10px;
+}
+
+QPushButton#loadEarlierMessagesButton:disabled {
+    color: #b0a597;
+}
+
+QWidget#messageBubbleBody {
+    border-radius: 8px;
+}
+
+QWidget#messageBubbleBody[messageDirection="incoming"] {
+    background: #ffffff;
+    border: 1px solid #e4d8c8;
+}
+
+QWidget#messageBubbleBody[messageDirection="outgoing"] {
+    background: #d9f2c7;
+    border: 1px solid #bddfa6;
+}
+
+QLabel#messageBubbleSender {
+    color: #526257;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+QLabel#messageBubbleText {
+    color: #17201a;
+    line-height: 140%;
+}
+
+QLabel#messageBubbleTime,
+QLabel#messageBubbleStatus {
+    color: #7d8a80;
+    font-size: 12px;
+}
+
+QWidget#messageBubbleBody[messageStatus="failed"] QLabel#messageBubbleStatus {
+    color: #b3261e;
+    font-weight: 600;
 }
 
 QTextEdit#chatInputEdit {
     background: #fffaf1;
     border: 1px solid #d7c7b0;
-    border-radius: 14px;
+    border-radius: 8px;
     padding: 10px;
+}
+
+QPushButton#chatSendButton {
+    background: #2f7d4f;
+    color: #ffffff;
+    border: 0;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-weight: 600;
+}
+
+QPushButton#chatSendButton:disabled {
+    background: #bcc7bd;
+    color: #eef1ed;
 }

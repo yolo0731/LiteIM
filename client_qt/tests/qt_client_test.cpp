@@ -5,7 +5,10 @@
 #include "liteim_client/ui/LoginWindow.hpp"
 #include "liteim_client/ui/MainWindow.hpp"
 #include "liteim_client/protocol/PacketCodec.hpp"
+#include "liteim_client/ui/ChatInputBar.hpp"
+#include "liteim_client/ui/ChatPage.hpp"
 #include "liteim_client/ui/ContactListWidget.hpp"
+#include "liteim_client/ui/MessageBubble.hpp"
 #include "liteim_client/ui/RegisterDialog.hpp"
 #include "liteim_client/network/TcpClient.hpp"
 
@@ -19,6 +22,7 @@
 #include <QApplication>
 #include <QByteArray>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QElapsedTimer>
 #include <QLabel>
 #include <QLineEdit>
@@ -26,11 +30,15 @@
 #include <QListView>
 #include <QListWidget>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QSignalSpy>
 #include <QSplitter>
 #include <QSpinBox>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QTest>
+#include <QTextCursor>
+#include <QTextEdit>
 #include <QVariant>
 #include <QWidget>
 
@@ -134,6 +142,26 @@ liteim::Packet readPacketFromSocket(QTcpSocket& socket) {
                     .isOk());
     EXPECT_EQ(packets.size(), 1U);
     return packets.empty() ? liteim::Packet{} : packets.front();
+}
+
+liteim::client::ChatMessage makeChatMessage(const QString& conversation_id,
+                                            quint64 message_id,
+                                            liteim::client::MessageDirection direction,
+                                            const QString& text) {
+    liteim::client::ChatMessage message;
+    message.conversation_id = conversation_id;
+    message.message_id = message_id;
+    message.sender_id = direction == liteim::client::MessageDirection::Outgoing ? 1001 : 1002;
+    message.sender_name =
+        direction == liteim::client::MessageDirection::Outgoing ? QStringLiteral("Alice")
+                                                                : QStringLiteral("Bob");
+    message.text = text;
+    message.sent_at = QDateTime::fromString(QStringLiteral("2026-05-19T10:30:00"), Qt::ISODate);
+    message.direction = direction;
+    message.status = direction == liteim::client::MessageDirection::Outgoing
+                         ? liteim::client::MessageSendStatus::Sending
+                         : liteim::client::MessageSendStatus::Succeeded;
+    return message;
 }
 
 }  // namespace
@@ -727,4 +755,149 @@ TEST(QtMainWindowStep49Test, ShowsModelBackedConversationContactAndGroupLists) {
     ASSERT_NE(group_list, nullptr);
     ASSERT_GT(group_list->count(), 0);
     EXPECT_TRUE(group_list->item(0)->text().contains(QStringLiteral("members")));
+}
+
+TEST(QtChatPageTest, OpenConversationRequestsRecentHistory) {
+    liteim::client::ChatPage page;
+    QSignalSpy history_spy(&page, &liteim::client::ChatPage::historyRequested);
+
+    page.openConversation(QStringLiteral("private:1002"),
+                          QStringLiteral("Bob"),
+                          liteim::client::ConversationKind::Private);
+
+    ASSERT_EQ(history_spy.count(), 1);
+    EXPECT_EQ(history_spy.at(0).at(0).toString(), QStringLiteral("private:1002"));
+    EXPECT_EQ(history_spy.at(0).at(1).toULongLong(), 0ULL);
+
+    auto* title = page.findChild<QLabel*>("chatTitleLabel");
+    ASSERT_NE(title, nullptr);
+    EXPECT_EQ(title->text(), QStringLiteral("Bob"));
+}
+
+TEST(QtChatPageTest, SendTextAppendsOutgoingBubbleAndRejectsEmptyInput) {
+    liteim::client::ChatPage page;
+    page.openConversation(QStringLiteral("private:1002"),
+                          QStringLiteral("Bob"),
+                          liteim::client::ConversationKind::Private);
+    QSignalSpy send_spy(&page, &liteim::client::ChatPage::sendMessageRequested);
+
+    auto* input = page.findChild<QTextEdit*>("chatInputEdit");
+    auto* send_button = page.findChild<QPushButton*>("chatSendButton");
+    ASSERT_NE(input, nullptr);
+    ASSERT_NE(send_button, nullptr);
+
+    input->setPlainText(QStringLiteral("   \n"));
+    QCoreApplication::processEvents();
+    EXPECT_FALSE(send_button->isEnabled());
+    send_button->click();
+    EXPECT_EQ(send_spy.count(), 0);
+
+    input->setPlainText(QStringLiteral("hello bob"));
+    QCoreApplication::processEvents();
+    ASSERT_TRUE(send_button->isEnabled());
+    send_button->click();
+
+    ASSERT_EQ(send_spy.count(), 1);
+    EXPECT_EQ(send_spy.at(0).at(0).toString(), QStringLiteral("private:1002"));
+    EXPECT_EQ(send_spy.at(0).at(1).toString(), QStringLiteral("hello bob"));
+
+    const auto bubbles = page.findChildren<liteim::client::MessageBubble*>("messageBubble");
+    ASSERT_EQ(bubbles.size(), 1);
+    EXPECT_EQ(bubbles.front()->property("messageDirection").toString(), QStringLiteral("outgoing"));
+    EXPECT_EQ(bubbles.front()->property("messageStatus").toString(), QStringLiteral("sending"));
+    auto* text = bubbles.front()->findChild<QLabel*>("messageBubbleText");
+    ASSERT_NE(text, nullptr);
+    EXPECT_EQ(text->text(), QStringLiteral("hello bob"));
+}
+
+TEST(QtChatPageTest, IncomingPrivatePushAppearsAsLeftBubble) {
+    liteim::client::ChatPage page;
+    page.openConversation(QStringLiteral("private:1002"),
+                          QStringLiteral("Bob"),
+                          liteim::client::ConversationKind::Private);
+
+    page.appendMessage(makeChatMessage(QStringLiteral("private:1002"),
+                                       42,
+                                       liteim::client::MessageDirection::Incoming,
+                                       QStringLiteral("hi alice")));
+
+    const auto bubbles = page.findChildren<liteim::client::MessageBubble*>("messageBubble");
+    ASSERT_EQ(bubbles.size(), 1);
+    EXPECT_EQ(bubbles.front()->property("messageDirection").toString(), QStringLiteral("incoming"));
+    auto* text = bubbles.front()->findChild<QLabel*>("messageBubbleText");
+    ASSERT_NE(text, nullptr);
+    EXPECT_EQ(text->text(), QStringLiteral("hi alice"));
+}
+
+TEST(QtChatPageTest, GroupIncomingMessageShowsSenderName) {
+    liteim::client::ChatPage page;
+    page.openConversation(QStringLiteral("group:2001"),
+                          QStringLiteral("LiteIM Dev Group"),
+                          liteim::client::ConversationKind::Group);
+
+    auto message = makeChatMessage(QStringLiteral("group:2001"),
+                                   50,
+                                   liteim::client::MessageDirection::Incoming,
+                                   QStringLiteral("group hello"));
+    message.sender_name = QStringLiteral("Charlie");
+    page.appendMessage(message);
+
+    const auto bubbles = page.findChildren<liteim::client::MessageBubble*>("messageBubble");
+    ASSERT_EQ(bubbles.size(), 1);
+    auto* sender = bubbles.front()->findChild<QLabel*>("messageBubbleSender");
+    ASSERT_NE(sender, nullptr);
+    EXPECT_FALSE(sender->isHidden());
+    EXPECT_EQ(sender->text(), QStringLiteral("Charlie"));
+}
+
+TEST(QtChatPageTest, LoadEarlierRequestsBeforeEarliestMessageId) {
+    liteim::client::ChatPage page;
+    page.openConversation(QStringLiteral("private:1002"),
+                          QStringLiteral("Bob"),
+                          liteim::client::ConversationKind::Private);
+    page.setMessages({makeChatMessage(QStringLiteral("private:1002"),
+                                      10,
+                                      liteim::client::MessageDirection::Incoming,
+                                      QStringLiteral("older")),
+                      makeChatMessage(QStringLiteral("private:1002"),
+                                      15,
+                                      liteim::client::MessageDirection::Outgoing,
+                                      QStringLiteral("newer"))});
+
+    QSignalSpy history_spy(&page, &liteim::client::ChatPage::historyRequested);
+    auto* load_earlier = page.findChild<QPushButton*>("loadEarlierMessagesButton");
+    ASSERT_NE(load_earlier, nullptr);
+    load_earlier->click();
+
+    ASSERT_EQ(history_spy.count(), 1);
+    EXPECT_EQ(history_spy.at(0).at(0).toString(), QStringLiteral("private:1002"));
+    EXPECT_EQ(history_spy.at(0).at(1).toULongLong(), 10ULL);
+}
+
+TEST(QtChatInputBarTest, EnterSendsAndShiftEnterInsertsNewLine) {
+    liteim::client::ChatInputBar input_bar;
+    QSignalSpy send_spy(&input_bar, &liteim::client::ChatInputBar::sendRequested);
+
+    auto* input = input_bar.findChild<QTextEdit*>("chatInputEdit");
+    auto* send_button = input_bar.findChild<QPushButton*>("chatSendButton");
+    ASSERT_NE(input, nullptr);
+    ASSERT_NE(send_button, nullptr);
+    EXPECT_FALSE(send_button->isEnabled());
+
+    input->setPlainText(QStringLiteral("hello"));
+    QCoreApplication::processEvents();
+    ASSERT_TRUE(send_button->isEnabled());
+    QTest::keyClick(input, Qt::Key_Return);
+
+    ASSERT_EQ(send_spy.count(), 1);
+    EXPECT_EQ(send_spy.at(0).at(0).toString(), QStringLiteral("hello"));
+    EXPECT_TRUE(input->toPlainText().isEmpty());
+
+    input->setPlainText(QStringLiteral("line one"));
+    input->moveCursor(QTextCursor::End);
+    QCoreApplication::processEvents();
+    QTest::keyClick(input, Qt::Key_Return, Qt::ShiftModifier);
+
+    EXPECT_EQ(send_spy.count(), 1);
+    EXPECT_EQ(input->toPlainText(), QStringLiteral("line one\n"));
 }
