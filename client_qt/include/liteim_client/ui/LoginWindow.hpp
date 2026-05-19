@@ -12,11 +12,15 @@ class QSpinBox;
 namespace liteim::client {
 // LoginWindow 是 登录 UI 层，只收集输入、显示状态、转发请求
 
+class ClientRuntime;
+
 class LoginWindow final : public QWidget {
     Q_OBJECT
 
 public:
     explicit LoginWindow(QWidget* parent = nullptr);
+    ClientRuntime& runtime() noexcept;
+    const ClientRuntime& runtime() const noexcept;
 
 signals:
     void loginSucceeded(liteim::client::AuthResult result);

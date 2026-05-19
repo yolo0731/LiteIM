@@ -1,6 +1,8 @@
 add_library(liteim_qt_client_core STATIC
     ../include/liteim_client/app/ClientApp.hpp
+    ../include/liteim_client/app/ClientRuntime.hpp
     ../include/liteim_client/auth/AuthController.hpp
+    ../include/liteim_client/chat/ChatController.hpp
     ../include/liteim_client/model/ConversationModel.hpp
     ../include/liteim_client/network/ClientSession.hpp
     ../include/liteim_client/network/TcpClient.hpp
@@ -15,7 +17,9 @@ add_library(liteim_qt_client_core STATIC
     ../include/liteim_client/ui/RegisterDialog.hpp
     ../include/liteim_client/ui/SideBar.hpp
     app/ClientApp.cpp
+    app/ClientRuntime.cpp
     auth/AuthController.cpp
+    chat/ChatController.cpp
     model/ConversationModel.cpp
     network/ClientSession.cpp
     network/TcpClient.cpp

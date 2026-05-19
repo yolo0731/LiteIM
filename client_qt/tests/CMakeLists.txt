@@ -70,3 +70,7 @@ liteim_add_qt_client_step_test(
     LiteIMQtClient.Step50
     "QtChatPageTest.*:QtChatInputBarTest.*"
 )
+liteim_add_qt_client_step_test(
+    LiteIMQtClient.Step51
+    "QtChatControllerTest.*:QtMainWindowStep51Test.*"
+)

@@ -1,5 +1,7 @@
 #include "liteim_client/auth/AuthController.hpp"
 #include "liteim_client/app/ClientApp.hpp"
+#include "liteim_client/app/ClientRuntime.hpp"
+#include "liteim_client/chat/ChatController.hpp"
 #include "liteim_client/model/ConversationModel.hpp"
 #include "liteim_client/network/ClientSession.hpp"
 #include "liteim_client/ui/LoginWindow.hpp"
@@ -104,6 +106,41 @@ liteim::Packet makeAuthResponse(liteim::MessageType type, std::uint64_t seq_id) 
     return packet;
 }
 
+liteim::Packet makeWireMessage(liteim::MessageType type,
+                               std::uint64_t seq_id,
+                               std::uint64_t message_id,
+                               std::uint64_t conversation_type,
+                               std::uint64_t conversation_id,
+                               std::uint64_t sender_id,
+                               std::uint64_t receiver_id,
+                               const QString& text) {
+    liteim::Packet packet;
+    packet.header.msg_type = type;
+    packet.header.seq_id = seq_id;
+    EXPECT_TRUE(liteim::client::PacketCodec::appendUint64Field(
+                    liteim::TlvType::MessageId, message_id, packet)
+                    .isOk());
+    EXPECT_TRUE(liteim::client::PacketCodec::appendUint64Field(
+                    liteim::TlvType::ConversationType, conversation_type, packet)
+                    .isOk());
+    EXPECT_TRUE(liteim::client::PacketCodec::appendUint64Field(
+                    liteim::TlvType::ConversationId, conversation_id, packet)
+                    .isOk());
+    EXPECT_TRUE(liteim::client::PacketCodec::appendUint64Field(
+                    liteim::TlvType::SenderId, sender_id, packet)
+                    .isOk());
+    EXPECT_TRUE(liteim::client::PacketCodec::appendUint64Field(
+                    liteim::TlvType::ReceiverId, receiver_id, packet)
+                    .isOk());
+    EXPECT_TRUE(liteim::client::PacketCodec::appendStringField(
+                    liteim::TlvType::MessageText, text, packet)
+                    .isOk());
+    EXPECT_TRUE(liteim::client::PacketCodec::appendUint64Field(
+                    liteim::TlvType::TimestampMs, 1800000000000ULL, packet)
+                    .isOk());
+    return packet;
+}
+
 liteim::Packet makeErrorResponse(std::uint64_t seq_id, const QString& message) {
     liteim::Packet packet;
     packet.header.msg_type = liteim::MessageType::ErrorResponse;
@@ -142,6 +179,26 @@ liteim::Packet readPacketFromSocket(QTcpSocket& socket) {
                     .isOk());
     EXPECT_EQ(packets.size(), 1U);
     return packets.empty() ? liteim::Packet{} : packets.front();
+}
+
+liteim::TlvMap fieldsFor(const liteim::Packet& packet) {
+    liteim::TlvMap fields;
+    EXPECT_TRUE(liteim::client::PacketCodec::parseFields(packet, fields).isOk());
+    return fields;
+}
+
+std::uint64_t uint64Field(const liteim::Packet& packet, liteim::TlvType type) {
+    const auto fields = fieldsFor(packet);
+    std::uint64_t value = 0;
+    EXPECT_TRUE(liteim::client::PacketCodec::getUint64Field(fields, type, value).isOk());
+    return value;
+}
+
+QString stringField(const liteim::Packet& packet, liteim::TlvType type) {
+    const auto fields = fieldsFor(packet);
+    QString value;
+    EXPECT_TRUE(liteim::client::PacketCodec::getStringField(fields, type, value).isOk());
+    return value;
 }
 
 liteim::client::ChatMessage makeChatMessage(const QString& conversation_id,
@@ -900,4 +957,229 @@ TEST(QtChatInputBarTest, EnterSendsAndShiftEnterInsertsNewLine) {
 
     EXPECT_EQ(send_spy.count(), 1);
     EXPECT_EQ(input->toPlainText(), QStringLiteral("line one\n"));
+}
+
+TEST(QtChatControllerTest, SendsFriendAndGroupManagementRequests) {
+    QTcpServer server;
+    ASSERT_TRUE(server.listen(QHostAddress::LocalHost, 0));
+
+    liteim::client::ClientRuntime runtime;
+    liteim::client::ChatController controller(runtime);
+    QSignalSpy connected_spy(&runtime.client(), &liteim::client::TcpClient::connected);
+    QSignalSpy server_spy(&server, &QTcpServer::newConnection);
+
+    runtime.client().connectToHost(QStringLiteral("127.0.0.1"), server.serverPort());
+    ASSERT_TRUE(waitForSpyCount(connected_spy, 1));
+    ASSERT_TRUE(waitForSpyCount(server_spy, 1) || server.hasPendingConnections());
+    std::unique_ptr<QTcpSocket> server_socket(server.nextPendingConnection());
+    ASSERT_NE(server_socket, nullptr);
+
+    ASSERT_TRUE(controller.addFriend(1002).isOk());
+    auto packet = readPacketFromSocket(*server_socket);
+    EXPECT_EQ(packet.header.msg_type, liteim::MessageType::AddFriendRequest);
+    EXPECT_EQ(uint64Field(packet, liteim::TlvType::TargetUserId), 1002U);
+
+    ASSERT_TRUE(controller.createGroup(QStringLiteral("project room")).isOk());
+    packet = readPacketFromSocket(*server_socket);
+    EXPECT_EQ(packet.header.msg_type, liteim::MessageType::CreateGroupRequest);
+    EXPECT_EQ(stringField(packet, liteim::TlvType::GroupName), QStringLiteral("project room"));
+
+    ASSERT_TRUE(controller.joinGroup(2001).isOk());
+    packet = readPacketFromSocket(*server_socket);
+    EXPECT_EQ(packet.header.msg_type, liteim::MessageType::JoinGroupRequest);
+    EXPECT_EQ(uint64Field(packet, liteim::TlvType::GroupId), 2001U);
+}
+
+TEST(QtMainWindowStep51Test, ContactSelectionOpensPrivateChatAndSendsPrivatePacket) {
+    QTcpServer server;
+    ASSERT_TRUE(server.listen(QHostAddress::LocalHost, 0));
+
+    liteim::client::ClientRuntime runtime;
+    runtime.session().markLoggedIn(1001, {}, QStringLiteral("5001"));
+    liteim::client::MainWindow window(runtime);
+    QSignalSpy connected_spy(&runtime.client(), &liteim::client::TcpClient::connected);
+    QSignalSpy server_spy(&server, &QTcpServer::newConnection);
+
+    runtime.client().connectToHost(QStringLiteral("127.0.0.1"), server.serverPort());
+    ASSERT_TRUE(waitForSpyCount(connected_spy, 1));
+    ASSERT_TRUE(waitForSpyCount(server_spy, 1) || server.hasPendingConnections());
+    std::unique_ptr<QTcpSocket> server_socket(server.nextPendingConnection());
+    ASSERT_NE(server_socket, nullptr);
+
+    auto* contacts = window.findChild<QPushButton*>("navContactsButton");
+    ASSERT_NE(contacts, nullptr);
+    contacts->click();
+    auto* contact_list = window.findChild<QListWidget*>("contactListItems");
+    ASSERT_NE(contact_list, nullptr);
+    ASSERT_GE(contact_list->count(), 2);
+    contact_list->setCurrentRow(1);
+    emit contact_list->itemClicked(contact_list->item(1));
+
+    auto packet = readPacketFromSocket(*server_socket);
+    EXPECT_EQ(packet.header.msg_type, liteim::MessageType::HistoryRequest);
+    EXPECT_EQ(uint64Field(packet, liteim::TlvType::ConversationType), 1U);
+    EXPECT_EQ(uint64Field(packet, liteim::TlvType::ConversationId), 10011002U);
+
+    auto* title = window.findChild<QLabel*>("chatTitleLabel");
+    ASSERT_NE(title, nullptr);
+    EXPECT_EQ(title->text(), QStringLiteral("Bob"));
+
+    auto* input = window.findChild<QTextEdit*>("chatInputEdit");
+    auto* send_button = window.findChild<QPushButton*>("chatSendButton");
+    ASSERT_NE(input, nullptr);
+    ASSERT_NE(send_button, nullptr);
+    input->setPlainText(QStringLiteral("hello bob"));
+    send_button->click();
+
+    packet = readPacketFromSocket(*server_socket);
+    EXPECT_EQ(packet.header.msg_type, liteim::MessageType::PrivateMessageRequest);
+    EXPECT_EQ(uint64Field(packet, liteim::TlvType::ReceiverId), 1002U);
+    EXPECT_EQ(stringField(packet, liteim::TlvType::MessageText), QStringLiteral("hello bob"));
+}
+
+TEST(QtMainWindowStep51Test, GroupSelectionOpensGroupChatAndSendsGroupPacket) {
+    QTcpServer server;
+    ASSERT_TRUE(server.listen(QHostAddress::LocalHost, 0));
+
+    liteim::client::ClientRuntime runtime;
+    runtime.session().markLoggedIn(1001, {}, QStringLiteral("5001"));
+    liteim::client::MainWindow window(runtime);
+    QSignalSpy connected_spy(&runtime.client(), &liteim::client::TcpClient::connected);
+    QSignalSpy server_spy(&server, &QTcpServer::newConnection);
+
+    runtime.client().connectToHost(QStringLiteral("127.0.0.1"), server.serverPort());
+    ASSERT_TRUE(waitForSpyCount(connected_spy, 1));
+    ASSERT_TRUE(waitForSpyCount(server_spy, 1) || server.hasPendingConnections());
+    std::unique_ptr<QTcpSocket> server_socket(server.nextPendingConnection());
+    ASSERT_NE(server_socket, nullptr);
+
+    auto* groups = window.findChild<QPushButton*>("navGroupsButton");
+    ASSERT_NE(groups, nullptr);
+    groups->click();
+    auto* group_list = window.findChild<QListWidget*>("groupListItems");
+    ASSERT_NE(group_list, nullptr);
+    ASSERT_GT(group_list->count(), 0);
+    group_list->setCurrentRow(0);
+    emit group_list->itemClicked(group_list->item(0));
+
+    auto packet = readPacketFromSocket(*server_socket);
+    EXPECT_EQ(packet.header.msg_type, liteim::MessageType::HistoryRequest);
+    EXPECT_EQ(uint64Field(packet, liteim::TlvType::ConversationType), 2U);
+    EXPECT_EQ(uint64Field(packet, liteim::TlvType::ConversationId), 2001U);
+
+    auto* input = window.findChild<QTextEdit*>("chatInputEdit");
+    auto* send_button = window.findChild<QPushButton*>("chatSendButton");
+    ASSERT_NE(input, nullptr);
+    ASSERT_NE(send_button, nullptr);
+    input->setPlainText(QStringLiteral("hello team"));
+    send_button->click();
+
+    packet = readPacketFromSocket(*server_socket);
+    EXPECT_EQ(packet.header.msg_type, liteim::MessageType::GroupMessageRequest);
+    EXPECT_EQ(uint64Field(packet, liteim::TlvType::GroupId), 2001U);
+    EXPECT_EQ(stringField(packet, liteim::TlvType::MessageText), QStringLiteral("hello team"));
+}
+
+TEST(QtMainWindowStep51Test, PersonaAgentContactIsOrdinaryPrivateChat) {
+    QTcpServer server;
+    ASSERT_TRUE(server.listen(QHostAddress::LocalHost, 0));
+
+    liteim::client::ClientRuntime runtime;
+    runtime.session().markLoggedIn(1001, {}, QStringLiteral("5001"));
+    liteim::client::MainWindow window(runtime);
+    QSignalSpy connected_spy(&runtime.client(), &liteim::client::TcpClient::connected);
+    QSignalSpy server_spy(&server, &QTcpServer::newConnection);
+
+    runtime.client().connectToHost(QStringLiteral("127.0.0.1"), server.serverPort());
+    ASSERT_TRUE(waitForSpyCount(connected_spy, 1));
+    ASSERT_TRUE(waitForSpyCount(server_spy, 1) || server.hasPendingConnections());
+    std::unique_ptr<QTcpSocket> server_socket(server.nextPendingConnection());
+    ASSERT_NE(server_socket, nullptr);
+
+    auto* contacts = window.findChild<QPushButton*>("navContactsButton");
+    ASSERT_NE(contacts, nullptr);
+    contacts->click();
+    auto* contact_list = window.findChild<QListWidget*>("contactListItems");
+    ASSERT_NE(contact_list, nullptr);
+
+    int agent_row = -1;
+    for (int row = 0; row < contact_list->count(); ++row) {
+        if (contact_list->item(row)->text().contains(QStringLiteral("PersonaAgent"))) {
+            agent_row = row;
+            break;
+        }
+    }
+    ASSERT_GE(agent_row, 0);
+    contact_list->setCurrentRow(agent_row);
+    emit contact_list->itemClicked(contact_list->item(agent_row));
+
+    auto packet = readPacketFromSocket(*server_socket);
+    EXPECT_EQ(packet.header.msg_type, liteim::MessageType::HistoryRequest);
+
+    auto* title = window.findChild<QLabel*>("chatTitleLabel");
+    ASSERT_NE(title, nullptr);
+    EXPECT_EQ(title->text(), QStringLiteral("PersonaAgent"));
+
+    auto* input = window.findChild<QTextEdit*>("chatInputEdit");
+    auto* send_button = window.findChild<QPushButton*>("chatSendButton");
+    ASSERT_NE(input, nullptr);
+    ASSERT_NE(send_button, nullptr);
+    input->setPlainText(QStringLiteral("hello agent"));
+    send_button->click();
+
+    packet = readPacketFromSocket(*server_socket);
+    EXPECT_EQ(packet.header.msg_type, liteim::MessageType::PrivateMessageRequest);
+    EXPECT_EQ(uint64Field(packet, liteim::TlvType::ReceiverId), 3001U);
+    EXPECT_EQ(stringField(packet, liteim::TlvType::MessageText), QStringLiteral("hello agent"));
+}
+
+TEST(QtMainWindowStep51Test, PrivatePushFromPersonaAgentAppearsInCurrentChat) {
+    QTcpServer server;
+    ASSERT_TRUE(server.listen(QHostAddress::LocalHost, 0));
+
+    liteim::client::ClientRuntime runtime;
+    runtime.session().markLoggedIn(1001, {}, QStringLiteral("5001"));
+    liteim::client::MainWindow window(runtime);
+    QSignalSpy connected_spy(&runtime.client(), &liteim::client::TcpClient::connected);
+    QSignalSpy server_spy(&server, &QTcpServer::newConnection);
+
+    runtime.client().connectToHost(QStringLiteral("127.0.0.1"), server.serverPort());
+    ASSERT_TRUE(waitForSpyCount(connected_spy, 1));
+    ASSERT_TRUE(waitForSpyCount(server_spy, 1) || server.hasPendingConnections());
+    std::unique_ptr<QTcpSocket> server_socket(server.nextPendingConnection());
+    ASSERT_NE(server_socket, nullptr);
+
+    auto* contacts = window.findChild<QPushButton*>("navContactsButton");
+    ASSERT_NE(contacts, nullptr);
+    contacts->click();
+    auto* contact_list = window.findChild<QListWidget*>("contactListItems");
+    ASSERT_NE(contact_list, nullptr);
+    int agent_row = -1;
+    for (int row = 0; row < contact_list->count(); ++row) {
+        if (contact_list->item(row)->text().contains(QStringLiteral("PersonaAgent"))) {
+            agent_row = row;
+            break;
+        }
+    }
+    ASSERT_GE(agent_row, 0);
+    emit contact_list->itemClicked(contact_list->item(agent_row));
+    static_cast<void>(readPacketFromSocket(*server_socket));
+
+    const auto push = makeWireMessage(liteim::MessageType::PrivateMessagePush,
+                                      0,
+                                      9001,
+                                      1,
+                                      10013001,
+                                      3001,
+                                      1001,
+                                      QStringLiteral("ordinary private reply"));
+    ASSERT_TRUE(writePacket(*server_socket, push));
+    QCoreApplication::processEvents();
+
+    const auto bubbles = window.findChildren<liteim::client::MessageBubble*>("messageBubble");
+    ASSERT_EQ(bubbles.size(), 1);
+    EXPECT_EQ(bubbles.front()->property("messageDirection").toString(), QStringLiteral("incoming"));
+    auto* text = bubbles.front()->findChild<QLabel*>("messageBubbleText");
+    ASSERT_NE(text, nullptr);
+    EXPECT_EQ(text->text(), QStringLiteral("ordinary private reply"));
 }

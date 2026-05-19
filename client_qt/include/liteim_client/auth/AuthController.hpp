@@ -2,8 +2,8 @@
 
 #include "liteim/protocol/MessageType.hpp"
 #include "liteim/protocol/Packet.hpp"
+#include "liteim_client/app/ClientRuntime.hpp"
 #include "liteim_client/network/ClientSession.hpp"
-#include "liteim_client/network/TcpClient.hpp"
 
 #include <QObject>
 #include <QString>
@@ -31,6 +31,8 @@ Q_OBJECT  // 可以使用 Qt 信号槽
 
     // 返回当前客户端本地登录状态
     const ClientSession& session() const noexcept;
+    ClientRuntime& runtime() noexcept;
+    const ClientRuntime& runtime() const noexcept;
     bool busy() const noexcept;
 
 signals:
@@ -55,8 +57,7 @@ private:
     void finishWithError(const QString& message);
     void setBusy(bool busy);
 
-    TcpClient client_;
-    ClientSession session_;
+    ClientRuntime runtime_;
 
     PendingAction pending_action_{PendingAction::None};
     QString connected_host_;

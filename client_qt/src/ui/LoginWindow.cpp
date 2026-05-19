@@ -36,6 +36,14 @@ LoginWindow::LoginWindow(QWidget* parent)
     });
 }
 
+ClientRuntime& LoginWindow::runtime() noexcept {
+    return auth_controller_.runtime();
+}
+
+const ClientRuntime& LoginWindow::runtime() const noexcept {
+    return auth_controller_.runtime();
+}
+
 void LoginWindow::buildUi() {
     // 设置窗口标题和大小
     setWindowTitle(QStringLiteral("LiteIM Login"));

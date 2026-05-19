@@ -1,5 +1,47 @@
 # LiteIM Progress
 
+## 2026-05-19 Step 51 Qt Private Group Agent Contact Flows
+
+本次进入 `Step 51：实现 Qt 私聊、群聊和外部 Agent 普通联系人项`。
+
+恢复路线：
+
+- `PROJECT_MEMORY.md` 定义 Step 51 范围为 Qt 客户端主要 IM 功能：从好友/群组列表打开会话，支持添加好友、创建群、加入群，支持私聊/群聊发送，未来 PersonaAgent 只作为普通联系人项。
+- 本 Step 不修改服务端协议、MySQL schema、Redis key，不在 C++ server 内加入 AI 身份、LLM、RAG 或特殊 @ 触发。
+- PersonaAgent 当前仍是未来外部 Python BotClient 控制的普通账号；Qt 这里只保留普通联系人/会话入口。
+
+TDD RED：
+
+- 新增 `QtChatControllerTest`，覆盖 `AddFriendRequest`、`CreateGroupRequest` 和 `JoinGroupRequest` 的真实 wire packet。
+- 新增 `QtMainWindowStep51Test`，覆盖点击好友打开私聊并发 `HistoryRequest` / `PrivateMessageRequest`，点击群组发 `HistoryRequest` / `GroupMessageRequest`，点击 PersonaAgent 后走普通私聊，以及 PersonaAgent 普通私聊 push 显示在当前聊天页。
+- 首次构建 `liteim_qt_client_tests` 按预期失败于缺少 `liteim_client/app/ClientRuntime.hpp`。
+
+GREEN 实现：
+
+- 新增 `ClientRuntime`，组合 Qt 端 `TcpClient` 和 `ClientSession`。
+- 新增 `ChatController`，把 Qt UI 动作转成现有 LiteIM TLV 协议请求，并解析 private/group push、history response。
+- `AuthController` 改为持有 `ClientRuntime`；`LoginWindow` 暴露 runtime；`ClientApp` 登录成功后创建 `MainWindow(login_window.runtime())`。
+- `ConversationModel`、`ContactListWidget` 和 `ConversationListWidget` 增加会话目标 id 元数据，让 UI 字符串会话 id 和协议整数字段分离。
+- `MainWindow` 记录当前会话类型、目标 id 和 wire conversation id，把 `ChatPage` 的 history/send 信号分发到 `ChatController`。
+- 修复 Step51 初次运行失败：联系人/群组列表不再同时响应 `currentRowChanged` 和 `itemClicked`，避免一次选择发出两次 `HistoryRequest`。
+- 更新 README、Step51 教程和 process 文档。
+
+当前验证：
+
+- `cmake --build build-qt --target liteim_qt_client_tests -j2`：通过。
+- `ctest --test-dir build-qt -R LiteIMQtClient.Step51 --output-on-failure`：通过。
+- `cmake --build build-qt --target liteim_qt_client_tests liteim_qt_client -j2`：通过。
+- `ctest --test-dir build-qt -R "LiteIMQtClient.Step46|LiteIMQtClient.Step47|LiteIMQtClient.Step48|LiteIMQtClient.Step49|LiteIMQtClient.Step50|LiteIMQtClient.Step51|LiteIMCMake.QtClientFoundation" --output-on-failure`：7/7 通过。
+- `LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/home/yolo/anaconda3/lib QT_QPA_PLATFORM=offscreen timeout 2s ./build-qt/client_qt/liteim_qt_client || test $? -eq 124`：通过，Qt 客户端进入事件循环后被 timeout 终止。
+- `cmake -S . -B build`：通过，默认构建不查找 Qt。
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -L unit --output-on-failure`：311/311 通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：MySQL / Redis healthy。
+- `ctest --test-dir build --output-on-failure`：381/381 通过。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" README.md docs/tutorials/step51_qt_private_group_agent_flows.md`：无输出。
+- `rg -n "^## " docs/tutorials/step51_qt_private_group_agent_flows.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
+- `git diff --check`：通过。
+
 ## 2026-05-19 Step 50 Qt Chat Page Bubbles History
 
 本次进入 `Step 50：实现聊天窗口、消息气泡和历史消息加载`。

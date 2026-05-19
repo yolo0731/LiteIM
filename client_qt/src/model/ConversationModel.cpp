@@ -32,8 +32,8 @@ QVariant ConversationModel::data(const QModelIndex& index, int role) const {
             text += QStringLiteral("  ") + item.timestamp;
         }
         if (item.unread_count > 0) {
-            text += QStringLiteral("  (") + QString::number(item.unread_count) +
-                    QStringLiteral(")");
+            text +=
+                QStringLiteral("  (") + QString::number(item.unread_count) + QStringLiteral(")");
         }
         return text;
     }
@@ -51,11 +51,13 @@ QVariant ConversationModel::data(const QModelIndex& index, int role) const {
         return item.avatar_text;
     case UnreadCountRole:
         return item.unread_count;
+    case TargetIdRole:
+        return QVariant::fromValue<qulonglong>(item.target_id);
     default:
         return {};
     }
 }
-
+// 把 role 编号映射成名字,返回QHash
 QHash<int, QByteArray> ConversationModel::roleNames() const {
     return {
         {ConversationIdRole, QByteArrayLiteral("conversationId")},
@@ -65,22 +67,25 @@ QHash<int, QByteArray> ConversationModel::roleNames() const {
         {TimestampRole, QByteArrayLiteral("timestamp")},
         {AvatarTextRole, QByteArrayLiteral("avatarText")},
         {UnreadCountRole, QByteArrayLiteral("unreadCount")},
+        {TargetIdRole, QByteArrayLiteral("targetId")},
     };
 }
 
 void ConversationModel::setConversations(const QVector<ConversationItem>& conversations) {
-    beginResetModel();
-    conversations_ = conversations;
+    beginResetModel();               // 模型要整体重置了
+    conversations_ = conversations;  // 替换整个会话列表
+    // 防止未读数为负数
     for (auto& item : conversations_) {
         item.unread_count = std::max(0, item.unread_count);
     }
-    endResetModel();
+    endResetModel();  // 模型重置完成了，视图要重新获取数据了
 }
 
 void ConversationModel::applyIncomingMessage(const ConversationUpdate& update,
                                              const QString& active_conversation_id) {
     beginResetModel();
-    const auto row = findConversationRow(update.conversation_id);
+    const auto row =
+        findConversationRow(update.conversation_id);  // 找这个 conversation_id 是否已存在
     ConversationItem item;
     if (row >= 0) {
         item = conversations_.takeAt(row);
@@ -98,7 +103,7 @@ void ConversationModel::applyIncomingMessage(const ConversationUpdate& update,
         ++item.unread_count;
     }
 
-    conversations_.prepend(item);
+    conversations_.prepend(item);  // 把这个会话项放到最前面
     endResetModel();
 }
 
@@ -110,6 +115,7 @@ void ConversationModel::markConversationRead(const QString& conversation_id) {
 
     conversations_[row].unread_count = 0;
     const auto changed = index(row, 0);
+    // 通知QT这一行数据变了
     emit dataChanged(changed, changed, {UnreadCountRole, Qt::DisplayRole});
 }
 
@@ -125,6 +131,7 @@ const QVector<ConversationItem>& ConversationModel::conversations() const noexce
     return conversations_;
 }
 
+// 遍历 conversations_，找到指定会话所在行
 int ConversationModel::findConversationRow(const QString& conversation_id) const {
     for (int i = 0; i < conversations_.size(); ++i) {
         if (conversations_.at(i).conversation_id == conversation_id) {

@@ -8,6 +8,25 @@
 - `LiteIM/docs/process/task_plan.md`、`LiteIM/docs/process/findings.md` 和 `LiteIM/docs/process/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-19 Step 51 Qt Private Group Agent Contact Flow Findings
+
+当前采用的边界：
+
+- Step 51 不修改服务端协议、MySQL schema、Redis key 或 C++ 服务端业务逻辑，只把 Qt UI 信号接到现有 TLV request/response/push。
+- 新增 `ClientRuntime`，把 Qt 端 `TcpClient` 和 `ClientSession` 组合成登录和主窗口共享的运行时状态。
+- `AuthController` 改为持有 `ClientRuntime`；`LoginWindow` 暴露 runtime；`ClientApp` 在登录成功后创建 `MainWindow(login_window.runtime())`，避免主窗口重新建 socket 后丢失登录态。
+- 新增 `ChatController`，负责构造 add-friend/create-group/join-group/private/group/history 请求，并把 private/group push 或 history response 转成 `ChatMessage`。
+- `ConversationItem` / `ContactListItem` 增加目标 id 和 conversation id 元数据；UI 使用 `private:<user_id>` / `group:<group_id>` 字符串，协议发送时转换为服务端需要的整数字段。
+- 点击 Bob 发送普通私聊历史请求和后续 `PrivateMessageRequest`；点击群组发送群历史请求和后续 `GroupMessageRequest`。
+- PersonaAgent 仍是普通联系人：`target_id = 3001`、`conversation_id = private:3001`，不加入特殊 sidebar、不加入 C++ AI 身份、不做群聊 @ 触发。
+- 当前好友/群组/PersonaAgent 列表仍是 Qt demo seed data；Step 51 覆盖协议发送链路和 push 展示，不实现完整远程列表刷新。
+
+TDD 记录：
+
+- RED 在 `qt_client_test.cpp` 中先引入 `liteim_client/app/ClientRuntime.hpp` 和 `liteim_client/chat/ChatController.hpp`，首次构建失败于缺少 `ClientRuntime.hpp`。
+- GREEN 初版后 Step51 运行失败：`ContactListWidget` 同时响应 `currentRowChanged` 和 `itemClicked`，一次测试选择导致两次 `HistoryRequest`；修复为只在真实 `itemClicked` 时激活联系人/群组。
+- Qt Step46-51 回归和 Qt offscreen startup 已通过；完整验证命令记录在 `progress.md`。
+
 ## 2026-05-19 Step 50 Qt Chat Page Bubble History Findings
 
 当前采用的边界：

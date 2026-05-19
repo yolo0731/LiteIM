@@ -65,12 +65,14 @@ QString parseErrorMessage(const Packet& packet) {
 
 }  // namespace
 
-AuthController::AuthController(QObject* parent) : QObject(parent), client_(this) {
+AuthController::AuthController(QObject* parent) : QObject(parent) {
     qRegisterMetaType<liteim::client::AuthResult>("liteim::client::AuthResult");
 
-    connect(&client_, &TcpClient::connected, this, &AuthController::sendPendingRequest);
-    connect(&client_, &TcpClient::packetReceived, this, &AuthController::handlePacketReceived);
-    connect(&client_, &TcpClient::errorOccurred, this, &AuthController::handleTransportError);
+    connect(&runtime_.client(), &TcpClient::connected, this, &AuthController::sendPendingRequest);
+    connect(&runtime_.client(), &TcpClient::packetReceived, this,
+            &AuthController::handlePacketReceived);
+    connect(&runtime_.client(), &TcpClient::errorOccurred, this,
+            &AuthController::handleTransportError);
 }
 
 void AuthController::login(const QString& host, quint16 port, const QString& username,
@@ -84,7 +86,15 @@ void AuthController::registerUser(const QString& host, quint16 port, const QStri
 }
 
 const ClientSession& AuthController::session() const noexcept {
-    return session_;
+    return runtime_.session();
+}
+
+ClientRuntime& AuthController::runtime() noexcept {
+    return runtime_;
+}
+
+const ClientRuntime& AuthController::runtime() const noexcept {
+    return runtime_;
 }
 
 bool AuthController::busy() const noexcept {
@@ -109,14 +119,14 @@ void AuthController::startRequest(PendingAction action, const QString& host, qui
     pending_nickname_ = trimmedCopy(nickname);
     setBusy(true);
 
-    if (client_.isConnected() && connected_host_ == pending_host_ &&
+    if (runtime_.client().isConnected() && connected_host_ == pending_host_ &&
         connected_port_ == pending_port_) {
         sendPendingRequest();
         return;
     }
     connected_host_.clear();
     connected_port_ = 0;
-    client_.connectToHost(pending_host_, pending_port_);
+    runtime_.client().connectToHost(pending_host_, pending_port_);
 }
 
 void AuthController::sendPendingRequest() {
@@ -132,7 +142,7 @@ void AuthController::sendPendingRequest() {
                                  ? MessageType::RegisterRequest
                                  : MessageType::LoginRequest;
     //  生成 seq_id
-    packet.header.seq_id = session_.trackRequest(packet.header.msg_type);
+    packet.header.seq_id = runtime_.session().trackRequest(packet.header.msg_type);
 
     // 给TLV字段赋值，追加到 packet.body 里
     auto status = PacketCodec::appendStringField(TlvType::Username, pending_username_, packet);
@@ -153,14 +163,14 @@ void AuthController::sendPendingRequest() {
         }
     }
 
-    status = client_.sendPacket(packet);
+    status = runtime_.client().sendPacket(packet);
     if (!status.isOk()) {
         finishWithError(statusMessage(status));
     }
 }
 // 处理服务端响应的登录/注册结果，或者连接过程中发生的网络错误,保存到AuthResult里，发出对应的信号
 void AuthController::handlePacketReceived(const Packet& packet) {
-    const auto pending = session_.takePending(packet.header.seq_id);
+    const auto pending = runtime_.session().takePending(packet.header.seq_id);
     if (!pending.has_value()) {
         return;
     }
@@ -196,7 +206,7 @@ void AuthController::handlePacketReceived(const Packet& packet) {
         return;
     }
 
-    session_.markLoggedIn(result.user_id, {}, QString::number(result.session_id));
+    runtime_.session().markLoggedIn(result.user_id, {}, QString::number(result.session_id));
     emit loginSucceeded(result);
 }
 
