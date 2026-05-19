@@ -11,6 +11,8 @@
 // 把三个子控件组合成常见 IM 三栏界面
 
 class QSplitter;  // QSplitter 是 Qt 中的一个控件，用于在窗口中创建可调整大小的分割区域,三栏分割器
+class QLabel;
+class QPushButton;
 
 namespace liteim::client {
 
@@ -29,6 +31,7 @@ public:
 private:
     void initializeWindow();
     void buildUi();
+    void buildStatusBar();
     void connectChatFlow();
     // 负责根据左侧导航切换中间栏和右侧标题
     void switchSection(const QString& section_id);
@@ -40,7 +43,9 @@ private:
     void sendMessage(const QString& conversation_id, const QString& text);
     void handleIncomingMessage(const ChatMessage& message);
     void handleDeliveredMessage(const ChatMessage& message);
+    void handleRequestFailed(const QString& message);
     void applyHistoryMessages(const QVector<ChatMessage>& messages);
+    void updateConnectionStatus(const QString& status_text, bool online);
 
     QSplitter* splitter_{nullptr};
     SideBar* side_bar_{nullptr};
@@ -49,6 +54,8 @@ private:
     ClientRuntime* runtime_{nullptr};
     ClientRuntime* owned_runtime_{nullptr};
     ChatController* chat_controller_{nullptr};
+    QLabel* connection_status_label_{nullptr};
+    QPushButton* reconnect_button_{nullptr};
     QString active_conversation_id_;
     QString active_conversation_title_;
     ConversationKind active_conversation_kind_{ConversationKind::Private};

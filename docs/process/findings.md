@@ -8,6 +8,28 @@
 - `LiteIM/docs/process/task_plan.md`、`LiteIM/docs/process/findings.md` 和 `LiteIM/docs/process/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-19 Step 52 Qt Heartbeat Reconnect Polish Findings
+
+当前采用的边界：
+
+- Step 52 不修改服务端协议、MySQL schema、Redis key、服务端登录态模型或 PersonaAgent 行为，只补 Qt 客户端稳定性和演示体验。
+- `ClientRuntime` 是 Qt 端连接状态入口：保存 server endpoint，管理 `TcpClient`、`ClientSession`、心跳 `QTimer`、连接状态和一次自动重连。
+- 登录成功后启动 30 秒默认心跳；测试可用更短 interval 验证 `HeartbeatRequest` wire packet。
+- `HeartbeatResponse` 由 `ClientRuntime` 消费；`AuthController` 只消费 register/login pending response，`ChatController` 只消费聊天/好友/群组/history pending response。
+- 这个 pending-response 归属修复避免真实 app 中 `AuthController` 在登录窗口关闭后仍监听 packet，并误取走聊天响应。
+- 主窗口状态栏显示连接状态和 `Reconnect` 按钮；断线时停止心跳，状态变为 `Offline`，手动重连可重新建立 TCP 连接。
+- 自动重连第一版只尝试一次，避免无限 reconnect loop。
+- 登录窗口继续使用 `QSettings` 保存 host、port、recent username；不保存密码。
+- 当前重连是 TCP 连接层恢复，不自动重新登录；完整 re-auth 需要后续协议设计。
+- 发送失败时把最新 outgoing `Sending` 气泡改成 `Failed`，不做可靠投递、ACK、重试队列或本地缓存。
+- 截图交付采用 README 中的运行截图说明，不额外引入截图脚本依赖。
+
+TDD 记录：
+
+- RED 在 `qt_client_test.cpp` 增加 Step52 测试，首次构建失败于 `ClientRuntime` 缺少 `setConnectionEndpoint()`、`startHeartbeat()`、`connectionStatusChanged`、`reconnect()` 等新接口。
+- GREEN 初版后测试失败于 Qt 异步等待方式：心跳依赖 Qt event loop，断线测试也把 `Connecting...` / `Online` 误算成 `Offline`；修正测试等待条件后 `LiteIMQtClient.Step52` 通过。
+- 新增回归测试 `AuthControllerLeavesChatResponsesForChatController`，覆盖登录层存在时聊天 response 仍由 `ChatController` 消费。
+
 ## 2026-05-19 Step 51 Qt Private Group Agent Contact Flow Findings
 
 当前采用的边界：

@@ -118,6 +118,7 @@ void AuthController::startRequest(PendingAction action, const QString& host, qui
     pending_password_ = password;
     pending_nickname_ = trimmedCopy(nickname);
     setBusy(true);
+    runtime_.setConnectionEndpoint(pending_host_, pending_port_);
 
     if (runtime_.client().isConnected() && connected_host_ == pending_host_ &&
         connected_port_ == pending_port_) {
@@ -170,10 +171,16 @@ void AuthController::sendPendingRequest() {
 }
 // 处理服务端响应的登录/注册结果，或者连接过程中发生的网络错误,保存到AuthResult里，发出对应的信号
 void AuthController::handlePacketReceived(const Packet& packet) {
-    const auto pending = runtime_.session().takePending(packet.header.seq_id);
+    const auto pending = runtime_.session().pendingRequest(packet.header.seq_id);
     if (!pending.has_value()) {
         return;
     }
+    if (pending->request_type != MessageType::RegisterRequest &&
+        pending->request_type != MessageType::LoginRequest) {
+        return;
+    }
+
+    runtime_.session().takePending(packet.header.seq_id);
 
     if (packet.header.msg_type == MessageType::ErrorResponse) {
         pending_action_ = PendingAction::None;
@@ -207,6 +214,8 @@ void AuthController::handlePacketReceived(const Packet& packet) {
     }
 
     runtime_.session().markLoggedIn(result.user_id, {}, QString::number(result.session_id));
+    runtime_.setAutoReconnectEnabled(true);
+    runtime_.startHeartbeat();
     emit loginSucceeded(result);
 }
 

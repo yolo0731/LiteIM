@@ -31,6 +31,8 @@ public:
     void setMessages(const QVector<ChatMessage>& messages);
     void appendMessage(const ChatMessage& message);
     void updateMessageStatus(quint64 message_id, MessageSendStatus status);
+    void markLatestOutgoingSucceeded();
+    void markLatestOutgoingFailed();
 
 signals:
     void historyRequested(QString conversation_id, quint64 before_message_id);
@@ -42,6 +44,7 @@ private:
     void rebuildMessageList();
     void scrollToBottom();
     quint64 earliestMessageId() const noexcept;
+    void markLatestOutgoingStatus(MessageSendStatus status);
 
     QLabel* current_user_label_{nullptr};
     QLabel* online_status_label_{nullptr};

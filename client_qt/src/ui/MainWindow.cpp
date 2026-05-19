@@ -6,7 +6,10 @@
 #include "liteim_client/ui/ConversationListWidget.hpp"
 #include "liteim_client/ui/SideBar.hpp"
 
+#include <QLabel>
+#include <QPushButton>
 #include <QSplitter>
+#include <QStatusBar>
 #include <QString>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -60,6 +63,7 @@ void MainWindow::initializeWindow() {
 
     chat_controller_ = new ChatController(*runtime_, this);
     buildUi();
+    buildStatusBar();
     connectChatFlow();
 }
 
@@ -107,6 +111,20 @@ void MainWindow::buildUi() {
     switchSection(QStringLiteral("messages"));
 }
 
+void MainWindow::buildStatusBar() {
+    connection_status_label_ = new QLabel(this);
+    connection_status_label_->setObjectName(QStringLiteral("connectionStatusLabel"));
+
+    reconnect_button_ = new QPushButton(QStringLiteral("Reconnect"), this);
+    reconnect_button_->setObjectName(QStringLiteral("reconnectButton"));
+
+    statusBar()->addPermanentWidget(connection_status_label_, 1);
+    statusBar()->addPermanentWidget(reconnect_button_);
+
+    connect(reconnect_button_, &QPushButton::clicked, runtime_, &ClientRuntime::reconnect);
+    updateConnectionStatus(runtime_->connectionStatusText(), runtime_->isOnline());
+}
+
 // 一次点击会同时更新三个区域
 void MainWindow::switchSection(const QString& section_id) {
     side_bar_->setActiveSection(section_id);
@@ -125,6 +143,10 @@ void MainWindow::connectChatFlow() {
             &MainWindow::handleDeliveredMessage);
     connect(chat_controller_, &ChatController::historyLoaded, this,
             &MainWindow::applyHistoryMessages);
+    connect(chat_controller_, &ChatController::requestFailed, this,
+            &MainWindow::handleRequestFailed);
+    connect(runtime_, &ClientRuntime::connectionStatusChanged, this,
+            &MainWindow::updateConnectionStatus);
 }
 
 void MainWindow::openConversation(const QString& conversation_id,
@@ -195,11 +217,22 @@ void MainWindow::handleDeliveredMessage(const ChatMessage& message) {
     if (message.conversation_id != active_conversation_id_) {
         return;
     }
-    chat_page_->updateMessageStatus(0, MessageSendStatus::Succeeded);
+    chat_page_->markLatestOutgoingSucceeded();
+}
+
+void MainWindow::handleRequestFailed(const QString& message) {
+    chat_page_->markLatestOutgoingFailed();
+    statusBar()->showMessage(message, 5000);
 }
 
 void MainWindow::applyHistoryMessages(const QVector<ChatMessage>& messages) {
     chat_page_->setMessages(messages);
+}
+
+void MainWindow::updateConnectionStatus(const QString& status_text, bool online) {
+    connection_status_label_->setText(status_text);
+    reconnect_button_->setEnabled(!online && runtime_->hasConnectionEndpoint());
+    chat_page_->setCurrentUser(QStringLiteral("LiteIM User"), online);
 }
 
 }  // namespace liteim::client

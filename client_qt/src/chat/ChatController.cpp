@@ -49,6 +49,20 @@ QString senderNameFor(std::uint64_t sender_id, std::uint64_t self_user_id) {
     return QStringLiteral("User ") + QString::number(sender_id);
 }
 
+bool isChatRequest(MessageType type) {
+    switch (type) {
+        case MessageType::AddFriendRequest:
+        case MessageType::CreateGroupRequest:
+        case MessageType::JoinGroupRequest:
+        case MessageType::PrivateMessageRequest:
+        case MessageType::GroupMessageRequest:
+        case MessageType::HistoryRequest:
+            return true;
+        default:
+            return false;
+    }
+}
+
 }  // namespace
 
 ChatController::ChatController(ClientRuntime& runtime, QObject* parent)
@@ -224,10 +238,14 @@ void ChatController::handlePacketReceived(const Packet& packet) {
         return;
     }
 
-    const auto pending = runtime_.session().takePending(packet.header.seq_id);
+    const auto pending = runtime_.session().pendingRequest(packet.header.seq_id);
     if (!pending.has_value()) {
         return;
     }
+    if (!isChatRequest(pending->request_type)) {
+        return;
+    }
+    runtime_.session().takePending(packet.header.seq_id);
     handlePendingResponse(packet, *pending);
 }
 

@@ -146,6 +146,14 @@ void ChatPage::updateMessageStatus(quint64 message_id, MessageSendStatus status)
     }
 }
 
+void ChatPage::markLatestOutgoingSucceeded() {
+    markLatestOutgoingStatus(MessageSendStatus::Succeeded);
+}
+
+void ChatPage::markLatestOutgoingFailed() {
+    markLatestOutgoingStatus(MessageSendStatus::Failed);
+}
+
 void ChatPage::handleSendRequested(const QString& text) {
     if (active_conversation_id_.isEmpty()) {
         return;
@@ -209,6 +217,21 @@ quint64 ChatPage::earliestMessageId() const noexcept {
         }
     }
     return earliest;
+}
+
+void ChatPage::markLatestOutgoingStatus(MessageSendStatus status) {
+    for (int i = messages_.size() - 1; i >= 0; --i) {
+        if (messages_[i].direction != MessageDirection::Outgoing ||
+            messages_[i].status != MessageSendStatus::Sending) {
+            continue;
+        }
+
+        messages_[i].status = status;
+        if (i < bubble_widgets_.size()) {
+            bubble_widgets_[i]->setStatus(status);
+        }
+        return;
+    }
 }
 
 }  // namespace liteim::client

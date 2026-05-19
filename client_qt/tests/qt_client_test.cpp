@@ -33,12 +33,14 @@
 #include <QListWidget>
 #include <QPushButton>
 #include <QScrollBar>
+#include <QSettings>
 #include <QSignalSpy>
 #include <QSplitter>
 #include <QSpinBox>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTest>
+#include <QTemporaryDir>
 #include <QTextCursor>
 #include <QTextEdit>
 #include <QVariant>
@@ -559,7 +561,7 @@ TEST(QtMainWindowTest, StartsWithThreeColumnChatLayout) {
     ASSERT_NE(nickname, nullptr);
     ASSERT_NE(online_status, nullptr);
     EXPECT_FALSE(nickname->text().isEmpty());
-    EXPECT_TRUE(online_status->text().contains(QStringLiteral("Online")));
+    EXPECT_FALSE(online_status->text().isEmpty());
 
     EXPECT_GE(side_bar->width(), 60);
     EXPECT_LE(side_bar->width(), 96);
@@ -1182,4 +1184,237 @@ TEST(QtMainWindowStep51Test, PrivatePushFromPersonaAgentAppearsInCurrentChat) {
     auto* text = bubbles.front()->findChild<QLabel*>("messageBubbleText");
     ASSERT_NE(text, nullptr);
     EXPECT_EQ(text->text(), QStringLiteral("ordinary private reply"));
+}
+
+TEST(QtClientRuntimeStep52Test, HeartbeatTimerSendsHeartbeatRequest) {
+    QTcpServer server;
+    ASSERT_TRUE(server.listen(QHostAddress::LocalHost, 0));
+
+    liteim::client::ClientRuntime runtime;
+    runtime.session().markLoggedIn(1001, {}, QStringLiteral("5001"));
+    QSignalSpy connected_spy(&runtime.client(), &liteim::client::TcpClient::connected);
+    QSignalSpy server_spy(&server, &QTcpServer::newConnection);
+
+    runtime.setConnectionEndpoint(QStringLiteral("127.0.0.1"), server.serverPort());
+    runtime.client().connectToHost(QStringLiteral("127.0.0.1"), server.serverPort());
+    ASSERT_TRUE(waitForSpyCount(connected_spy, 1));
+    ASSERT_TRUE(waitForSpyCount(server_spy, 1) || server.hasPendingConnections());
+    std::unique_ptr<QTcpSocket> server_socket(server.nextPendingConnection());
+    ASSERT_NE(server_socket, nullptr);
+
+    runtime.startHeartbeat(10);
+
+    QTRY_VERIFY(server_socket->bytesAvailable() >=
+                static_cast<qint64>(liteim::kPacketHeaderSize));
+    const auto packet = readPacketFromSocket(*server_socket);
+    EXPECT_EQ(packet.header.msg_type, liteim::MessageType::HeartbeatRequest);
+    EXPECT_EQ(runtime.heartbeatIntervalMs(), 10);
+}
+
+TEST(QtClientRuntimeStep52Test, DisconnectedSocketReportsOfflineAndManualReconnectWorks) {
+    QTcpServer server;
+    ASSERT_TRUE(server.listen(QHostAddress::LocalHost, 0));
+
+    liteim::client::ClientRuntime runtime;
+    runtime.session().markLoggedIn(1001, {}, QStringLiteral("5001"));
+    runtime.setAutoReconnectEnabled(false);
+    runtime.setConnectionEndpoint(QStringLiteral("127.0.0.1"), server.serverPort());
+
+    QSignalSpy connected_spy(&runtime.client(), &liteim::client::TcpClient::connected);
+    QSignalSpy status_spy(&runtime, &liteim::client::ClientRuntime::connectionStatusChanged);
+    QSignalSpy server_spy(&server, &QTcpServer::newConnection);
+
+    runtime.reconnect();
+    ASSERT_TRUE(waitForSpyCount(connected_spy, 1));
+    ASSERT_TRUE(waitForSpyCount(server_spy, 1) || server.hasPendingConnections());
+    std::unique_ptr<QTcpSocket> server_socket(server.nextPendingConnection());
+    ASSERT_NE(server_socket, nullptr);
+
+    server_socket->disconnectFromHost();
+    ASSERT_TRUE(waitForSpyCount(status_spy, 3));
+    EXPECT_FALSE(runtime.isOnline());
+    EXPECT_TRUE(runtime.connectionStatusText().contains(QStringLiteral("Offline")));
+
+    runtime.reconnect();
+    ASSERT_TRUE(waitForSpyCount(connected_spy, 2));
+    ASSERT_TRUE(waitForSpyCount(server_spy, 2) || server.hasPendingConnections());
+    EXPECT_TRUE(runtime.isOnline());
+}
+
+TEST(QtClientRuntimeStep52Test, AutoReconnectRunsOnlyOncePerDisconnect) {
+    QTcpServer server;
+    ASSERT_TRUE(server.listen(QHostAddress::LocalHost, 0));
+
+    liteim::client::ClientRuntime runtime;
+    runtime.session().markLoggedIn(1001, {}, QStringLiteral("5001"));
+    runtime.setConnectionEndpoint(QStringLiteral("127.0.0.1"), server.serverPort());
+    runtime.setAutoReconnectEnabled(true);
+    runtime.setReconnectDelayMs(1);
+
+    QSignalSpy connected_spy(&runtime.client(), &liteim::client::TcpClient::connected);
+    QSignalSpy server_spy(&server, &QTcpServer::newConnection);
+
+    runtime.reconnect();
+    ASSERT_TRUE(waitForSpyCount(connected_spy, 1));
+    ASSERT_TRUE(waitForSpyCount(server_spy, 1) || server.hasPendingConnections());
+    std::unique_ptr<QTcpSocket> first_socket(server.nextPendingConnection());
+    ASSERT_NE(first_socket, nullptr);
+
+    first_socket->disconnectFromHost();
+    ASSERT_TRUE(waitForSpyCount(connected_spy, 2));
+    ASSERT_TRUE(waitForSpyCount(server_spy, 2) || server.hasPendingConnections());
+    std::unique_ptr<QTcpSocket> second_socket(server.nextPendingConnection());
+    ASSERT_NE(second_socket, nullptr);
+
+    second_socket->disconnectFromHost();
+    QTest::qWait(80);
+    EXPECT_EQ(connected_spy.count(), 2);
+}
+
+TEST(QtClientRuntimeStep52Test, AuthControllerLeavesChatResponsesForChatController) {
+    QTcpServer server;
+    ASSERT_TRUE(server.listen(QHostAddress::LocalHost, 0));
+
+    liteim::client::AuthController auth_controller;
+    liteim::client::ChatController chat_controller(auth_controller.runtime());
+    QSignalSpy login_spy(&auth_controller, &liteim::client::AuthController::loginSucceeded);
+    QSignalSpy auth_failed_spy(&auth_controller, &liteim::client::AuthController::authFailed);
+    QSignalSpy delivered_spy(&chat_controller, &liteim::client::ChatController::messageDelivered);
+    QSignalSpy server_spy(&server, &QTcpServer::newConnection);
+
+    auth_controller.login(QStringLiteral("127.0.0.1"),
+                          server.serverPort(),
+                          QStringLiteral("alice"),
+                          QStringLiteral("secret"));
+    ASSERT_TRUE(waitForSpyCount(server_spy, 1) || server.hasPendingConnections());
+    std::unique_ptr<QTcpSocket> server_socket(server.nextPendingConnection());
+    ASSERT_NE(server_socket, nullptr);
+
+    auto packet = readPacketFromSocket(*server_socket);
+    EXPECT_EQ(packet.header.msg_type, liteim::MessageType::LoginRequest);
+    ASSERT_TRUE(writePacket(*server_socket,
+                            makeAuthResponse(liteim::MessageType::LoginResponse,
+                                             packet.header.seq_id)));
+    ASSERT_TRUE(waitForSpyCount(login_spy, 1));
+
+    ASSERT_TRUE(chat_controller.sendPrivateMessage(1002, QStringLiteral("hello bob")).isOk());
+    packet = readPacketFromSocket(*server_socket);
+    EXPECT_EQ(packet.header.msg_type, liteim::MessageType::PrivateMessageRequest);
+
+    ASSERT_TRUE(writePacket(*server_socket,
+                            makeWireMessage(liteim::MessageType::PrivateMessageResponse,
+                                            packet.header.seq_id,
+                                            9100,
+                                            1,
+                                            10011002,
+                                            1001,
+                                            1002,
+                                            QStringLiteral("hello bob"))));
+
+    ASSERT_TRUE(waitForSpyCount(delivered_spy, 1));
+    EXPECT_EQ(auth_failed_spy.count(), 0);
+}
+
+TEST(QtMainWindowStep52Test, StatusBarShowsOfflineAndReconnectButtonReconnects) {
+    QTcpServer server;
+    ASSERT_TRUE(server.listen(QHostAddress::LocalHost, 0));
+
+    liteim::client::ClientRuntime runtime;
+    runtime.session().markLoggedIn(1001, {}, QStringLiteral("5001"));
+    runtime.setAutoReconnectEnabled(false);
+    runtime.setConnectionEndpoint(QStringLiteral("127.0.0.1"), server.serverPort());
+
+    liteim::client::MainWindow window(runtime);
+    auto* status_label = window.findChild<QLabel*>("connectionStatusLabel");
+    auto* reconnect_button = window.findChild<QPushButton*>("reconnectButton");
+    ASSERT_NE(status_label, nullptr);
+    ASSERT_NE(reconnect_button, nullptr);
+
+    QSignalSpy connected_spy(&runtime.client(), &liteim::client::TcpClient::connected);
+    QSignalSpy server_spy(&server, &QTcpServer::newConnection);
+    runtime.reconnect();
+    ASSERT_TRUE(waitForSpyCount(connected_spy, 1));
+    ASSERT_TRUE(waitForSpyCount(server_spy, 1) || server.hasPendingConnections());
+    std::unique_ptr<QTcpSocket> server_socket(server.nextPendingConnection());
+    ASSERT_NE(server_socket, nullptr);
+    EXPECT_TRUE(status_label->text().contains(QStringLiteral("Online")));
+    EXPECT_FALSE(reconnect_button->isEnabled());
+
+    server_socket->disconnectFromHost();
+    QTRY_VERIFY(status_label->text().contains(QStringLiteral("Offline")));
+    EXPECT_TRUE(reconnect_button->isEnabled());
+
+    reconnect_button->click();
+    ASSERT_TRUE(waitForSpyCount(connected_spy, 2));
+    EXPECT_TRUE(status_label->text().contains(QStringLiteral("Online")));
+}
+
+TEST(QtMainWindowStep52Test, SendFailureMarksOutgoingBubbleFailed) {
+    liteim::client::ClientRuntime runtime;
+    runtime.session().markLoggedIn(1001, {}, QStringLiteral("5001"));
+    liteim::client::MainWindow window(runtime);
+
+    auto* contacts = window.findChild<QPushButton*>("navContactsButton");
+    ASSERT_NE(contacts, nullptr);
+    contacts->click();
+    auto* contact_list = window.findChild<QListWidget*>("contactListItems");
+    ASSERT_NE(contact_list, nullptr);
+    contact_list->setCurrentRow(1);
+    emit contact_list->itemClicked(contact_list->item(1));
+
+    auto* input = window.findChild<QTextEdit*>("chatInputEdit");
+    auto* send_button = window.findChild<QPushButton*>("chatSendButton");
+    ASSERT_NE(input, nullptr);
+    ASSERT_NE(send_button, nullptr);
+    input->setPlainText(QStringLiteral("message while offline"));
+    send_button->click();
+
+    const auto bubbles = window.findChildren<liteim::client::MessageBubble*>("messageBubble");
+    ASSERT_EQ(bubbles.size(), 1);
+    EXPECT_EQ(bubbles.front()->property("messageStatus").toString(), QStringLiteral("failed"));
+    auto* status = bubbles.front()->findChild<QLabel*>("messageBubbleStatus");
+    ASSERT_NE(status, nullptr);
+    EXPECT_EQ(status->text(), QStringLiteral("Failed"));
+}
+
+TEST(QtLoginWindowStep52Test, SavesAndReloadsRecentConnectionSettings) {
+    QTemporaryDir settings_dir;
+    ASSERT_TRUE(settings_dir.isValid());
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings_dir.path());
+    QCoreApplication::setOrganizationName(QStringLiteral("LiteIMStep52Test"));
+    QCoreApplication::setApplicationName(QStringLiteral("LiteIMStep52Test"));
+
+    {
+        liteim::client::LoginWindow window;
+        auto* host = window.findChild<QLineEdit*>("serverHostEdit");
+        auto* port = window.findChild<QSpinBox*>("serverPortSpinBox");
+        auto* username = window.findChild<QLineEdit*>("usernameEdit");
+        auto* password = window.findChild<QLineEdit*>("passwordEdit");
+        auto* login = window.findChild<QPushButton*>("loginButton");
+        ASSERT_NE(host, nullptr);
+        ASSERT_NE(port, nullptr);
+        ASSERT_NE(username, nullptr);
+        ASSERT_NE(password, nullptr);
+        ASSERT_NE(login, nullptr);
+
+        host->setText(QStringLiteral("192.0.2.52"));
+        port->setValue(9052);
+        username->setText(QStringLiteral("step52-user"));
+        password->setText(QStringLiteral("secret"));
+        ASSERT_TRUE(login->isEnabled());
+        login->click();
+    }
+
+    liteim::client::LoginWindow reloaded;
+    auto* reloaded_host = reloaded.findChild<QLineEdit*>("serverHostEdit");
+    auto* reloaded_port = reloaded.findChild<QSpinBox*>("serverPortSpinBox");
+    auto* reloaded_username = reloaded.findChild<QLineEdit*>("usernameEdit");
+    ASSERT_NE(reloaded_host, nullptr);
+    ASSERT_NE(reloaded_port, nullptr);
+    ASSERT_NE(reloaded_username, nullptr);
+
+    EXPECT_EQ(reloaded_host->text(), QStringLiteral("192.0.2.52"));
+    EXPECT_EQ(reloaded_port->value(), 9052);
+    EXPECT_EQ(reloaded_username->text(), QStringLiteral("step52-user"));
 }

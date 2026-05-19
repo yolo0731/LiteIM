@@ -26,6 +26,7 @@ public:
     std::uint64_t trackRequest(MessageType request_type);
 
     bool hasPending(std::uint64_t seq_id) const;
+    std::optional<PendingRequest> pendingRequest(std::uint64_t seq_id) const;
     std::optional<PendingRequest> takePending(std::uint64_t seq_id);
     std::size_t pendingCount() const noexcept;
 

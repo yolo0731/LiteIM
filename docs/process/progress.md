@@ -1,5 +1,50 @@
 # LiteIM Progress
 
+## 2026-05-19 Step 52 Qt Heartbeat Reconnect Client Polish
+
+本次进入 `Step 52：实现 Qt 心跳、断线提示、本地设置和体验打磨`。
+
+恢复路线：
+
+- `PROJECT_MEMORY.md` 定义 Step 52 范围为 Qt 客户端心跳、断线提示、手动重连、一次自动重连、本地设置、状态栏、发送失败提示、未读清理和截图说明。
+- 本 Step 不修改服务端协议、MySQL schema、Redis key，不做本地 SQLite 缓存、复杂主题系统、系统托盘或自动重新登录协议。
+- PersonaAgent 仍是未来普通外部账号；Qt 侧不增加 AI 特殊身份、特殊 sidebar 或特殊消息类型。
+
+TDD RED：
+
+- 新增 `QtClientRuntimeStep52Test`，覆盖心跳 timer 发 `HeartbeatRequest`、断线后状态变 Offline、手动重连、一次自动重连、登录层不抢聊天响应。
+- 新增 `QtMainWindowStep52Test`，覆盖状态栏 Online/Offline 和 Reconnect 按钮，以及离线发送把 outgoing 气泡标为 Failed。
+- 新增 `QtLoginWindowStep52Test`，覆盖 `QSettings` 保存并重载服务器地址、端口和最近用户名。
+- 首次构建 `liteim_qt_client_tests` 按预期失败于 `ClientRuntime` 缺少 endpoint、heartbeat、status、reconnect 等 Step52 API。
+
+GREEN 实现：
+
+- `ClientRuntime` 增加 server endpoint、连接状态、心跳 `QTimer`、`HeartbeatRequest` 发送、`HeartbeatResponse` 消费、手动 `reconnect()` 和一次自动重连。
+- `ClientSession` 增加 `pendingRequest()`，让 runtime、AuthController、ChatController 先判断 pending request 类型再消费 response。
+- `AuthController` 在登录开始时记录 endpoint，登录成功后启动默认 30 秒心跳，并且只处理注册/登录 response。
+- `ChatController` 只处理聊天、好友、群组和 history response，避免被心跳或 auth response 干扰。
+- `MainWindow` 增加状态栏 `connectionStatusLabel` 和 `reconnectButton`，接收 runtime 连接状态并同步聊天页 Online/Offline。
+- `ChatPage` 增加把最新 outgoing Sending 气泡改成 Succeeded / Failed 的接口；请求失败时主窗口显示短暂状态栏消息并标记失败气泡。
+- `app.qss` 增加状态栏和重连按钮样式。
+- README 增加 Step52 说明和 Qt 截图说明；新增 Step52 教程；同步 process 文档。
+
+当前验证：
+
+- `cmake --build build-qt --target liteim_qt_client_tests -j2`：通过。
+- `ctest --test-dir build-qt -R LiteIMQtClient.Step52 --output-on-failure`：通过。
+- `cmake --build build-qt --target liteim_qt_client_tests liteim_qt_client -j2`：通过。
+- 首次 Qt Step46-52 回归发现旧 Step48 布局测试仍假设默认主窗口显示 `Online`；Step52 后默认未连接窗口应显示 `Offline`，已把旧布局测试改为只要求状态文本非空，连接语义由 Step52 专门测试覆盖。
+- `ctest --test-dir build-qt -R "LiteIMQtClient.Step46|LiteIMQtClient.Step47|LiteIMQtClient.Step48|LiteIMQtClient.Step49|LiteIMQtClient.Step50|LiteIMQtClient.Step51|LiteIMQtClient.Step52|LiteIMCMake.QtClientFoundation" --output-on-failure`：8/8 通过。
+- `LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/home/yolo/anaconda3/lib QT_QPA_PLATFORM=offscreen timeout 2s ./build-qt/client_qt/liteim_qt_client || test $? -eq 124`：通过，Qt 客户端进入事件循环后被 timeout 终止。
+- `cmake -S . -B build`：通过，默认构建不查找 Qt。
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -L unit --output-on-failure`：311/311 通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：MySQL / Redis healthy。
+- `ctest --test-dir build --output-on-failure`：381/381 通过。
+- `git diff --check`：通过。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" README.md docs/tutorials/step52_qt_heartbeat_reconnect_polish.md`：无输出。
+- `rg -n "^## " docs/tutorials/step52_qt_heartbeat_reconnect_polish.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
+
 ## 2026-05-19 Step 51 Qt Private Group Agent Contact Flows
 
 本次进入 `Step 51：实现 Qt 私聊、群聊和外部 Agent 普通联系人项`。

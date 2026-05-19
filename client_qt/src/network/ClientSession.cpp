@@ -18,6 +18,14 @@ bool ClientSession::hasPending(std::uint64_t seq_id) const {
     return pending_.find(seq_id) != pending_.end();
 }
 
+std::optional<PendingRequest> ClientSession::pendingRequest(std::uint64_t seq_id) const {
+    const auto it = pending_.find(seq_id);
+    if (it == pending_.end()) {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
 // 取出并删除待响应请求
 std::optional<PendingRequest> ClientSession::takePending(std::uint64_t seq_id) {
     const auto it = pending_.find(seq_id);

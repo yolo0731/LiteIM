@@ -42,6 +42,25 @@ QLabel#onlineStatusLabel {
     font-weight: 600;
 }
 
+QLabel#connectionStatusLabel {
+    color: #526257;
+    font-weight: 600;
+}
+
+QPushButton#reconnectButton {
+    background: #2f7d4f;
+    color: #ffffff;
+    border: 0;
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-weight: 600;
+}
+
+QPushButton#reconnectButton:disabled {
+    background: #c8d0c8;
+    color: #eef1ed;
+}
+
 QPushButton#navMessagesButton,
 QPushButton#navContactsButton,
 QPushButton#navGroupsButton,
