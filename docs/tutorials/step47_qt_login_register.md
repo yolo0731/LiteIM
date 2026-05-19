@@ -42,18 +42,19 @@ Step 46 已经有 `PacketCodec`、`TcpClient` 和 `ClientSession`，但用户还
 
 | 文件 | 变化 | 作用 |
 | --- | --- | --- |
-| `client_qt/include/liteim_client/AuthController.hpp` | 新增 | 登录/注册协议控制器 |
-| `client_qt/src/AuthController.cpp` | 新增 | 构造请求、解析响应、维护登录态 |
-| `client_qt/include/liteim_client/ClientApp.hpp` | 新增 | 连接登录成功信号和主窗口启动逻辑 |
-| `client_qt/src/ClientApp.cpp` | 新增 | 登录成功后创建 `MainWindow` 并关闭登录窗口 |
-| `client_qt/include/liteim_client/LoginWindow.hpp` | 新增 | 登录入口窗口 |
-| `client_qt/src/LoginWindow.cpp` | 新增 | 登录 UI、QSettings、状态提示和注册入口 |
-| `client_qt/include/liteim_client/RegisterDialog.hpp` | 新增 | 注册弹窗 |
-| `client_qt/src/RegisterDialog.cpp` | 新增 | 注册字段和输入校验 |
+| `client_qt/include/liteim_client/auth/AuthController.hpp` | 新增 | 登录/注册协议控制器 |
+| `client_qt/src/auth/AuthController.cpp` | 新增 | 构造请求、解析响应、维护登录态 |
+| `client_qt/include/liteim_client/app/ClientApp.hpp` | 新增 | 连接登录成功信号和主窗口启动逻辑 |
+| `client_qt/src/app/ClientApp.cpp` | 新增 | 登录成功后创建 `MainWindow` 并关闭登录窗口 |
+| `client_qt/include/liteim_client/ui/LoginWindow.hpp` | 新增 | 登录入口窗口 |
+| `client_qt/src/ui/LoginWindow.cpp` | 新增 | 登录 UI、QSettings、状态提示和注册入口 |
+| `client_qt/include/liteim_client/ui/RegisterDialog.hpp` | 新增 | 注册弹窗 |
+| `client_qt/src/ui/RegisterDialog.cpp` | 新增 | 注册字段和输入校验 |
 | `client_qt/src/main.cpp` | 修改 | 先显示登录窗口，登录成功后打开主窗口 |
 | `client_qt/tests/qt_client_test.cpp` | 修改 | 新增 Step 47 Qt 测试 |
 | `client_qt/tests/qt_client_test_main.cpp` | 修改 | 改用 `QApplication` 以支持 QWidget 测试 |
-| `client_qt/CMakeLists.txt` | 修改 | 注册 Step 47 测试入口和新 Qt 源文件 |
+| `client_qt/src/CMakeLists.txt` | 修改 | 注册 Step 47 新 Qt 源文件 |
+| `client_qt/tests/CMakeLists.txt` | 修改 | 注册 `LiteIMQtClient.Step47` 测试入口 |
 | `README.md` / process 文件 | 更新 | 记录 Step 47 边界和验证结果 |
 
 ## 4. 核心接口与契约

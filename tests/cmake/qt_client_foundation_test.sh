@@ -22,8 +22,10 @@ grep -q 'add_subdirectory(client_qt)' "${repo_root}/CMakeLists.txt" || {
 }
 
 require_file "client_qt/CMakeLists.txt"
-require_file "client_qt/include/liteim_client/MainWindow.hpp"
-require_file "client_qt/src/MainWindow.cpp"
+require_file "client_qt/src/CMakeLists.txt"
+require_file "client_qt/tests/CMakeLists.txt"
+require_file "client_qt/include/liteim_client/ui/MainWindow.hpp"
+require_file "client_qt/src/ui/MainWindow.cpp"
 require_file "client_qt/src/main.cpp"
 require_file "client_qt/resources/qss/app.qss"
 require_file "client_qt/resources/icons/README.md"

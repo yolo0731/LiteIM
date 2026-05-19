@@ -22,9 +22,10 @@ Step 41-44 已经提供 CLI、E2E、benchmark 和测试硬化。进入 Qt 阶段
 ### 本 Step 做
 
 - 根 CMake 增加 `LITEIM_BUILD_QT_CLIENT` 选项。
-- 新增 `client_qt/CMakeLists.txt`。
-- 新增 `client_qt/include/liteim_client/MainWindow.hpp`。
-- 新增 `client_qt/src/MainWindow.cpp` 和 `client_qt/src/main.cpp`。
+- 新增 `client_qt/CMakeLists.txt`，当前作为 Qt 客户端顶层入口。
+- 新增 `client_qt/src/CMakeLists.txt` 和 `client_qt/tests/CMakeLists.txt`，分别管理 Qt 客户端 target 和 Qt 测试 target。
+- 新增 `client_qt/include/liteim_client/ui/MainWindow.hpp`。
+- 新增 `client_qt/src/ui/MainWindow.cpp` 和 `client_qt/src/main.cpp`。
 - 新增 `client_qt/resources/qss/app.qss` 和 `.qrc` 资源入口。
 - 新增 `client_qt/resources/icons/README.md`，说明图标素材规则。
 - 新增 CTest 元数据测试，保证 Qt 工程骨架和资源规范存在。
@@ -42,9 +43,11 @@ Step 41-44 已经提供 CLI、E2E、benchmark 和测试硬化。进入 Qt 阶段
 | 文件 | 变化 | 作用 |
 | --- | --- | --- |
 | `CMakeLists.txt` | 修改 | 增加 `LITEIM_BUILD_QT_CLIENT`，按需进入 `client_qt/` |
-| `client_qt/CMakeLists.txt` | 新增 | 查找 Qt Widgets，构建 `liteim_qt_client` |
-| `client_qt/include/liteim_client/MainWindow.hpp` | 新增 | 声明 Qt 主窗口 |
-| `client_qt/src/MainWindow.cpp` | 新增 | 实现空窗口标题、尺寸和 central widget |
+| `client_qt/CMakeLists.txt` | 新增 | 查找 Qt Widgets，开启 AUTOMOC/AUTORCC，进入 `src/` 和 `tests/` |
+| `client_qt/src/CMakeLists.txt` | 新增 | 构建 `liteim_qt_client_core` 和 `liteim_qt_client` |
+| `client_qt/tests/CMakeLists.txt` | 新增 | 构建 `liteim_qt_client_tests` 并注册 Qt CTest |
+| `client_qt/include/liteim_client/ui/MainWindow.hpp` | 新增 | 声明 Qt 主窗口 |
+| `client_qt/src/ui/MainWindow.cpp` | 新增 | 实现空窗口标题、尺寸和 central widget |
 | `client_qt/src/main.cpp` | 新增 | 启动 `QApplication`、加载 QSS、显示窗口 |
 | `client_qt/resources/liteim_client.qrc` | 新增 | 注册 Qt 资源 |
 | `client_qt/resources/qss/app.qss` | 新增 | 放置应用基础样式 |
@@ -117,8 +120,9 @@ cmake -S . -B build
 ```text
 cmake -S . -B build-qt -DLITEIM_BUILD_QT_CLIENT=ON
     -> find_package(Qt Widgets)
-    -> add_executable(liteim_qt_client)
-    -> 编译 main.cpp / MainWindow.cpp / qrc
+    -> add_subdirectory(client_qt/src)
+    -> add_subdirectory(client_qt/tests)
+    -> 编译 main.cpp / ui/MainWindow.cpp / qrc
 ```
 
 ### 3. Qt 客户端启动

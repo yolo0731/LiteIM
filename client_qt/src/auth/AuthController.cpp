@@ -1,8 +1,8 @@
-#include "liteim_client/AuthController.hpp"
+#include "liteim_client/auth/AuthController.hpp"
 
 #include "liteim/base/ErrorCode.hpp"
 #include "liteim/protocol/TlvCodec.hpp"
-#include "liteim_client/PacketCodec.hpp"
+#include "liteim_client/protocol/PacketCodec.hpp"
 
 #include <QMetaType>
 
@@ -11,6 +11,7 @@
 namespace liteim::client {
 namespace {
 
+// 去掉字符串首尾的空白字符
 QString trimmedCopy(const QString& value) {
     return value.trimmed();
 }
@@ -26,6 +27,7 @@ Status parseAuthResult(const Packet& packet, AuthResult& result) {
         return status;
     }
 
+    // 从 TLV 字段里解析出 user_id、username、nickname，登录成功的话还有 session_id
     status = PacketCodec::getUint64Field(fields, TlvType::UserId, result.user_id);
     if (!status.isOk()) {
         return status;
@@ -63,9 +65,7 @@ QString parseErrorMessage(const Packet& packet) {
 
 }  // namespace
 
-AuthController::AuthController(QObject* parent)
-    : QObject(parent),
-      client_(this) {
+AuthController::AuthController(QObject* parent) : QObject(parent), client_(this) {
     qRegisterMetaType<liteim::client::AuthResult>("liteim::client::AuthResult");
 
     connect(&client_, &TcpClient::connected, this, &AuthController::sendPendingRequest);
@@ -90,7 +90,7 @@ const ClientSession& AuthController::session() const noexcept {
 bool AuthController::busy() const noexcept {
     return busy_;
 }
-
+// 输入检查、保存 pending 请求信息、设置 busy，然后连接服务器。
 void AuthController::startRequest(PendingAction action, const QString& host, quint16 port,
                                   const QString& username, const QString& password,
                                   const QString& nickname) {
@@ -127,11 +127,14 @@ void AuthController::sendPendingRequest() {
     connected_port_ = pending_port_;
 
     Packet packet;
+    // 设置 msg_type
     packet.header.msg_type = pending_action_ == PendingAction::Register
                                  ? MessageType::RegisterRequest
                                  : MessageType::LoginRequest;
+    //  生成 seq_id
     packet.header.seq_id = session_.trackRequest(packet.header.msg_type);
 
+    // 给TLV字段赋值，追加到 packet.body 里
     auto status = PacketCodec::appendStringField(TlvType::Username, pending_username_, packet);
     if (!status.isOk()) {
         finishWithError(statusMessage(status));
@@ -155,7 +158,7 @@ void AuthController::sendPendingRequest() {
         finishWithError(statusMessage(status));
     }
 }
-
+// 处理服务端响应的登录/注册结果，或者连接过程中发生的网络错误,保存到AuthResult里，发出对应的信号
 void AuthController::handlePacketReceived(const Packet& packet) {
     const auto pending = session_.takePending(packet.header.seq_id);
     if (!pending.has_value()) {

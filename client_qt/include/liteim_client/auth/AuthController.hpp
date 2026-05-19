@@ -2,8 +2,8 @@
 
 #include "liteim/protocol/MessageType.hpp"
 #include "liteim/protocol/Packet.hpp"
-#include "liteim_client/ClientSession.hpp"
-#include "liteim_client/TcpClient.hpp"
+#include "liteim_client/network/ClientSession.hpp"
+#include "liteim_client/network/TcpClient.hpp"
 
 #include <QObject>
 #include <QString>
@@ -20,15 +20,16 @@ struct AuthResult {
 };
 
 class AuthController final : public QObject {
-    Q_OBJECT
+Q_OBJECT  // 可以使用 Qt 信号槽
 
-public:
-    explicit AuthController(QObject* parent = nullptr);
+    public : explicit AuthController(QObject* parent = nullptr);
 
+    // UI 点登录时调用它
     void login(const QString& host, quint16 port, const QString& username, const QString& password);
     void registerUser(const QString& host, quint16 port, const QString& username,
                       const QString& password, const QString& nickname);
 
+    // 返回当前客户端本地登录状态
     const ClientSession& session() const noexcept;
     bool busy() const noexcept;
 
@@ -39,6 +40,7 @@ signals:
     void busyChanged(bool busy);
 
 private:
+    // 当前正在做什么
     enum class PendingAction {
         None,
         Register,
@@ -46,8 +48,7 @@ private:
     };
 
     void startRequest(PendingAction action, const QString& host, quint16 port,
-                      const QString& username, const QString& password,
-                      const QString& nickname);
+                      const QString& username, const QString& password, const QString& nickname);
     void sendPendingRequest();
     void handlePacketReceived(const Packet& packet);
     void handleTransportError(const QString& message);

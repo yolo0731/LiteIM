@@ -1,4 +1,4 @@
-#include "liteim_client/ClientSession.hpp"
+#include "liteim_client/network/ClientSession.hpp"
 
 #include <utility>
 
@@ -7,7 +7,7 @@ namespace liteim::client {
 std::uint64_t ClientSession::nextSeqId() {
     return next_seq_id_++;
 }
-
+// 记录一个待响应请求
 std::uint64_t ClientSession::trackRequest(MessageType request_type) {
     const auto seq_id = nextSeqId();
     pending_.emplace(seq_id, PendingRequest{request_type, QDateTime::currentDateTimeUtc()});
@@ -18,6 +18,7 @@ bool ClientSession::hasPending(std::uint64_t seq_id) const {
     return pending_.find(seq_id) != pending_.end();
 }
 
+// 取出并删除待响应请求
 std::optional<PendingRequest> ClientSession::takePending(std::uint64_t seq_id) {
     const auto it = pending_.find(seq_id);
     if (it == pending_.end()) {
@@ -33,6 +34,7 @@ std::size_t ClientSession::pendingCount() const noexcept {
     return pending_.size();
 }
 
+// 登录成功后保存状态
 void ClientSession::markLoggedIn(std::uint64_t user_id, QString token, QString session_id) {
     logged_in_ = true;
     user_id_ = user_id;
@@ -47,12 +49,14 @@ void ClientSession::clearLogin() {
     session_id_.clear();
 }
 
+// 完全重置会话状态，通常在整个连接会话重新开始时调用
 void ClientSession::reset() {
     next_seq_id_ = 1;
     pending_.clear();
     clearLogin();
 }
 
+// 内部状态暴露给上层使用
 bool ClientSession::isLoggedIn() const noexcept {
     return logged_in_;
 }

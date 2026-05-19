@@ -7,7 +7,7 @@ class QLineEdit;
 class QPushButton;
 
 namespace liteim::client {
-
+// 定义注册弹窗
 class RegisterDialog final : public QDialog {
     Q_OBJECT
 

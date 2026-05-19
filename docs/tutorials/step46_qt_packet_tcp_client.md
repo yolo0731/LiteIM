@@ -44,13 +44,15 @@ Step 45 只有空 Qt 窗口。真正的 IM 客户端不能让 UI 层直接拼二
 
 | 文件 | 变化 | 作用 |
 | --- | --- | --- |
-| `client_qt/CMakeLists.txt` | 修改 | 增加 `liteim_qt_client_core`、Qt Network/Test、AUTOMOC 和 Step 46 CTest |
-| `client_qt/include/liteim_client/PacketCodec.hpp` | 新增 | Qt 客户端协议编解码接口 |
-| `client_qt/src/PacketCodec.cpp` | 新增 | 复用 `encodePacket()`、`TlvCodec` 和 `FrameDecoder` |
-| `client_qt/include/liteim_client/TcpClient.hpp` | 新增 | `QTcpSocket` 客户端接口和信号 |
-| `client_qt/src/TcpClient.cpp` | 新增 | 连接、断开、发送、readyRead 解码和 socket 错误处理 |
-| `client_qt/include/liteim_client/ClientSession.hpp` | 新增 | 客户端 seq_id、pending request、登录态 |
-| `client_qt/src/ClientSession.cpp` | 新增 | 本地会话状态实现 |
+| `client_qt/CMakeLists.txt` | 修改 | 查找 Qt、开启 AUTOMOC/AUTORCC，并进入 Qt 子目录 |
+| `client_qt/src/CMakeLists.txt` | 修改 | 增加 `liteim_qt_client_core` 和 Qt Network 依赖 |
+| `client_qt/tests/CMakeLists.txt` | 修改 | 增加 `liteim_qt_client_tests`、Qt Test 依赖和 Step 46 CTest |
+| `client_qt/include/liteim_client/protocol/PacketCodec.hpp` | 新增 | Qt 客户端协议编解码接口 |
+| `client_qt/src/protocol/PacketCodec.cpp` | 新增 | 复用 `encodePacket()`、`TlvCodec` 和 `FrameDecoder` |
+| `client_qt/include/liteim_client/network/TcpClient.hpp` | 新增 | `QTcpSocket` 客户端接口和信号 |
+| `client_qt/src/network/TcpClient.cpp` | 新增 | 连接、断开、发送、readyRead 解码和 socket 错误处理 |
+| `client_qt/include/liteim_client/network/ClientSession.hpp` | 新增 | 客户端 seq_id、pending request、登录态 |
+| `client_qt/src/network/ClientSession.cpp` | 新增 | 本地会话状态实现 |
 | `client_qt/tests/qt_client_test.cpp` | 新增 | Step 46 行为测试 |
 | `client_qt/tests/qt_client_test_main.cpp` | 新增 | 创建 `QCoreApplication` 后运行 GoogleTest |
 | `README.md` / process 文件 | 更新 | 记录 Qt 协议网络层和验证方式 |

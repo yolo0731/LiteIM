@@ -5,7 +5,8 @@
 
 class QLabel;
 class QListWidget;
-
+// 主窗口中间那一栏
+// 根据左侧 SideBar 选中的区域，显示不同标题和不同占位列表
 namespace liteim::client {
 
 class ConversationListWidget final : public QWidget {
@@ -20,7 +21,6 @@ private:
     void populateMessages();
     void populateContacts();
     void populateGroups();
-    void populateAgent();
     void populateSettings();
 
     QLabel* title_label_{nullptr};

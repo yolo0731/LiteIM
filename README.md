@@ -239,7 +239,7 @@ Step 45 starts the optional Qt Widgets client project without affecting the defa
 
 Step 47 adds the Qt login/register entry flow. `LoginWindow` collects server address, port, username, and password; `RegisterDialog` collects account registration fields; and `AuthController` sends normal `RegisterRequest` / `LoginRequest` packets through `TcpClient`. On `LoginResponse`, the client records local login state and opens `MainWindow`. On `ErrorResponse`, the login window displays the server error message. The UI layer does not manipulate `QTcpSocket` directly.
 
-Step 48 implements the Qt main-window shell as a familiar three-column IM layout. `SideBar` provides messages, contacts, groups, ordinary Agent contact, and settings entries; `ConversationListWidget` switches the middle placeholder list by selected entry; and `ChatPage` shows the chat area plus the current user nickname and online state. This Step is layout-only: real conversation/contact models, unread badges, message loading, and push-driven updates begin in later Qt Steps.
+Step 48 implements the Qt main-window shell as a familiar three-column IM layout. `SideBar` provides messages, contacts, groups, and settings entries; `ConversationListWidget` switches the middle placeholder list by selected entry; and `ChatPage` shows the chat area plus the current user nickname and online state. The visual direction follows common WeChat-style IM interaction patterns, but LiteIM does not use WeChat branding, logos, icons, names, screenshots, or assets. This Step is layout-only: real conversation/contact models, unread badges, message loading, push-driven updates, and any future PersonaAgent ordinary contact/conversation item begin in later Qt Steps.
 
 Start MySQL and Redis:
 
@@ -377,8 +377,22 @@ LiteIM/
 ├── server/
 ├── client_cli/
 ├── client_qt/
+│   ├── CMakeLists.txt
 │   ├── include/liteim_client/
+│   │   ├── app/
+│   │   ├── auth/
+│   │   ├── network/
+│   │   ├── protocol/
+│   │   └── ui/
 │   ├── src/
+│   │   ├── CMakeLists.txt
+│   │   ├── app/
+│   │   ├── auth/
+│   │   ├── network/
+│   │   ├── protocol/
+│   │   └── ui/
+│   ├── tests/
+│   │   └── CMakeLists.txt
 │   └── resources/
 ├── bench/
 ├── scripts/
@@ -407,7 +421,7 @@ Directory conventions:
 - Public headers live under `include/liteim/<module>/`.
 - Library implementations live under `src/<module>/`.
 - Executable entry points live under `server/`, `client_cli/`, `client_qt/`, and `bench/`.
-- `client_qt/` is optional and only builds when `LITEIM_BUILD_QT_CLIENT=ON`; its resources must not use third-party IM product branding.
+- `client_qt/` is optional and only builds when `LITEIM_BUILD_QT_CLIENT=ON`; its Qt code is grouped by `app`, `auth`, `network`, `protocol`, and `ui`, while its resources must not use third-party IM product branding.
 - `.github/workflows/` contains repository CI automation.
 - `docs/tutorials/` contains per-step teaching notes.
 - `docs/process/` contains active planning, findings, and progress memory.
@@ -432,7 +446,7 @@ LiteIM is being built in phases:
 | Storage and cache | MySQL C API wrapper, prepared statement wrapper with signed/unsigned 64-bit binding, MySQL connection pool, RAII connection guard, user/auth DAO layer, message/offline-message DAO layer, `MySqlStorage` adapter, Redis client/pool, online status cache, unread counters, login rate limiting, and `RedisCache` adapter. |
 | IM services | Session binding, online-state synchronization, async message routing, register/login, friend list, private chat, group chat, offline messages, history loading, heartbeat protocol, and graceful shutdown. |
 | Tooling and validation | CLI client, Python E2E tests, benchmark tooling, broader GoogleTest/gMock coverage, CTest labels, ASan/UBSan, and repository CI. |
-| Demo clients | Qt Widgets chat client with login, conversation list, message bubbles, group chat, ordinary contact entry for the external PersonaAgent account, heartbeat state, and disconnect feedback. |
+| Demo clients | Qt Widgets chat client with login, conversation list, message bubbles, group chat, ordinary PersonaAgent contact/conversation entry, heartbeat state, and disconnect feedback. |
 | PersonaAgent integration | Planned Python BotClient and separate FastAPI / LangGraph AgentService using Knowledge, Memory, Authorized Style RAG, Persona, Safety, tracing, checkpointing, and evaluation. |
 
 README performance numbers and benchmark claims should only be added after real local measurements exist.

@@ -1,11 +1,11 @@
-#include "liteim_client/AuthController.hpp"
-#include "liteim_client/ClientApp.hpp"
-#include "liteim_client/ClientSession.hpp"
-#include "liteim_client/LoginWindow.hpp"
-#include "liteim_client/MainWindow.hpp"
-#include "liteim_client/PacketCodec.hpp"
-#include "liteim_client/RegisterDialog.hpp"
-#include "liteim_client/TcpClient.hpp"
+#include "liteim_client/auth/AuthController.hpp"
+#include "liteim_client/app/ClientApp.hpp"
+#include "liteim_client/network/ClientSession.hpp"
+#include "liteim_client/ui/LoginWindow.hpp"
+#include "liteim_client/ui/MainWindow.hpp"
+#include "liteim_client/protocol/PacketCodec.hpp"
+#include "liteim_client/ui/RegisterDialog.hpp"
+#include "liteim_client/network/TcpClient.hpp"
 
 #include "liteim/protocol/FrameDecoder.hpp"
 #include "liteim/protocol/MessageType.hpp"
@@ -462,8 +462,8 @@ TEST(QtMainWindowTest, StartsWithThreeColumnChatLayout) {
     EXPECT_NE(window.findChild<QPushButton*>("navMessagesButton"), nullptr);
     EXPECT_NE(window.findChild<QPushButton*>("navContactsButton"), nullptr);
     EXPECT_NE(window.findChild<QPushButton*>("navGroupsButton"), nullptr);
-    EXPECT_NE(window.findChild<QPushButton*>("navAgentButton"), nullptr);
     EXPECT_NE(window.findChild<QPushButton*>("navSettingsButton"), nullptr);
+    EXPECT_EQ(window.findChild<QPushButton*>("navAgentButton"), nullptr);
 
     auto* nickname = window.findChild<QLabel*>("currentUserNicknameLabel");
     auto* online_status = window.findChild<QLabel*>("onlineStatusLabel");
@@ -489,12 +489,12 @@ TEST(QtMainWindowTest, SidebarButtonsSwitchMiddleArea) {
     auto* list = window.findChild<QListWidget*>("conversationListItems");
     auto* contacts = window.findChild<QPushButton*>("navContactsButton");
     auto* groups = window.findChild<QPushButton*>("navGroupsButton");
-    auto* agent = window.findChild<QPushButton*>("navAgentButton");
+    auto* settings = window.findChild<QPushButton*>("navSettingsButton");
     ASSERT_NE(title, nullptr);
     ASSERT_NE(list, nullptr);
     ASSERT_NE(contacts, nullptr);
     ASSERT_NE(groups, nullptr);
-    ASSERT_NE(agent, nullptr);
+    ASSERT_NE(settings, nullptr);
 
     EXPECT_EQ(title->text(), QStringLiteral("Messages"));
     EXPECT_GT(list->count(), 0);
@@ -511,11 +511,11 @@ TEST(QtMainWindowTest, SidebarButtonsSwitchMiddleArea) {
     ASSERT_GT(list->count(), 0);
     EXPECT_TRUE(list->item(0)->text().contains(QStringLiteral("Groups")));
 
-    agent->click();
+    settings->click();
     QCoreApplication::processEvents();
-    EXPECT_EQ(title->text(), QStringLiteral("Agent"));
+    EXPECT_EQ(title->text(), QStringLiteral("Settings"));
     ASSERT_GT(list->count(), 0);
-    EXPECT_TRUE(list->item(0)->text().contains(QStringLiteral("Agent")));
+    EXPECT_TRUE(list->item(0)->text().contains(QStringLiteral("Settings")));
 }
 
 TEST(QtMainWindowTest, ResizeKeepsColumnsUsable) {

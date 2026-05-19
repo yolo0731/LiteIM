@@ -1,14 +1,60 @@
 # LiteIM Progress
 
+## 2026-05-19 Step 48 Sidebar Agent Entry Cleanup
+
+本次按用户选择采用方案 A：未来 PersonaAgent 是普通账号对象，只出现在联系人列表或会话列表里，不在 `SideBar` 顶级导航建立特殊 Agent 分类。
+
+实现内容：
+
+- 先按 TDD 修改 `QtMainWindowTest`，要求 `navAgentButton` 不存在，并继续覆盖 Messages / Contacts / Groups / Settings 的切换。
+- RED 验证：`LiteIMQtClient.Step48` 首次失败于旧代码仍创建 `navAgentButton`。
+- 删除 `SideBar` 的 Agent 按钮。
+- 删除 `ConversationListWidget` 的 `agent` section 和 `populateAgent()`。
+- 删除 `MainWindow` 的 Agent 标题映射。
+- 删除 `app.qss` 中 `navAgentButton` 的样式 selector。
+- 更新 README、Step48 教程、process 文件、`PROJECT_MEMORY.md`、`AGENTS.md` 和 `CLAUDE.md`，统一说明 Qt 可以参考常见微信式三栏 IM 交互，但不得使用微信品牌、logo、名称、图标、截图或素材。
+
+当前验证：
+
+- `cmake --build build-qt --target liteim_qt_client_tests -j2 && ctest --test-dir build-qt -R LiteIMQtClient.Step48 --output-on-failure`：通过。
+- `cmake -S . -B build-qt -DLITEIM_BUILD_QT_CLIENT=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build build-qt --target liteim_qt_client_tests liteim_qt_client -j2 && ctest --test-dir build-qt -R "LiteIMQtClient.Step46|LiteIMQtClient.Step47|LiteIMQtClient.Step48|LiteIMCMake.QtClientFoundation" --output-on-failure`：4/4 通过。
+- `LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/home/yolo/anaconda3/lib QT_QPA_PLATFORM=offscreen timeout 2s ./build-qt/client_qt/liteim_qt_client || test $? -eq 124`：通过，Qt 客户端进入事件循环后被 timeout 终止。
+- `cmake -S . -B build && cmake --build build --target liteim_tests -j2 && ctest --test-dir build -L unit --output-on-failure`：311/311 通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait && ctest --test-dir build --output-on-failure && git diff --check`：381/381 通过，diff check 通过。
+
+## 2026-05-19 Qt Client Local Structure Refactor
+
+本次按用户确认执行 `client_qt` 局部结构重构，不新开功能 Step。
+
+实现内容：
+
+- 将 Qt 头文件从 `client_qt/include/liteim_client/` 平铺目录移动到 `app`、`auth`、`network`、`protocol`、`ui` 子目录。
+- 将 Qt 实现文件从 `client_qt/src/` 平铺目录移动到对应的 `app`、`auth`、`network`、`protocol`、`ui` 子目录，保留 `src/main.cpp` 作为入口。
+- 更新所有源码、测试和文档 include 路径，例如 `liteim_client/ui/MainWindow.hpp`、`liteim_client/network/TcpClient.hpp`、`liteim_client/protocol/PacketCodec.hpp`。
+- 将 `client_qt/CMakeLists.txt` 拆成顶层入口、`client_qt/src/CMakeLists.txt` 和 `client_qt/tests/CMakeLists.txt`。
+- 保留 `liteim_qt_client_core`、`liteim_qt_client`、`liteim_qt_client_tests` target 名和 `LiteIMQtClient.Step46/47/48` CTest 名。
+- 保留 Qt 测试的 `QT_QPA_PLATFORM=offscreen` 和本机 Anaconda Qt `LD_LIBRARY_PATH` 处理，并显式把 Qt 可执行文件输出到 `build-qt/client_qt/`，避免改变原有运行命令。
+- 更新 `README.md`、`PROJECT_MEMORY.md`、Step45/46/47/48 教程、process 文件和 Qt 工程结构守卫脚本。
+
+当前验证：
+
+- `cmake -S . -B build-qt -DLITEIM_BUILD_QT_CLIENT=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`：通过。
+- `cmake --build build-qt --target liteim_qt_client_tests liteim_qt_client -j2`：通过。
+- `ctest --test-dir build-qt -R "LiteIMQtClient.Step46|LiteIMQtClient.Step47|LiteIMQtClient.Step48|LiteIMCMake.QtClientFoundation" --output-on-failure`：4/4 通过。
+- `LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/home/yolo/anaconda3/lib QT_QPA_PLATFORM=offscreen timeout 2s ./build-qt/client_qt/liteim_qt_client || test $? -eq 124`：通过，Qt 客户端进入事件循环后被 timeout 终止。
+- `cmake -S . -B build`：通过，默认构建不查找 Qt。
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -L unit --output-on-failure`：311/311 通过。
+
 ## 2026-05-19 Step 48 Qt Three-Column Main Window
 
 本次进入 `Step 48：实现 Qt 常见 IM 三栏主窗口`。
 
 恢复路线：
 
-- `PROJECT_MEMORY.md` 定义 Step 48 范围为 Qt 主界面布局：`MainWindow`、左侧 `SideBar`、中间 `ConversationListWidget`、右侧 `ChatPage`、消息/联系人/群组/普通 Agent 联系人入口/设置按钮、顶部当前用户昵称和在线状态、resize 后自适应。
+- `PROJECT_MEMORY.md` 定义 Step 48 范围为 Qt 主界面布局：`MainWindow`、左侧 `SideBar`、中间 `ConversationListWidget`、右侧 `ChatPage`、消息/联系人/群组/设置按钮、顶部当前用户昵称和在线状态、resize 后自适应。
 - 本 Step 不实现 Step 49 的真实会话模型、联系人模型、群组模型、未读红点、消息加载、push 更新、心跳重连或 PersonaAgent 行为。
-- Agent 入口只是普通联系人入口占位，LiteIM C++ 服务端仍不识别 AI 身份。
+- 后续 PersonaAgent 是普通账号对象，应进入联系人或会话列表，不作为 `SideBar` 顶级分类。LiteIM C++ 服务端仍不识别 AI 身份。
 
 TDD RED：
 
@@ -17,12 +63,12 @@ TDD RED：
 
 GREEN 实现：
 
-- 新增 `SideBar`，固定窄宽度，提供 messages / contacts / groups / agent / settings 五个入口和选中状态。
+- 新增 `SideBar`，固定窄宽度，提供 messages / contacts / groups / settings 四个入口和选中状态。
 - 新增 `ConversationListWidget`，中间区域根据左侧 section 切换标题和占位列表。
 - 新增 `ChatPage`，右侧展示当前用户昵称、在线状态、聊天区占位和禁用输入框。
 - 重写 `MainWindow`，使用 `QSplitter` 组合三栏，左栏固定，中栏限制宽度，右栏自适应。
 - 更新 `app.qss`，集中维护三栏、导航按钮、列表、状态和占位聊天区样式。
-- `client_qt/CMakeLists.txt` 注册新 Qt 源文件和 `LiteIMQtClient.Step48`。
+- `client_qt/src/CMakeLists.txt` 注册新 Qt 源文件，`client_qt/tests/CMakeLists.txt` 注册 `LiteIMQtClient.Step48`。
 - `README.md` 和 `docs/tutorials/step48_qt_three_column_main_window.md` 已同步 Step 48 边界、运行流程、测试设计和面试表达。
 
 当前验证：
@@ -55,7 +101,7 @@ GREEN 实现：
 TDD RED：
 
 - 新增 Qt 侧测试，覆盖登录窗口输入禁用、注册弹窗输入禁用、注册成功后继续登录、错误响应显示服务端错误、登录成功进入主窗口。
-- 首次构建 Step 47 Qt 测试按预期失败于缺少 `liteim_client/AuthController.hpp`。
+- 首次构建 Step 47 Qt 测试按预期失败于缺少 `liteim_client/auth/AuthController.hpp`。
 
 GREEN 实现：
 
@@ -63,7 +109,7 @@ GREEN 实现：
 - 新增 `LoginWindow`，提供服务器地址、端口、用户名、密码、登录按钮、注册按钮和状态提示，并通过 `QSettings` 记住服务器地址、端口和用户名。
 - 新增 `RegisterDialog`，提供注册用户名、密码、可选昵称和提交/取消按钮。
 - 新增 `ClientApp`，把登录成功后的主窗口创建逻辑从 `main.cpp` 抽出为可测桥接函数。
-- `client_qt/CMakeLists.txt` 把 Step 46 和 Step 47 Qt 测试拆成两个 CTest 入口，并为 QWidget 测试设置 `QT_QPA_PLATFORM=offscreen`。
+- `client_qt/tests/CMakeLists.txt` 把 Step 46 和 Step 47 Qt 测试拆成两个 CTest 入口，并为 QWidget 测试设置 `QT_QPA_PLATFORM=offscreen`。
 - `README.md` 和 `docs/tutorials/step47_qt_login_register.md` 已同步 Step 47 边界、运行流程、测试设计和面试表达。
 
 当前验证：
@@ -95,11 +141,11 @@ GREEN 实现：
 TDD RED：
 
 - 新增 Qt 侧 `liteim_qt_client_tests`，覆盖 PacketCodec wire format、半包/粘包、ClientSession、TcpClient 连接失败、发送 Packet 和 packetReceived 信号。
-- 首次直接构建 `liteim_qt_client_tests` 失败于旧 `build-qt` 尚未重新配置，目标不存在；重新配置后按预期失败于缺少 `liteim_client/ClientSession.hpp`。
+- 首次直接构建 `liteim_qt_client_tests` 失败于旧 `build-qt` 尚未重新配置，目标不存在；重新配置后按预期失败于缺少 `liteim_client/network/ClientSession.hpp`。
 
 GREEN 实现：
 
-- `client_qt/CMakeLists.txt` 增加 `liteim_qt_client_core`，开启 `CMAKE_AUTOMOC`，链接 Qt Widgets / Network，并注册 `LiteIMQtClient.Step46`。
+- `client_qt/src/CMakeLists.txt` 增加 `liteim_qt_client_core` 并链接 Qt Widgets / Network，`client_qt/tests/CMakeLists.txt` 注册 `LiteIMQtClient.Step46`。
 - 新增 `PacketCodec`，把 Qt `QByteArray` / `QString` 适配到现有 `liteim_protocol`，复用 `encodePacket()`、`TlvCodec` 和 `FrameDecoder`。
 - 新增 `TcpClient`，使用 `QTcpSocket` 支持连接、断开、发送 Packet、readyRead 解码、`connected` / `disconnected` / `packetReceived` / `errorOccurred` 信号。
 - 新增 `ClientSession`，管理客户端本地 seq_id、pending request、user_id、token 和 session_id。
@@ -130,7 +176,7 @@ GREEN 实现：
 恢复路线：
 
 - 当前 `PROJECT_MEMORY.md` 明确 Step 45 是 Qt Widgets 客户端基础工程，不是旧路线中的测试硬化。
-- Step 45 范围：`LITEIM_BUILD_QT_CLIENT` 可选构建、`client_qt/include/liteim_client/`、`client_qt/src/`、`resources/qss/app.qss`、图标资源规范文档和空窗口。
+- Step 45 范围：`LITEIM_BUILD_QT_CLIENT` 可选构建、`client_qt/include/liteim_client/{app,auth,network,protocol,ui}/`、`client_qt/src/{app,auth,network,protocol,ui}/`、`resources/qss/app.qss`、图标资源规范文档和空窗口。
 - 不做 Step 46 以后的 Qt 协议、`QTcpSocket`、登录注册、三栏主窗口、消息气泡或心跳。
 
 环境发现：
@@ -146,7 +192,7 @@ TDD RED：
 GREEN 实现：
 
 - 根 `CMakeLists.txt` 增加 `LITEIM_BUILD_QT_CLIENT`，默认 `OFF`，开启后才 `add_subdirectory(client_qt)`。
-- 新增 `client_qt/CMakeLists.txt`，查找 Qt Widgets，构建 `liteim_qt_client`。
+- 新增 `client_qt/CMakeLists.txt` 查找 Qt Widgets，当前由 `client_qt/src/CMakeLists.txt` 构建 `liteim_qt_client_core` / `liteim_qt_client`，由 `client_qt/tests/CMakeLists.txt` 构建和注册 Qt 测试。
 - 新增 `MainWindow.hpp/.cpp` 和 Qt `main.cpp`，启动空 `QMainWindow` 并加载 `:/qss/app.qss`。
 - 新增 `resources/liteim_client.qrc`、`resources/qss/app.qss` 和 `resources/icons/README.md`，明确禁止使用第三方 IM 产品品牌资源。
 - 修正 `qt_client_foundation_test.sh`，允许 README 说明禁用品牌，但禁止实际资源文件和文件名包含 WeChat/Weixin 品牌。
@@ -209,7 +255,7 @@ GREEN 实现：
 实现内容：
 
 - 全量扫描 `/home/yolo/jianli` 下 54 个 Markdown 文件，排除 LiteIM build 输出目录。
-- 更新 `/home/yolo/jianli/AGENTS.md` 和 `/home/yolo/jianli/CLAUDE.md`：PersonaAgent 作为普通账号接入；Qt 只是普通联系人入口；SafetyGuard 约束归 PersonaAgent，不让 C++ 服务端定义行文。
+- 更新 `/home/yolo/jianli/AGENTS.md` 和 `/home/yolo/jianli/CLAUDE.md`：PersonaAgent 作为普通账号接入；Qt 只展示普通联系人/会话项；SafetyGuard 约束归 PersonaAgent，不让 C++ 服务端定义行文。
 - 更新 `/home/yolo/jianli/PROJECT_MEMORY.md`：项目二中文称呼统一为 AI Agent Worker；seed 和用户身份边界统一为普通账号。
 - 清理 `LiteIM/README.md` 和相关教程里旧 assistant seed、旧专用协议、旧回复示例和旧边界说明。
 - 清理 `docs/process/findings.md` / `task_plan.md` / `progress.md` 中会误导后续上下文恢复的旧 C++ assistant 细节，保留“该路线已移除”的当前结论。

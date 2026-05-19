@@ -45,7 +45,6 @@ QLabel#onlineStatusLabel {
 QPushButton#navMessagesButton,
 QPushButton#navContactsButton,
 QPushButton#navGroupsButton,
-QPushButton#navAgentButton,
 QPushButton#navSettingsButton {
     color: #d9e7dc;
     background: transparent;
@@ -57,7 +56,6 @@ QPushButton#navSettingsButton {
 QPushButton#navMessagesButton:checked,
 QPushButton#navContactsButton:checked,
 QPushButton#navGroupsButton:checked,
-QPushButton#navAgentButton:checked,
 QPushButton#navSettingsButton:checked {
     color: #17201a;
     background: #f0c46a;

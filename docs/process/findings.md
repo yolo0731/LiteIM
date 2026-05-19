@@ -8,13 +8,38 @@
 - `LiteIM/docs/process/task_plan.md`、`LiteIM/docs/process/findings.md` 和 `LiteIM/docs/process/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-19 Qt Client Local Structure Refactor Findings
+
+当前采用的边界：
+
+- 本次是 `client_qt` 局部结构重构，不是新的功能 Step；不修改服务端协议、MySQL schema、Redis key、真实 Qt 数据模型、未读数、消息加载、push 更新或 PersonaAgent 行为。
+- Qt 客户端物理目录按职责分成 `app`、`auth`、`network`、`protocol`、`ui`：应用装配、认证流程、QTcpSocket/客户端会话、协议适配和 QWidget 组件各自归位。
+- CMake 采用分级结构：`client_qt/CMakeLists.txt` 只负责 Qt 查找、AUTOMOC/AUTORCC 和公共 warning helper；`client_qt/src/CMakeLists.txt` 负责 `liteim_qt_client_core` / `liteim_qt_client`；`client_qt/tests/CMakeLists.txt` 负责 `liteim_qt_client_tests` 和 Step46/47/48 CTest。
+- 保留一个 `liteim_qt_client_core` target，不拆成多个 Qt 子库；当前体量下目录分层已经足够，拆更多 target 会增加链接和 AUTOMOC 复杂度。
+- 保留原有 target 名、CTest 名、Qt offscreen 测试环境和 Anaconda Qt `LD_LIBRARY_PATH` 规避逻辑；显式设置 Qt executable/test 的 `RUNTIME_OUTPUT_DIRECTORY`，让原来的 `build-qt/client_qt/liteim_qt_client` 运行命令继续可用。
+- `tests/cmake/qt_client_foundation_test.sh` 已改为检查新的 `ui/MainWindow.hpp`、`src/ui/MainWindow.cpp`、`client_qt/src/CMakeLists.txt` 和 `client_qt/tests/CMakeLists.txt`。
+
+## 2026-05-19 Step 48 Sidebar Agent Entry Cleanup Findings
+
+当前采用的边界：
+
+- 用户选择方案 A：未来 PersonaAgent 是普通账号对象，只出现在联系人列表或会话列表中，不作为 `SideBar` 顶级分类。
+- Step 48 的顶级导航收敛为 messages / contacts / groups / settings；`agent` section、`navAgentButton` 和 `Agent` 占位列表全部移除。
+- Qt 客户端视觉可以参考常见微信式三栏 IM 交互：左侧窄导航、中间列表、右侧聊天区；但项目仍不得使用微信品牌、logo、名称、图标、截图或素材。
+- 本次不实现真实联系人模型、会话模型、未读数、消息加载、push 刷新、PersonaAgent BotClient 或服务端特殊 AI 身份。
+
+TDD 记录：
+
+- RED 修改 `QtMainWindowTest.StartsWithThreeColumnChatLayout`，要求不存在 `navAgentButton`，首次运行 `LiteIMQtClient.Step48` 失败于旧 `SideBar` 仍创建该按钮。
+- GREEN 删除 `SideBar` 的 Agent 按钮、`ConversationListWidget` 的 `agent` 分支、`MainWindow` 的 Agent 标题映射和 QSS 中的 `navAgentButton` selector。
+
 ## 2026-05-19 Step 48 Qt Three-Column Main Window Findings
 
 当前采用的边界：
 
 - Step 48 只实现登录后的 Qt 主窗口布局，不实现 Step 49 的真实 `ConversationModel`、联系人列表、群列表、未读数、消息加载或 push 更新。
 - 三栏布局使用 `QSplitter`：`SideBar` 固定窄宽度，`ConversationListWidget` 限制中等宽度，`ChatPage` 使用 stretch 占据剩余空间。
-- `SideBar` 提供 messages / contacts / groups / agent / settings 五个入口；`agent` 只是普通联系人入口占位，不代表 C++ 服务端存在 AI/assistant 身份或特殊协议。
+- `SideBar` 提供 messages / contacts / groups / settings 四个入口；后续 PersonaAgent 不进入顶级导航，而是作为普通联系人或普通会话出现。
 - `ConversationListWidget` 目前只展示占位列表，目的是给 Step 49 的 model-driven 列表留出稳定挂载点。
 - `ChatPage` 显示当前用户昵称和在线状态，同时保留聊天区和输入框占位；输入框禁用，避免提前实现发消息。
 - 样式统一写在 `client_qt/resources/qss/app.qss`，C++ 代码只负责结构和信号连接。
@@ -39,7 +64,7 @@ TDD 记录：
 TDD 记录：
 
 - RED 测试覆盖登录窗口空输入禁用、注册弹窗空输入禁用、注册成功后继续登录、错误响应显示服务端错误、登录成功打开主窗口。
-- 首次 Qt 测试构建按预期失败于缺少 `liteim_client/AuthController.hpp`。
+- 首次 Qt 测试构建按预期失败于缺少 `liteim_client/auth/AuthController.hpp`。
 - GREEN 后 `LiteIMQtClient.Step46` 和 `LiteIMQtClient.Step47` 均通过；默认 `build` 仍不进入 Qt 子目录。
 
 ## 2026-05-18 Step 46 Qt PacketCodec and TcpClient Findings
@@ -56,7 +81,7 @@ TDD 记录：
 TDD 记录：
 
 - RED 测试覆盖 Qt 编码后服务端可解析、服务端编码后 Qt 可解码、半包/粘包、pending/login 状态、连接失败 error 信号、发送 Packet 和 packetReceived 信号。
-- 重新配置 Qt build 后，RED 按预期失败于缺少 `liteim_client/ClientSession.hpp`。
+- 重新配置 Qt build 后，RED 按预期失败于缺少 `liteim_client/network/ClientSession.hpp`。
 - GREEN 后 `ctest --test-dir build-qt -R LiteIMQtClient.Step46 --output-on-failure` 通过。
 
 ## 2026-05-18 Step 45 Qt Client Foundation Findings
