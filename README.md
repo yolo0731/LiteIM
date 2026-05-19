@@ -7,11 +7,12 @@ LiteIM is a C++17 instant messaging server project built around Linux networking
 The long-term target is a small but realistic IM system:
 
 ```text
-Qt / CLI / Python Client
+Qt / CLI client
+future PersonaAgent Python BotClient
+    -> same TLV account protocol
     -> LiteIM C++ TCP Server
     -> business ThreadPool
     -> MySQL / Redis
-    -> future PersonaAgent Python BotClient
 ```
 
 PersonaAgent is intentionally a separate Python service. LiteIM exposes only the normal account protocol boundary; Python, LangGraph, RAG, LLM calls, and safety logic do not run inside the C++ server process, and the C++ server does not know whether a logged-in account is controlled by a human or by an external agent.
@@ -27,7 +28,38 @@ PersonaAgent is intentionally a separate Python service. LiteIM exposes only the
 - Safe cross-thread connection access through `EventLoop::runInLoop()` and `EventLoop::queueInLoop()`.
 - Command-line protocol debug client, Python E2E tests, local benchmark tooling, and optional Qt Widgets three-column chat client.
 
+## Technology Stack
+
+| Layer | Stack |
+| --- | --- |
+| Language and build | C++17, CMake, GoogleTest, gMock, CTest |
+| Linux network core | nonblocking socket, `epoll` LT, `eventfd`, `timerfd`, `signalfd`, one-loop-per-thread Reactor |
+| Concurrency | main Reactor, sub Reactor thread pool, business `ThreadPool`, `runInLoop()` / `queueInLoop()` owner-loop handoff |
+| Protocol | custom binary Packet header + TLV body, TCP half-packet and sticky-packet decoding |
+| Storage | MySQL 8.0, MySQL C API, RAII connection guard, prepared statement wrapper, DAO layer |
+| Cache/state | Redis 7.2, hiredis, online TTL, unread counters, login failure limiter |
+| Clients and tooling | Qt Widgets demo client, CLI protocol client, Python black-box E2E client, benchmark executable |
+| Quality gates | unit/integration/e2e/docker CTest labels, ASan/UBSan option, GitHub Actions CI |
+
 ## Architecture
+
+### Server Architecture Diagram
+
+```mermaid
+flowchart TB
+    client["Qt / CLI / future Python BotClient"]
+    client -->|"TLV over TCP"| acceptor["Main Reactor\nAcceptor + epoll"]
+    acceptor -->|"accepted fd"| io_pool["Sub Reactor Thread Pool\none EventLoop per I/O thread"]
+    io_pool --> session["Session\nFrameDecoder + Packet/TLV codec\noutput high-water mark"]
+    session --> router["MessageRouter"]
+    router -->|"blocking work only here"| biz["Business ThreadPool"]
+    biz --> services["Auth / Friend / Chat / Group\nOffline / History / Heartbeat services"]
+    services --> mysql[("MySQL\nusers, friendships, groups,\nmessages, offline_messages")]
+    services --> redis[("Redis\nonline TTL, unread,\nlogin limiter")]
+    services -->|"queueInLoop / runInLoop"| session
+    signal["SIGINT / SIGTERM"] --> signalfd["SignalWatcher + signalfd"]
+    signalfd --> acceptor
+```
 
 ```text
                          +----------------------+
@@ -72,6 +104,37 @@ Important boundaries:
 - Reactor-owned objects such as `Acceptor`, `TcpServer`, `TimerManager`, and `SignalWatcher` must stop and destruct in their owner loop thread.
 - Redis is cache/state, not the final source of message truth. Message entities belong in MySQL.
 
+### Threading Model Diagram
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant BaseLoop as Base EventLoop
+    participant IoLoop as I/O EventLoop
+    participant Biz as Business ThreadPool
+    participant Store as MySQL/Redis
+
+    Client->>BaseLoop: TCP connect
+    BaseLoop->>IoLoop: dispatch accepted fd
+    Client->>IoLoop: Packet bytes
+    IoLoop->>IoLoop: FrameDecoder + Packet/TLV parse
+    IoLoop->>Biz: MessageRouter posts business handler
+    Biz->>Store: blocking DAO/cache calls
+    Store-->>Biz: result
+    Biz->>IoLoop: queueInLoop response/push
+    IoLoop-->>Client: Packet bytes
+```
+
+Threading rules:
+
+- Main Reactor accepts new connections and owns `TcpServer` / `Acceptor`.
+- Each sub Reactor owns its `Session` objects and all direct socket I/O.
+- Business threads may query MySQL / Redis and build response packets.
+- Business threads never directly mutate `Session`; they hand work back to the owning I/O loop.
+- `eventfd` wakes an `EventLoop` when another thread queues work to it.
+- `timerfd` drives fixed-tick heartbeat cleanup.
+- `signalfd` converts SIGINT / SIGTERM into ordinary fd events for graceful shutdown.
+
 ## Core Components
 
 - `liteim_base`: `Config`, `Logger`, `ErrorCode`, `Status`, `Timestamp`, and raw-byte aliases `Byte` / `Bytes`.
@@ -85,6 +148,86 @@ Important boundaries:
 - `liteim_client_cli`: command parsing, TLV `Packet` construction, debug packet formatting, and a blocking TCP protocol client used by the `liteim_cli` executable.
 - `liteim_bench_core` / `liteim_bench`: local benchmark helpers and executable for generating ordinary register/login/private-message load, sender request/response RTT percentiles, QPS, error count, client-process RSS, client-process CPU usage, and JSON or Markdown reports.
 - `liteim_qt_client_core` / `liteim_qt_client`: optional Qt Widgets client components built only with `LITEIM_BUILD_QT_CLIENT=ON`. The core target wraps the shared LiteIM Packet/TLV protocol for Qt, decodes TCP half/sticky packets, provides a `QTcpSocket` based `TcpClient`, keeps client-side seq_id, pending-request, login state, connection endpoint, heartbeat timer, connection status, and one-shot auto reconnect in `ClientSession` / `ClientRuntime`, exposes `AuthController`, `LoginWindow`, and `RegisterDialog` for login/register entry flow, and builds the `MainWindow` three-column shell with `SideBar`, model-driven `ConversationListWidget`, reusable `ContactListWidget`, and a right-side `ChatPage`. The Qt chat page has reusable `MessageBubble` rows, a `ChatInputBar`, left/right bubble layout, timestamp and send-status labels, Enter-to-send / Shift+Enter-newline behavior, history pagination keyed by `message_id`, and failed-send status text. `ChatController` connects the selected friend/group/ordinary PersonaAgent contact to `HistoryRequest`, `PrivateMessageRequest`, `GroupMessageRequest`, add-friend, create-group, and join-group packets over the same normal account protocol.
+
+## Protocol And Data Model
+
+### TLV Protocol Summary
+
+LiteIM uses a binary Packet header plus a TLV body. TCP is a byte stream, so `FrameDecoder` first reconstructs full packets from arbitrary chunks, then the service layer parses TLV fields.
+
+Packet header:
+
+| Field | Size | Meaning |
+| --- | ---: | --- |
+| `magic` | 4 bytes | fixed `0x4C494D31`, ASCII `LIM1` |
+| `version` | 1 byte | current protocol version, `1` |
+| `flags` | 1 byte | current value `0` |
+| `msg_type` | 2 bytes | `MessageType`, such as `LoginRequest` or `PrivateMessagePush` |
+| `seq_id` | 8 bytes | client-generated request id; response keeps the same id |
+| `body_len` | 4 bytes | TLV body length, capped by `kMaxPacketBodyLength` |
+
+TLV body:
+
+| Field | Size | Meaning |
+| --- | ---: | --- |
+| `type` | 2 bytes | `TlvType`, such as `Username`, `UserId`, `MessageText` |
+| `len` | 4 bytes | value length |
+| `value` | `len` bytes | UTF-8 string bytes or big-endian unsigned integer bytes |
+
+Main message families:
+
+| Range | Message types |
+| --- | --- |
+| Heartbeat | `HeartbeatRequest` / `HeartbeatResponse` |
+| Auth | `RegisterRequest`, `LoginRequest`, and responses |
+| Friend | `AddFriendRequest`, `ListFriendsRequest`, and responses |
+| Private chat | `PrivateMessageRequest`, `PrivateMessageResponse`, `PrivateMessagePush` |
+| Group chat | create, join, list, message request/response/push |
+| Offline/history | `OfflineMessagesRequest`, `HistoryRequest`, and responses |
+| Error | `ErrorResponse` with an error message TLV |
+
+### MySQL Table Summary
+
+| Table | Responsibility |
+| --- | --- |
+| `users` | account id, username, password hash/salt, nickname, created/updated timestamps |
+| `friendships` | bidirectional friend relation rows keyed by `(user_id, friend_id)` |
+| `chat_groups` | group id, owner id, group name, created/updated timestamps |
+| `group_members` | group membership keyed by `(group_id, user_id)` |
+| `messages` | private/group message source of truth, indexed by `(conversation_type, conversation_id, message_id)` |
+| `offline_messages` | per-user pending offline delivery rows linked to `messages` |
+
+### Redis Key Summary
+
+| Key pattern | Purpose |
+| --- | --- |
+| `online:user:<user_id>` | serialized online session with TTL; heartbeat refreshes TTL for logged-in sessions |
+| `unread:user:<user_id>:conversation:<type>:<conversation_id>` | per-user unread count for private or group conversation |
+| `login:failure:<username_len>:<username>:<ip_len>:<remote_ip>` | temporary login failure count used by the login rate limiter |
+
+Redis stores volatile state only. MySQL remains the source of truth for users, friendships, groups, messages, and offline-message delivery rows.
+
+## Qt Client Showcase
+
+The optional Qt client is a demo layer over the same TLV account protocol. It uses Qt Widgets, `QTcpSocket`, signal/slot wiring, a login/register flow, a familiar three-column IM layout, message bubbles, conversation/contact/group lists, a normal PersonaAgent contact row, heartbeat state, and reconnect feedback. It does not embed an AI runtime and does not use WeChat branding, logos, screenshots, or assets.
+
+Generated local showcase screenshot:
+
+![LiteIM Qt client showcase](docs/reports/qt_client_showcase.png)
+
+Regenerate the screenshot from the real Qt Widgets code path when needed:
+
+```bash
+cmake -S . -B build-qt -DLITEIM_BUILD_QT_CLIENT=ON
+cmake --build build-qt --target liteim_qt_client
+
+# Manual demo screenshot:
+docker compose -f docker/docker-compose.yml up -d --wait
+./build/server/liteim_server
+./build-qt/client_qt/liteim_qt_client
+```
+
+For CI or headless checks, use `QT_QPA_PLATFORM=offscreen` only as a startup/render smoke check. A visual demo screenshot should be captured from a real desktop session or from a deliberate render helper.
 
 ## Build And Test
 
@@ -127,7 +270,7 @@ Run the server executable:
 ./build/server/liteim_server --config config/liteim.conf
 ```
 
-Without `--config`, the server first tries `config/liteim.conf` if it exists and otherwise falls back to built-in local-development defaults. The server starts a real `EventLoop + TcpServer` on the configured host and port, starts MySQL / Redis pools, starts the business `ThreadPool`, and wires incoming packets into `MessageRouter`. In the current Step 44 server runtime, heartbeat requests are handled by `HeartbeatService`; register/login requests are handled by `AuthService`; add-friend and friend-list requests are handled by `FriendService`; private-message requests are handled by `ChatService`; group create/join/list/message requests are handled by `GroupService`; offline-message pull requests are handled by `OfflineMessageService`; history requests are handled by `HistoryService`; and unknown or unsupported request types get `ErrorResponse`. LiteIM treats every logged-in account as an ordinary account, so a future PersonaAgent-controlled account is just another client session. Business handlers run in the business pool. Session close cleanup submits `OnlineService::unbindSession(session_id)` into the business pool so Redis online-state cleanup does not run in an I/O callback. The server handles `Ctrl-C` / `SIGTERM` through `signalfd`, stops `TcpServer` in the base loop thread, stops the business pool, closes MySQL / Redis pools, and exits cleanly.
+Without `--config`, the server first tries `config/liteim.conf` if it exists and otherwise falls back to built-in local-development defaults. The server starts a real `EventLoop + TcpServer` on the configured host and port, starts MySQL / Redis pools, starts the business `ThreadPool`, and wires incoming packets into `MessageRouter`. Heartbeat requests are handled by `HeartbeatService`; register/login requests by `AuthService`; add-friend and friend-list requests by `FriendService`; private-message requests by `ChatService`; group create/join/list/message requests by `GroupService`; offline-message pull requests by `OfflineMessageService`; history requests by `HistoryService`; and unknown or unsupported request types get `ErrorResponse`. LiteIM treats every logged-in account as an ordinary account, so a future PersonaAgent-controlled account is just another client session. Business handlers run in the business pool. Session close cleanup submits `OnlineService::unbindSession(session_id)` into the business pool so Redis online-state cleanup does not run in an I/O callback. The server handles `Ctrl-C` / `SIGTERM` through `signalfd`, stops `TcpServer` in the base loop thread, stops the business pool, closes MySQL / Redis pools, and exits cleanly.
 
 Because the current server runtime starts real MySQL / Redis pools, start local dependencies before a bounded server smoke check:
 
@@ -217,39 +360,32 @@ server.output_high_water_mark_bytes = 4194304
 
 Service-layer validation currently caps usernames and nicknames at 64 bytes, group names at 128 bytes, passwords at 128 bytes, and message text at 8192 bytes. The message-text cap is intentionally below the protocol packet body limit so invalid user input is rejected before MySQL `TEXT` storage or offline-message fanout paths.
 
+## Benchmark Report
+
+The full benchmark writeup is stored in `docs/reports/liteim_benchmark_report_2026-05-18.md`. It records the local machine, build type, Docker MySQL/Redis state, command lines, smoke/baseline/stress results, and interview-safe wording.
+
+Latest documented local results:
+
+| Scenario | Connections | Message size | Interval | Duration | QPS | p99 | Errors |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Smoke | 4 | 64B | 20ms | 1s | 111.984 | 9.238ms | 0 |
+| Baseline | 10 | 128B | 10ms | 10s | 579.714 | 9.548ms | 0 |
+| Stress sample | 30 | 128B | 5ms | 10s | 758.092 | 48.122ms | 0 |
+
+These numbers are local closed-loop measurements, not production capacity claims. The benchmark path is real TCP/TLV clients, server business handlers, MySQL persistence, Redis state, and response/push handling on one machine. Compare future changes against the exact command and environment instead of quoting the QPS alone.
+
 ## Local MySQL And Redis
 
-Step 22 adds the local development database environment for storage/cache work. Step 23-27 use the MySQL side for storage tests, Step 28 adds a blocking hiredis-based Redis client/pool, Step 29 adds Redis online-status cache tests, and Step 30 adds Redis unread-counter and login-limiter tests. Step 31 adds `MySqlStorage : IStorage`, `RedisCache : ICache`, unsigned MySQL binding for `BIGINT UNSIGNED`, public friend-profile DTOs, and a single MySQL transaction for message + offline-message writes. Step 32 adds `SessionManager` and `OnlineService`; it uses `RedisCache` to write, refresh, and clear online status, and close cleanup now supports session-id-only unbinding. Step 33 adds `MessageRouter` and connects `TcpServer` runtime packets to the service layer without calling MySQL or Redis from Reactor I/O threads. Step 34 adds `AuthService` and registers `RegisterRequest` / `LoginRequest` handlers on the business thread pool. Step 35 adds `FriendService`, registers `AddFriendRequest` / `ListFriendsRequest`, and returns friend online state through `TlvType::OnlineStatus`. Step 36 adds `ChatService`, registers `PrivateMessageRequest`, saves private messages through `IStorage`, pushes online private messages through `Session`, and records offline delivery plus unread count for offline receivers. Step 37 adds `OfflineMessageService`, registers `OfflineMessagesRequest`, returns at most 100 pending offline messages, marks the returned batch delivered, and clears unread counters for the returned conversations. Current storage pushes the requested offline-message limit down to SQL instead of fetching all pending rows and truncating in memory. Step 38 adds `GroupService`, registers `CreateGroupRequest` / `JoinGroupRequest` / `ListGroupsRequest` / `GroupMessageRequest`, lists groups through `IStorage::getGroupsForUser()`, saves group messages, pushes to online members, and records offline rows plus unread counts for offline members.
+LiteIM's local development stack uses Docker Compose for MySQL and Redis. The server runtime starts real MySQL / Redis pools, so dependency availability matters for storage/cache/service/E2E checks.
 
-Step 39 adds `HistoryService`, registers `HistoryRequest`, reads `ConversationType` / `ConversationId` / optional `MessageId` cursor / optional `Limit`, validates private or group membership, and returns recent messages through `HistoryResponse`. History pages are returned newest-first (`ORDER BY message_id DESC`); UI clients should reverse each page before rendering messages top-to-bottom.
+Runtime responsibilities:
 
-Step 40 adds `HeartbeatService`, registers `HeartbeatRequest` on the business thread pool, returns `HeartbeatResponse` for valid heartbeats, and refreshes Redis `online:user:<user_id>` TTL only when the session is logged in. `HeartbeatResponse` means the server successfully received and processed a legal heartbeat packet; it does not guarantee Redis online TTL refresh succeeded. When Redis refresh fails, LiteIM logs a warning and relies on later heartbeats to recover the online-state TTL.
-
-The old C++ assistant route has been removed. LiteIM no longer defines AI identity, assistant-only message types, built-in echo replies, mention triggers, or special offline/unread handling. A future PersonaAgent account must connect through the same register/login/private/group/history/offline/heartbeat protocol as any other account, with LLM behavior implemented outside the C++ server.
-
-Step 41 adds `liteim_cli`, a command-line protocol debug client. It connects to `127.0.0.1:9000` by default, supports `--host` / `--port`, builds normal TLV packets for register/login/friend/private/group/history/offline/heartbeat commands, prints decoded server responses and push packets, and sends a periodic heartbeat every 30 seconds.
-
-Step 42 adds Python black-box E2E tests. The tests implement a minimal TLV codec/client in Python, start the built `liteim_server`, and verify register/login, wrong-password/login-limit errors, private chat, group chat, history, offline delivery, heartbeat, and slow-client backpressure over the real TCP protocol.
-
-Step 43 adds `liteim_bench`, a local benchmark executable. It creates one receiver connection and configurable sender connections, registers and logs in generated users, sends ordinary private messages, and emits JSON or Markdown metrics for connection success, QPS, latency percentiles, errors, RSS, and CPU usage. The README does not hard-code performance claims; benchmark numbers must come from real runs with parameters and machine details.
-
-Step 44 expands the validation layer. It adds gMock-based service boundary tests for `AuthService`, `ChatService`, `GroupService`, and `HistoryService`; adds extra protocol, thread-pool, and timer edge-case coverage; labels CTest entries for `unit`, `integration`, `mysql`, `redis`, `docker`, and `e2e` filtering; and adds an optional ASan/UBSan build through `LITEIM_ENABLE_SANITIZERS`. The post-Step-44 hardening pass keeps CI in Step 44's validation scope: it adds strict E2E behavior for CI, E2E strict coverage, ASan-friendly handling for the fd-exhaustion test, server config loading, service input-size checks, SQL-limited offline pulls, and best-effort Redis cache degradation where MySQL remains the source of truth.
-
-Step 45 starts the optional Qt Widgets client project without affecting the default server build. Step 46 adds Qt-side protocol and networking foundations: `PacketCodec` reuses the server's `liteim_protocol` wire format, `TcpClient` owns a `QTcpSocket` and emits connected/disconnected/packet/error signals, and `ClientSession` tracks seq_id, pending requests, and login state. Login and registration windows begin in Step 47.
-
-Step 47 adds the Qt login/register entry flow. `LoginWindow` collects server address, port, username, and password; `RegisterDialog` collects account registration fields; and `AuthController` sends normal `RegisterRequest` / `LoginRequest` packets through `TcpClient`. On `LoginResponse`, the client records local login state and opens `MainWindow`. On `ErrorResponse`, the login window displays the server error message. The UI layer does not manipulate `QTcpSocket` directly.
-
-Step 48 implements the Qt main-window shell as a familiar three-column IM layout. `SideBar` provides messages, contacts, groups, and settings entries; `ConversationListWidget` switches the middle list area by selected entry; and `ChatPage` shows the chat area plus the current user nickname and online state. The visual direction follows common WeChat-style IM interaction patterns, but LiteIM does not use WeChat branding, logos, icons, names, screenshots, or assets.
-
-Step 49 adds Qt-side model-driven conversation/contact/group list behavior. `ConversationModel` stores conversation id, type, title, last-message summary, timestamp, avatar text, and unread count; `ConversationListWidget` uses a `QListView` backed by that model for Messages, paints avatar/summary/time/unread badge rows through a Qt delegate, and switches Contacts / Groups / Settings through a middle-column stack; `ContactListWidget` renders reusable contact-like rows for friends and groups. The current friend/group/persona entries are demo seed data inside the Qt client, not loaded from MySQL/Redis yet. The unread count shown by Step 49 is a local temporary counter updated by `applyIncomingMessage()` and cleared by `markConversationRead()`; later Qt steps will connect it to real server push/offline/unread flows. A future PersonaAgent-controlled account is represented only as an ordinary contact/conversation item, not as a special sidebar category or C++ server identity.
-
-Step 50 upgrades the Qt right-side chat page. `ChatPage` now owns a scrollable message area and emits history/send request signals; `MessageBubble` renders reusable left/right bubbles with wrapped text, timestamps, outgoing send status, and group sender names; `ChatInputBar` handles empty-input blocking, Send button state, Enter-to-send, and Shift+Enter-newline behavior. Opening a conversation emits a recent-history request with cursor `0`; loading earlier history uses the earliest visible `message_id` as the cursor.
-
-Step 51 connects the Qt main window to the existing server protocol. `ClientRuntime` shares one `TcpClient` and one `ClientSession` across login and the main chat window. `ChatController` converts UI actions into normal TLV packets: friend selection sends `HistoryRequest` and later `PrivateMessageRequest`, group selection sends `HistoryRequest` and later `GroupMessageRequest`, and add-friend/create-group/join-group use the existing service request types. PersonaAgent remains a future external account shown as an ordinary contact row; clicking it opens an ordinary private conversation and sends the same `PrivateMessageRequest` as any other user.
-
-Step 52 adds Qt client stability and demo polish. After login, `ClientRuntime` records the server endpoint, starts a 30-second `HeartbeatRequest` timer, consumes `HeartbeatResponse` without disturbing auth/chat pending responses, reports Online/Offline text to the main-window status bar, supports a Reconnect button, and schedules one automatic reconnect after an unexpected disconnect. The login form keeps using `QSettings` for server host, port, and recent username. Failed sends mark the latest outgoing bubble as `Failed`; this is UI feedback only and does not add reliable delivery, local SQLite cache, system tray behavior, or a new server protocol.
-
-For a simple Qt screenshot, start the server and dependencies, run `./build-qt/client_qt/liteim_qt_client`, log in with a local account, open a conversation, and capture the window with the desktop screenshot tool. In CI or headless runs, use `QT_QPA_PLATFORM=offscreen` only as a startup smoke check, not as a visual screenshot source.
+- MySQL stores users, friendships, groups, messages, and offline-message rows.
+- Redis stores online-session TTL state, unread counters, and login failure windows.
+- Register/login, friend, private chat, group chat, offline pull, history, and heartbeat handlers run through the business pool.
+- `HeartbeatService` returns `HeartbeatResponse` for legal heartbeat packets and refreshes Redis online TTL on a best-effort basis for logged-in sessions.
+- Session close cleanup submits Redis online-state cleanup through the business pool so I/O callbacks do not block on Redis.
+- A future PersonaAgent account uses the same register/login/private/group/history/offline/heartbeat protocol as any other account.
 
 Start MySQL and Redis:
 
@@ -280,7 +416,7 @@ The MySQL container runs `scripts/init_mysql.sql` and `scripts/seed_test_data.sq
 - `messages`
 - `offline_messages`
 
-The seed script inserts local test users, a `dev_group`, sample messages, and pending offline-message rows. Redis starts empty but requires the local development password. Step 29 uses `online:user:<user_id>` keys with TTL for online sessions. Step 30 adds Redis keys for per-user/per-conversation unread counters and username/remote-ip login failure windows.
+The seed script inserts local test users, a `dev_group`, sample messages, and pending offline-message rows. Redis starts empty but requires the local development password. Runtime Redis keys include `online:user:<user_id>`, per-user/per-conversation unread counters, and username/remote-ip login failure windows.
 
 Useful checks:
 
@@ -320,7 +456,7 @@ ctest --test-dir build -L docker --output-on-failure
 ctest --test-dir build -L e2e --output-on-failure
 ```
 
-The Step 23-27 MySQL integration tests, Step 31 `MySqlStorage` tests, Step 28-32 Redis integration tests, Step 34-40 service tests, Step 42 Python E2E tests, and Step 44 Docker-tagged integration tests use `Config::defaults()` where they need real dependencies, so they target the local Docker endpoints shown above. If those containers are not running, integration tests skip instead of failing unrelated unit-test runs. Start the local dependency stack first when validating the storage/cache/service/E2E layer:
+MySQL, Redis, service, Docker-tagged integration, and Python E2E tests use `Config::defaults()` where they need real dependencies, so they target the local Docker endpoints shown above. If those containers are not running, integration tests skip instead of failing unrelated unit-test runs. Start the local dependency stack first when validating the storage/cache/service/E2E layer:
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d --wait
@@ -424,6 +560,7 @@ LiteIM/
 │   └── timer/
 └── docs/
     ├── process/
+    ├── reports/
     ├── tutorials/
     └── debug_cases/
 ```
@@ -436,6 +573,7 @@ Directory conventions:
 - `client_qt/` is optional and only builds when `LITEIM_BUILD_QT_CLIENT=ON`; its Qt code is grouped by `app`, `auth`, `model`, `network`, `protocol`, and `ui`, while its resources must not use third-party IM product branding.
 - `.github/workflows/` contains repository CI automation.
 - `docs/tutorials/` contains per-step teaching notes.
+- `docs/reports/` contains final showcase artifacts such as benchmark reports and Qt screenshots.
 - `docs/process/` contains active planning, findings, and progress memory.
 - `docs/debug_cases/` contains internal postmortems for useful bug and review hardening cases.
 
@@ -447,6 +585,27 @@ The repository keeps focused debug case writeups when they preserve useful engin
 - `docs/debug_cases/thread_pool_worker_stop.md`
 
 These are not a public architecture manual. They are retained because they document concrete lifetime, threading, and cleanup bugs that shaped the network implementation.
+
+## Interview Notes
+
+| Question | Short answer |
+| --- | --- |
+| Why not Boost.Asio? | LiteIM is a systems-learning C++ project. The goal is to show direct understanding of nonblocking sockets, `epoll`, fd ownership, Reactor loops, thread handoff, and shutdown semantics instead of hiding them behind a mature framework. |
+| Why `epoll` LT rather than ET? | LT is easier to reason about and safer for this learning project. ET can reduce repeated readiness notifications, but it requires stricter drain-until-`EAGAIN` discipline and is less forgiving when building the first stable server. |
+| What is Reactor here? | An `EventLoop` waits on fd readiness through `Epoller`, dispatches events to `Channel`, and lets the owner loop serialize socket operations and queued tasks. |
+| Why one-loop-per-thread? | Each I/O thread owns a set of `Session` objects, so socket reads/writes and connection state stay single-threaded per connection while multiple loops spread many connections across CPU cores. |
+| How does `eventfd` help? | Other threads push callbacks into an `EventLoop` queue, then write to `eventfd` to wake the loop from `epoll_wait()`. That is how business threads safely ask an I/O loop to send responses. |
+| How does `timerfd` help? | `TimerManager` exposes timer ticks as fd readiness events, so heartbeat cleanup stays in the same event-driven model instead of using signal handlers or ad hoc sleeping threads. |
+| How does `signalfd` help graceful shutdown? | SIGINT/SIGTERM are blocked and consumed through a fd. The base loop handles them like normal events, then stops `TcpServer`, business pool, MySQL, Redis, and loops in an ordered path. |
+| How are TCP half-packets and sticky packets handled? | `FrameDecoder` keeps an internal byte buffer, parses the 20-byte Packet header when available, waits until the full body arrives, and may emit multiple complete packets from one read. |
+| How is `Session` lifetime safe? | Connections are managed through `shared_ptr` / `weak_ptr`; cross-thread delivery captures weak references or posts work back to the owner loop, avoiding long-lived raw pointers into I/O objects. |
+| Why cannot I/O threads access MySQL/Redis? | MySQL C API and hiredis calls are blocking. Running them in I/O loops would stall unrelated connections, so `MessageRouter` posts those handlers to the business pool. |
+| How are MySQL pool and RAII designed? | `MySqlPool` owns a fixed set of connections. `ConnectionGuard` returns a borrowed connection to the pool on destruction, including early-return error paths. `PreparedStatement` wraps bind/execute/result behavior. |
+| Why does Redis online state need TTL? | If a process crashes or a connection disappears without a clean logout, the `online:user:<user_id>` key eventually expires. Heartbeat refreshes TTL for logged-in sessions. |
+| How does slow-client backpressure protect memory? | Each `Session` tracks pending output bytes. If a push would exceed `server.output_high_water_mark_bytes`, LiteIM logs the condition and closes that slow connection instead of growing memory unbounded. |
+| Why is the Qt client only a demo layer? | The backend architecture is the core project. Qt uses `QTcpSocket` and the same protocol to demonstrate login/chat/history/reconnect flows without reimplementing server-side epoll or storage logic. |
+| How do Qt signals/slots decouple UI and network? | `TcpClient` emits packet and connection signals, controllers translate UI actions into TLV packets, and widgets only react to controller/runtime signals. UI code does not manipulate raw socket bytes. |
+| Why is the AI Agent external? | PersonaAgent is planned as a Python BotClient and AgentService using LangGraph/RAG/safety. It logs in as an ordinary LiteIM account, so the C++ server stays a protocol and message system instead of embedding LLM behavior. |
 
 ## Roadmap
 
@@ -461,4 +620,4 @@ LiteIM is being built in phases:
 | Demo clients | Qt Widgets chat client with login, conversation list, message bubbles, group chat, ordinary PersonaAgent contact/conversation entry, heartbeat state, and disconnect feedback. |
 | PersonaAgent integration | Planned Python BotClient and separate FastAPI / LangGraph AgentService using Knowledge, Memory, Authorized Style RAG, Persona, Safety, tracing, checkpointing, and evaluation. |
 
-README performance numbers and benchmark claims should only be added after real local measurements exist.
+Future benchmark claims should keep the exact command, machine, build type, dependency state, server config, and report date next to the numbers.

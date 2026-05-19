@@ -8,6 +8,24 @@
 - `LiteIM/docs/process/task_plan.md`、`LiteIM/docs/process/findings.md` 和 `LiteIM/docs/process/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-19 Step 53 Final README Showcase Findings
+
+当前采用的边界：
+
+- Step 53 是文档和展示材料收口，不修改 C++ 服务端代码、TLV 协议、MySQL schema、Redis key、Qt 功能逻辑或 PersonaAgent 实现。
+- README 作为公开展示入口，补齐技术栈、服务端架构图、线程模型图、TLV 协议摘要、MySQL 表结构摘要、Redis Key 摘要、Qt 截图、编译/运行/测试方式、压测结果、PersonaAgent 接入边界和面试说明。
+- `docs/reports/qt_client_showcase.png` 由当前 Qt `MainWindow` / `ChatPage` / `MessageBubble` 代码路径渲染生成，不使用第三方 IM 产品品牌、logo、截图或素材。
+- 第一轮截图生成暴露出临时截图工具误链旧位置 `build-qt/client_qt/libliteim_qt_client_core.a`，画面仍有旧 Agent sidebar；改为链接当前 `build-qt/client_qt/src/libliteim_qt_client_core.a` 后重新生成，截图显示 Step49-52 当前三栏 UI、会话列表、气泡、Offline/Reconnect 状态。
+- `docs/reports/liteim_benchmark_report_2026-05-18.md` 保留为历史本机 benchmark 数据源；Step 53 不重新跑压测，不把 2026-05-18 的本机数据包装成生产容量声明。
+- README 中原本较长的 Step22-Step52 流水账被压缩为当前运行时依赖和职责摘要；详细过程继续留在 tutorials/process。
+- PersonaAgent 表述继续保持 future/planned/ordinary account 边界：C++ server 不识别 AI 身份，不嵌入 LLM/RAG/Safety。
+
+验证关注：
+
+- README 不再保留旧 `Current Status` / 教程提交章节等展示层噪声。
+- Step53 教程必须保持固定 0-10 结构，最后主章节是 `面试常见追问`。
+- Qt 截图文件必须存在且是 PNG。
+
 ## 2026-05-19 Step 52 Qt Heartbeat Reconnect Polish Findings
 
 当前采用的边界：

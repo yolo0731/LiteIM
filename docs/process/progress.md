@@ -1,5 +1,39 @@
 # LiteIM Progress
 
+## 2026-05-19 Step 53 Final README Showcase Materials
+
+本次进入 `Step 53：补齐 README、架构图、Qt 截图、面试说明和压测报告`。
+
+恢复路线：
+
+- `PROJECT_MEMORY.md` 定义 Step 53 范围为最终展示材料：README、架构图、线程模型图、TLV/MySQL/Redis 摘要、Qt 截图、编译运行测试方式、压测结果、PersonaAgent 接入方式和面试说明。
+- 本 Step 是文档/showcase 收口，不改 C++ 服务端行为、Packet/TLV 协议、MySQL schema、Redis key、Qt 功能逻辑或 PersonaAgent 实现。
+- PersonaAgent 继续作为未来外部普通账号客户端接入；README 不写成 C++ server 内置 AI。
+
+实施记录：
+
+- README 新增 `Technology Stack`、Mermaid 服务端架构图、线程模型图、`Protocol And Data Model`、`Qt Client Showcase`、`Benchmark Report` 和 `Interview Notes`。
+- README 的 MySQL/Redis 部分从 Step 流水账压缩为当前运行时依赖和职责摘要，详细过程仍留在 tutorials/process。
+- 新增 `docs/reports/qt_client_showcase.png`。截图由当前 Qt `MainWindow` / `ChatPage` / `MessageBubble` 渲染生成，展示三栏 layout、会话列表、消息气泡、Offline/Reconnect 状态。
+- 生成截图时首次误链旧 Qt 静态库位置，导致画面还有旧 `Agent` sidebar；已改为链接当前 `build-qt/client_qt/src/libliteim_qt_client_core.a` 并重新生成。
+- 更新 `docs/reports/liteim_benchmark_report_2026-05-18.md`，说明该报告作为 Step53 README 压测数据来源保留，Step53 未重新运行 benchmark。
+- 新增 `docs/tutorials/step53_final_docs_showcase.md`，按固定 0-10 教程模板记录本 Step。
+- 同步 `docs/process/task_plan.md` 和 `docs/process/findings.md`。
+
+当前验证：
+
+- `git diff --check`：通过。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" README.md docs/tutorials/step53_final_docs_showcase.md`：无输出。
+- Step53 教程标题脚本检查：0-10 结构通过，最后一节是 `## 10. 面试常见追问`。
+- `file docs/reports/qt_client_showcase.png && test -s docs/reports/qt_client_showcase.png`：PNG 存在，1080x720。
+- `cmake -S . -B build`：通过。
+- `cmake --build build --target liteim_tests -j2`：通过。
+- `ctest --test-dir build -L unit --output-on-failure`：311/311 通过。
+- `ctest --test-dir build-qt -R "LiteIMQtClient.Step46|LiteIMQtClient.Step47|LiteIMQtClient.Step48|LiteIMQtClient.Step49|LiteIMQtClient.Step50|LiteIMQtClient.Step51|LiteIMQtClient.Step52|LiteIMCMake.QtClientFoundation" --output-on-failure`：8/8 通过。
+- `cmake --build build -j2`：通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：MySQL / Redis healthy。
+- `ctest --test-dir build --output-on-failure`：381/381 通过。
+
 ## 2026-05-19 Step 52 Qt Heartbeat Reconnect Client Polish
 
 本次进入 `Step 52：实现 Qt 心跳、断线提示、本地设置和体验打磨`。

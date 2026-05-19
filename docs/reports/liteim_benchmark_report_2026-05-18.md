@@ -4,6 +4,8 @@
 
 本报告记录 2026-05-18 在本机对 LiteIM 进行的 Step 43 压测结果。LiteIM 当前压测不是极限容量测试，而是“真实 TCP/TLV 客户端 -> C++ server -> MySQL/Redis -> response/push”的本机闭环压测。
 
+Step 53 说明：本报告作为最终 README 的压测数据来源保留。报告中的 Git HEAD、工作区状态和命令反映 2026-05-18 当时的本机压测现场；Step 53 未重新运行 benchmark，也不把这些数字改写成生产容量声明。
+
 核心结论：
 
 - 功能稳定性：本次三组压测均为 `error_count = 0`，连接、注册、登录、私聊保存、在线 push 和响应链路正常。
