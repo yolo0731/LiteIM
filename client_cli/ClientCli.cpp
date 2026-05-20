@@ -200,6 +200,44 @@ Status buildPrivate(std::istringstream& stream, std::uint64_t seq_id, Packet& pa
     return appendStringField(TlvType::MessageText, text, packet);
 }
 
+Status buildPrivateWithClientMessageId(std::istringstream& stream, std::uint64_t seq_id,
+                                       Packet& packet) {
+    std::string receiver_token;
+    auto status = requireToken(stream, "receiver_id", receiver_token);
+    if (!status.isOk()) {
+        return status;
+    }
+
+    std::uint64_t receiver_id = 0;
+    status = parseUint64(receiver_token, "receiver_id", receiver_id);
+    if (!status.isOk()) {
+        return status;
+    }
+
+    std::string client_msg_id;
+    status = requireToken(stream, "client_msg_id", client_msg_id);
+    if (!status.isOk()) {
+        return status;
+    }
+
+    std::string text;
+    status = requireRest(stream, "message text", text);
+    if (!status.isOk()) {
+        return status;
+    }
+
+    resetPacket(MessageType::PrivateMessageRequest, seq_id, packet);
+    status = appendUint64Field(TlvType::ReceiverId, receiver_id, packet);
+    if (!status.isOk()) {
+        return status;
+    }
+    status = appendStringField(TlvType::ClientMessageId, client_msg_id, packet);
+    if (!status.isOk()) {
+        return status;
+    }
+    return appendStringField(TlvType::MessageText, text, packet);
+}
+
 // 解析类似 create-group <group_name...> 这种创建群聊的命令
 Status buildCreateGroup(std::istringstream& stream, std::uint64_t seq_id, Packet& packet) {
     std::string group_name;
@@ -464,6 +502,9 @@ Status buildPacketFromLine(const std::string& line, std::uint64_t seq_id, Packet
     if (command == "private") {
         return buildPrivate(stream, seq_id, packet);
     }
+    if (command == "private-id") {
+        return buildPrivateWithClientMessageId(stream, seq_id, packet);
+    }
     if (command == "create-group") {
         return buildCreateGroup(stream, seq_id, packet);
     }
@@ -522,6 +563,7 @@ std::string describePacket(const Packet& packet) {
     appendUint64FieldDescription(fields, TlvType::MessageId, "message_id", stream);
     appendUint64FieldDescription(fields, TlvType::SenderId, "sender_id", stream);
     appendUint64FieldDescription(fields, TlvType::ReceiverId, "receiver_id", stream);
+    appendStringFieldDescription(fields, TlvType::ClientMessageId, "client_msg_id", stream);
     appendUint64FieldDescription(fields, TlvType::TimestampMs, "timestamp_ms", stream);
     appendUint64FieldDescription(fields, TlvType::Limit, "limit", stream);
     appendUint64FieldDescription(fields, TlvType::UnreadCount, "unread", stream);
@@ -541,6 +583,7 @@ std::string helpText() {
   add-friend <user_id>
   friends
   private <receiver_id> <text...>
+  private-id <receiver_id> <client_msg_id> <text...>
   create-group <name...>
   join-group <group_id>
   groups

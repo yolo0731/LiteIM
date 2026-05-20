@@ -88,6 +88,21 @@ ON DUPLICATE KEY UPDATE /* 如果主键冲突，更新消息状态 */
     created_at_ms = VALUES(created_at_ms),
     delivered_at_ms = VALUES(delivered_at_ms);
 
+INSERT INTO message_deliveries (
+    message_id,
+    user_id,
+    status,
+    pushed_at_ms,
+    delivered_at_ms,
+    read_at_ms
+) VALUES
+    (5001, 1002, 0, NULL, NULL, NULL)
+ON DUPLICATE KEY UPDATE
+    status = VALUES(status),
+    pushed_at_ms = VALUES(pushed_at_ms),
+    delivered_at_ms = VALUES(delivered_at_ms),
+    read_at_ms = VALUES(read_at_ms);
+
 ALTER TABLE users AUTO_INCREMENT = 10000; /* 下一个用户ID从10000开始 */
 ALTER TABLE chat_groups AUTO_INCREMENT = 10000;
 ALTER TABLE messages AUTO_INCREMENT = 10000;

@@ -238,3 +238,37 @@ TEST_F(MySqlStorageIntegrationTest, SaveMessageWithOfflineRecipientsDeduplicates
     ASSERT_EQ(pending.size(), 1U);
     EXPECT_EQ(pending.front().message.message_id, saved.message_id);
 }
+
+TEST_F(MySqlStorageIntegrationTest, ClientMessageIdCanFindExistingSenderMessage) {
+    const auto sender = createUser();
+    const auto receiver = createUser();
+    auto message = makePrivateMessage(sender, receiver, uniqueConversationId(),
+                                      uniqueMessageText("client_msg_id"));
+    message.client_msg_id = "client-msg-" + uniquePre31Suffix();
+
+    liteim::MessageRecord saved;
+    const auto first_status = storage->saveMessageWithOfflineRecipients(message, {}, saved);
+    ASSERT_TRUE(first_status.isOk()) << first_status.message();
+
+    liteim::MessageRecord duplicate;
+    const auto duplicate_status =
+        storage->saveMessageWithOfflineRecipients(message, {}, duplicate);
+    ASSERT_FALSE(duplicate_status.isOk());
+    EXPECT_EQ(duplicate_status.code(), liteim::ErrorCode::AlreadyExists);
+
+    liteim::MessageRecord existing;
+    const auto find_status =
+        storage->findMessageByClientMessageId(sender.user_id, message.client_msg_id, existing);
+    ASSERT_TRUE(find_status.isOk()) << find_status.message();
+    EXPECT_EQ(existing.message_id, saved.message_id);
+    EXPECT_EQ(existing.client_msg_id, message.client_msg_id);
+    EXPECT_EQ(existing.text, message.text);
+
+    std::vector<liteim::MessageRecord> history;
+    liteim::HistoryQuery query;
+    query.conversation = message.conversation;
+    query.limit = 10;
+    ASSERT_TRUE(storage->getHistory(query, history).isOk());
+    ASSERT_EQ(history.size(), 1U);
+    EXPECT_EQ(history.front().message_id, saved.message_id);
+}

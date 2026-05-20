@@ -134,6 +134,11 @@ public:
         return liteim::Status::ok();
     }
 
+    liteim::Status findMessageByClientMessageId(std::uint64_t, const std::string&,
+                                                liteim::MessageRecord&) override {
+        return liteim::Status::error(liteim::ErrorCode::NotFound, "message was not found");
+    }
+
     liteim::Status addFriendship(std::uint64_t user_id, std::uint64_t friend_id) override {
         ++add_friendship_calls;
         if (user_id == 0 || friend_id == 0 || user_id == friend_id) {

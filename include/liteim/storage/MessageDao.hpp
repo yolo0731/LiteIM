@@ -18,6 +18,8 @@ public:
     Status savePrivateMessage(const MessageRecord& message, MessageRecord& saved_message);
 
     Status saveGroupMessage(const MessageRecord& message, MessageRecord& saved_message);
+    Status findByClientMessageId(std::uint64_t sender_id, const std::string& client_msg_id,
+                                 MessageRecord& message);
     // 获取某个会话的历史消息，按照 message_id 降序排列
     Status getHistoryByConversation(const HistoryQuery& query,
                                     std::vector<MessageRecord>& messages);

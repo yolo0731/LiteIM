@@ -10,6 +10,8 @@
 namespace liteim {
 namespace {
 
+constexpr unsigned int kMysqlDuplicateEntry = 1062;
+
 Status malformedMessageRowStatus() {
     return Status::error(ErrorCode::InternalError, "messages query returned a malformed row");
 }
@@ -73,7 +75,7 @@ Status bindConversationType(PreparedStatement& statement, std::size_t index,
 }
 
 Status rowToMessageRecord(const MySqlRow& row, MessageRecord& message) {
-    if (row.values.size() != 7U) {
+    if (row.values.size() != 8U) {
         return malformedMessageRowStatus();
     }
 
@@ -141,6 +143,9 @@ Status rowToMessageRecord(const MySqlRow& row, MessageRecord& message) {
         return created_parse_status;
     }
     parsed_message.text = *message_text;
+    if (row.values[7].has_value()) {
+        parsed_message.client_msg_id = *row.values[7];
+    }
 
     message = std::move(parsed_message);
     return Status::ok();
@@ -201,7 +206,7 @@ Status queryLastInsertedMessage(MySqlConnection& connection, MessageRecord& mess
     PreparedStatement query(connection);
     const auto prepare_status = query.prepare(
         "SELECT message_id, conversation_type, conversation_id, sender_id, receiver_id, "
-        "message_text, created_at_ms "
+        "message_text, created_at_ms, client_msg_id "
         "FROM messages WHERE message_id = LAST_INSERT_ID() LIMIT 1");
     if (!prepare_status.isOk()) {
         return prepare_status;
@@ -329,6 +334,12 @@ Status MySqlStorage::findUserById(std::uint64_t user_id, UserRecord& user) {
     return user_dao_.findUserById(user_id, user);
 }
 
+Status MySqlStorage::findMessageByClientMessageId(std::uint64_t sender_id,
+                                                  const std::string& client_msg_id,
+                                                  MessageRecord& message) {
+    return message_dao_.findByClientMessageId(sender_id, client_msg_id, message);
+}
+
 Status MySqlStorage::addFriendship(std::uint64_t user_id, std::uint64_t friend_id) {
     return friend_dao_.addFriendship(user_id, friend_id);
 }
@@ -409,8 +420,9 @@ MySqlStorage::saveMessageWithOfflineRecipients(const MessageRecord& message,
     PreparedStatement statement(*guard);
     const auto prepare_status = statement.prepare(
         "INSERT INTO messages "
-        "(conversation_type, conversation_id, sender_id, receiver_id, message_text, created_at_ms) "
-        "VALUES (?, ?, ?, ?, ?, ?)");
+        "(conversation_type, conversation_id, sender_id, receiver_id, message_text, created_at_ms, "
+        "client_msg_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''))");
     if (!prepare_status.isOk()) {
         return rollbackAndReturn(*guard, prepare_status);
     }
@@ -439,10 +451,19 @@ MySqlStorage::saveMessageWithOfflineRecipients(const MessageRecord& message,
     if (!created_status.isOk()) {
         return rollbackAndReturn(*guard, created_status);
     }
+    const auto client_msg_status = statement.bindString(6, message.client_msg_id);
+    if (!client_msg_status.isOk()) {
+        return rollbackAndReturn(*guard, client_msg_status);
+    }
 
     std::uint64_t affected_rows = 0;
     const auto insert_status = statement.executeUpdate(affected_rows);
     if (!insert_status.isOk()) {
+        if (!message.client_msg_id.empty() && statement.lastErrorNumber() == kMysqlDuplicateEntry) {
+            return rollbackAndReturn(
+                *guard,
+                Status::error(ErrorCode::AlreadyExists, "client message id already exists"));
+        }
         return rollbackAndReturn(*guard, insert_status);
     }
     if (affected_rows != 1U) {

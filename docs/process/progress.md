@@ -1,5 +1,47 @@
 # LiteIM Progress
 
+## 2026-05-20 Step 54 Client Message Idempotency
+
+本次进入 `Step 54：client_msg_id 幂等发送`。
+
+恢复路线：
+
+- Step 53 已完成离线 ACK；Step 54 继续可靠性路线，目标是解决“发送方网络重试导致重复消息”。
+- 本 Step 只做私聊发送幂等，不做接收方 delivery ACK、群聊全员 ACK、read receipt、客户端自动重试队列或强制旧客户端升级。
+- 用户已要求原 final README/showcase slot 移动到 Step 58，因此 Step54 文档只记录幂等发送，不做最终展示材料收口。
+
+TDD RED：
+
+- 更新 TLV 测试，要求 `TlvType::ClientMessageId` 有稳定字段名。
+- 更新 `ChatService` 测试，要求重复 `client_msg_id` 返回已存在 `message_id`，且不重复 unread / offline side effect。
+- 更新 MySQL storage 集成测试，要求重复保存同一 `(sender_id, client_msg_id)` 返回 `AlreadyExists`，并能查回原消息。
+- 更新 CLI 测试，要求 `private-id <receiver_id> <client_msg_id> <text...>` 构造 `PrivateMessageRequest` 并打印 `client_msg_id`。
+- 更新 Python E2E，要求 Bob 离线时 Alice 重复发送同一 `client_msg_id` 只产生一条离线消息。
+- 首次 `cmake --build build --target liteim_tests -j2` 按预期失败于缺少 `ClientMessageId`、`MessageRecord::client_msg_id` 和 `findMessageByClientMessageId()`。
+
+GREEN 实现：
+
+- 协议新增 `TlvType::ClientMessageId = 51`。
+- `MessageRecord` 新增 `client_msg_id` 字段；`appendMessageFields()` 在字段非空时写回 `ClientMessageId`。
+- 存储接口新增 `findMessageByClientMessageId(sender_id, client_msg_id, message)`。
+- `MessageDao` / `MySqlStorage` 的消息插入、查回、历史查询、离线查询均支持 `client_msg_id`。
+- `scripts/init_mysql.sql` 新增 `messages.client_msg_id` 和唯一索引 `uk_messages_sender_client_msg(sender_id, client_msg_id)`；新增 `scripts/migrations/055_client_msg_id.sql`。
+- `ChatService` 解析可选 `ClientMessageId`，校验非空和 64 字节上限；重复保存时查回已有消息并直接返回 response。
+- CLI 新增 `private-id` 命令，`describePacket()` 打印 `client_msg_id`。
+- 新增 `docs/tutorials/step54_client_message_idempotency.md`，并同步 README、Step03 协议教程和 Step41 CLI 教程。
+
+当前验证：
+
+- `cmake --build build --target liteim_tests liteim_server -j2`：通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：MySQL / Redis healthy。
+- `mysql -h127.0.0.1 -P33060 -uliteim -p6 liteim < scripts/migrations/055_client_msg_id.sql`：通过，本地数据库已补 `client_msg_id` schema。
+- `ctest --test-dir build -R "TlvType|ClientCliCommandTest|ChatService|MySqlStorageIntegrationTest|LiteIME2E.test_private_chat" --output-on-failure`：通过，25/25。
+- `ctest --test-dir build --output-on-failure`：通过，390/390。
+- `git diff --check`：通过。
+- `docs/tutorials/step54_client_message_idempotency.md` 标题脚本检查：0-10 结构通过，最后一节是 `## 10. 面试常见追问`。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" README.md docs/tutorials/step54_client_message_idempotency.md docs/tutorials/step03_protocol_types.md docs/tutorials/step41_cli_client.md`：无输出。
+- `rg -n "MessageType::kPrivate" docs/tutorials/step03_protocol_types.md docs/tutorials/step54_client_message_idempotency.md README.md src include tests`：无输出。
+
 ## 2026-05-20 Step 53 Offline Delivery ACK
 
 本次进入 `Step 53：离线消息 ACK 与投递状态`。

@@ -12,6 +12,7 @@ TEST(TlvTypeTest, CoreTypesReturnReadableNames) {
     EXPECT_STREQ(liteim::toString(liteim::TlvType::MessageText), "MESSAGE_TEXT");
     EXPECT_STREQ(liteim::toString(liteim::TlvType::UnreadCount), "UNREAD_COUNT");
     EXPECT_STREQ(liteim::toString(liteim::TlvType::DeliveryStatus), "DELIVERY_STATUS");
+    EXPECT_STREQ(liteim::toString(liteim::TlvType::ClientMessageId), "CLIENT_MESSAGE_ID");
     EXPECT_STREQ(liteim::toString(liteim::TlvType::ErrorMessage), "ERROR_MESSAGE");
 }
 

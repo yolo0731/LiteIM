@@ -71,6 +71,7 @@ struct MessageRecord {
     std::uint64_t receiver_id{0};
     std::string text;
     std::int64_t created_at_ms{0};
+    std::string client_msg_id;
 };
 
 struct OfflineMessageRecord {

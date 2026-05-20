@@ -13,6 +13,10 @@ public:
     MOCK_METHOD(Status, findUserByUsername, (const std::string& username, UserRecord& user),
                 (override));
     MOCK_METHOD(Status, findUserById, (std::uint64_t user_id, UserRecord& user), (override));
+    MOCK_METHOD(Status, findMessageByClientMessageId,
+                (std::uint64_t sender_id, const std::string& client_msg_id,
+                 MessageRecord& message),
+                (override));
     MOCK_METHOD(Status, addFriendship, (std::uint64_t user_id, std::uint64_t friend_id),
                 (override));
     MOCK_METHOD(Status, getFriends,

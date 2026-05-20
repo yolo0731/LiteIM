@@ -62,10 +62,15 @@ liteim::Packet makePacket(liteim::MessageType type, std::uint64_t seq_id, liteim
     return packet;
 }
 
-liteim::Bytes privateMessageBody(std::uint64_t receiver_id, const std::string& text) {
+liteim::Bytes privateMessageBody(std::uint64_t receiver_id, const std::string& text,
+                                 const std::string& client_message_id = "") {
     liteim::Bytes body;
     EXPECT_TRUE(liteim::appendUint64(liteim::TlvType::ReceiverId, receiver_id, body).isOk());
     EXPECT_TRUE(liteim::appendString(liteim::TlvType::MessageText, text, body).isOk());
+    if (!client_message_id.empty()) {
+        EXPECT_TRUE(liteim::appendString(liteim::TlvType::ClientMessageId, client_message_id, body)
+                        .isOk());
+    }
     return body;
 }
 
@@ -249,6 +254,21 @@ public:
         return liteim::Status::ok();
     }
 
+    liteim::Status findMessageByClientMessageId(std::uint64_t sender_id,
+                                                const std::string& client_message_id,
+                                                liteim::MessageRecord& message) override {
+        ++find_client_message_calls;
+        last_find_sender_id = sender_id;
+        last_find_client_message_id = client_message_id;
+        const auto it = client_messages.find(clientKey(sender_id, client_message_id));
+        if (it == client_messages.end()) {
+            return liteim::Status::error(liteim::ErrorCode::NotFound,
+                                         "client message id was not found");
+        }
+        message = it->second;
+        return liteim::Status::ok();
+    }
+
     liteim::Status addFriendship(std::uint64_t, std::uint64_t) override {
         return liteim::Status::ok();
     }
@@ -299,10 +319,22 @@ public:
         last_offline_user_ids = offline_user_ids;
         saved_offline_user_ids.push_back(offline_user_ids);
 
+        if (!message.client_msg_id.empty()) {
+            const auto key = clientKey(message.sender_id, message.client_msg_id);
+            if (client_messages.find(key) != client_messages.end()) {
+                return liteim::Status::error(liteim::ErrorCode::AlreadyExists,
+                                             "client message id already exists");
+            }
+        }
+
         saved_message = message;
         saved_message.message_id = next_message_id++;
         saved_message.created_at_ms = next_created_at_ms++;
         saved_messages.push_back(saved_message);
+        if (!saved_message.client_msg_id.empty()) {
+            client_messages[clientKey(saved_message.sender_id, saved_message.client_msg_id)] =
+                saved_message;
+        }
         return liteim::Status::ok();
     }
 
@@ -344,14 +376,22 @@ public:
         users[user_id] = user;
     }
 
+    static std::string clientKey(std::uint64_t sender_id, const std::string& client_message_id) {
+        return std::to_string(sender_id) + ":" + client_message_id;
+    }
+
     std::unordered_map<std::uint64_t, liteim::UserRecord> users;
+    std::unordered_map<std::string, liteim::MessageRecord> client_messages;
     liteim::MessageRecord last_message;
     std::vector<std::uint64_t> last_offline_user_ids;
     std::vector<std::vector<std::uint64_t>> saved_offline_user_ids;
     std::vector<liteim::MessageRecord> saved_messages;
+    std::string last_find_client_message_id;
+    std::uint64_t last_find_sender_id{0};
     std::uint64_t next_message_id{5001};
     std::int64_t next_created_at_ms{1700000000000LL};
     int save_message_calls{0};
+    int find_client_message_calls{0};
 };
 
 class FakeCache final : public liteim::ICache {
@@ -572,6 +612,38 @@ TEST_F(ChatServiceFixture, OfflineReceiverSavesMessageAndIncrementsUnread) {
     EXPECT_EQ(uint64Field(response, liteim::TlvType::ReceiverId), 1002U);
     EXPECT_EQ(stringField(response, liteim::TlvType::MessageText), "hello bob");
     EXPECT_EQ(uint64Field(response, liteim::TlvType::TimestampMs), 1700000000000ULL);
+}
+
+TEST_F(ChatServiceFixture, DuplicateClientMessageIdReturnsExistingMessageWithoutSecondUnread) {
+    auto session = bindAlice();
+    auto first_request =
+        requestFor(session, liteim::MessageType::PrivateMessageRequest,
+                   privateMessageBody(1002, "hello once", "client-msg-1"));
+    liteim::Packet first_response;
+
+    const auto first_status = service.handlePrivateMessage(first_request, first_response);
+
+    ASSERT_TRUE(first_status.isOk()) << first_status.message();
+    EXPECT_EQ(uint64Field(first_response, liteim::TlvType::MessageId), 5001U);
+    EXPECT_EQ(stringField(first_response, liteim::TlvType::ClientMessageId), "client-msg-1");
+
+    auto duplicate_request =
+        requestFor(session, liteim::MessageType::PrivateMessageRequest,
+                   privateMessageBody(1002, "hello once", "client-msg-1"));
+    liteim::Packet duplicate_response;
+
+    const auto duplicate_status =
+        service.handlePrivateMessage(duplicate_request, duplicate_response);
+
+    ASSERT_TRUE(duplicate_status.isOk()) << duplicate_status.message();
+    EXPECT_EQ(storage.save_message_calls, 2);
+    EXPECT_EQ(storage.find_client_message_calls, 1);
+    EXPECT_EQ(storage.last_find_sender_id, 1001U);
+    EXPECT_EQ(storage.last_find_client_message_id, "client-msg-1");
+    ASSERT_EQ(storage.saved_messages.size(), 1U);
+    EXPECT_EQ(cache.incr_unread_calls, 1);
+    EXPECT_EQ(uint64Field(duplicate_response, liteim::TlvType::MessageId), 5001U);
+    EXPECT_EQ(stringField(duplicate_response, liteim::TlvType::ClientMessageId), "client-msg-1");
 }
 
 TEST_F(ChatServiceFixture, OfflineUnreadFailureStillReturnsSenderSuccess) {

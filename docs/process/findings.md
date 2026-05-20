@@ -1970,3 +1970,11 @@ TDD RED：
 - `Channel::handleEvent()` 已处理 `EPOLLRDHUP`，因此 read interest 也应注册 `EPOLLRDHUP`，保持半关闭事件订阅和处理分支一致。
 - 登录限流应优先使用 `Session::peerIp()`；`AuthServiceOptions::default_remote_ip` 只作为 Session 没有 peer IP 时的兜底值。
 - `OfflineMessageDao::markOfflineDelivered()` 现在采用严格语义：每个待标记 message id 必须实际更新 1 行，否则回滚并返回 `NotFound`，避免错误 id、已 delivered id 或不属于该 user 的 id 被当成成功。
+
+## 2026-05-20 Step 54 Client Message Idempotency Findings
+
+- `client_msg_id` 必须由 MySQL 唯一约束兜底，而不是业务层先查再插；否则两个重试请求并发到来时仍可能重复插入。
+- 唯一约束采用 `(sender_id, client_msg_id)`，不是单列 `client_msg_id`，这样不同用户碰巧生成同一个客户端 id 不会互相冲突。
+- `client_msg_id` 允许 `NULL`，旧客户端不传该字段时保持原行为；`ChatService` 只在请求显式携带 `ClientMessageId` 时校验非空和 64 字节上限。
+- `MessageRecord::client_msg_id` 放在结构体末尾，避免破坏现有 C++17 aggregate 初始化中第 6 个参数表示 `created_at_ms` 的代码。
+- 重复私聊请求在 `saveMessageWithOfflineRecipients()` 返回 `AlreadyExists` 后，只查回已有消息并返回响应，不再进入在线 push、离线 row 或 Redis unread 逻辑。

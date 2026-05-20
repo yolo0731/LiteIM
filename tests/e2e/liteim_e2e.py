@@ -80,6 +80,7 @@ class TlvType(enum.IntEnum):
     TIMESTAMP_MS = 46
     LIMIT = 48
     DELIVERY_STATUS = 50
+    CLIENT_MESSAGE_ID = 51
     ERROR_CODE = 90
     ERROR_MESSAGE = 91
 
@@ -382,11 +383,18 @@ class LiteIMClient:
         self,
         receiver_id: int,
         text: str,
+        client_message_id: str = "",
         expected: Optional[MessageType] = MessageType.PRIVATE_MESSAGE_RESPONSE,
     ) -> Packet:
+        fields = [
+            _uint64_field(TlvType.RECEIVER_ID, receiver_id),
+            _string_field(TlvType.MESSAGE_TEXT, text),
+        ]
+        if client_message_id:
+            fields.append(_string_field(TlvType.CLIENT_MESSAGE_ID, client_message_id))
         return self.request(
             MessageType.PRIVATE_MESSAGE_REQUEST,
-            [_uint64_field(TlvType.RECEIVER_ID, receiver_id), _string_field(TlvType.MESSAGE_TEXT, text)],
+            fields,
             expected,
         )
 

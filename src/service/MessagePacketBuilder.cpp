@@ -38,6 +38,13 @@ Status appendMessageFields(const MessageRecord& message, Packet& packet) {
     if (!text_status.isOk()) {
         return text_status;
     }
+    if (!message.client_msg_id.empty()) {
+        const auto client_msg_status =
+            appendString(TlvType::ClientMessageId, message.client_msg_id, packet.body);
+        if (!client_msg_status.isOk()) {
+            return client_msg_status;
+        }
+    }
     return appendUint64(TlvType::TimestampMs, static_cast<std::uint64_t>(message.created_at_ms),
                         packet.body);
 }

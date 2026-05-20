@@ -105,10 +105,10 @@ Status validateMessageIds(const std::vector<std::uint64_t>& message_ids,
     return Status::ok();
 }
 
-// 把 MySQL 查询出来的一行数据转换成 OfflineMessageRecord,要求一行必须有 10 列
+// 把 MySQL 查询出来的一行数据转换成 OfflineMessageRecord,要求一行必须有 11 列
 // 结果里既有离线记录字段，也有真实消息字段
 Status rowToOfflineMessageRecord(const MySqlRow& row, OfflineMessageRecord& record) {
-    if (row.values.size() != 10U) {
+    if (row.values.size() != 11U) {
         return malformedOfflineMessageRowStatus();
     }
 
@@ -207,6 +207,9 @@ Status rowToOfflineMessageRecord(const MySqlRow& row, OfflineMessageRecord& reco
         return message_created_parse_status;
     }
     parsed_record.message.text = *message_text;
+    if (row.values[10].has_value()) {
+        parsed_record.message.client_msg_id = *row.values[10];
+    }
 
     record = std::move(parsed_record);
     return Status::ok();
@@ -429,7 +432,7 @@ Status OfflineMessageDao::getOfflineMessages(std::uint64_t user_id, std::uint32_
     const auto prepare_status =
         statement.prepare("SELECT om.offline_message_id, om.user_id, om.created_at_ms, "
                           "m.message_id, m.conversation_type, m.conversation_id, m.sender_id, "
-                          "m.receiver_id, m.message_text, m.created_at_ms "
+                          "m.receiver_id, m.message_text, m.created_at_ms, m.client_msg_id "
                           "FROM offline_messages om "
                           "JOIN messages m ON m.message_id = om.message_id "
                           "WHERE om.user_id = ? AND om.delivered = 0 "
@@ -576,7 +579,7 @@ Status OfflineMessageDao::ackOfflineMessages(
     const auto prepare_status =
         query.prepare("SELECT om.offline_message_id, om.user_id, om.created_at_ms, "
                       "m.message_id, m.conversation_type, m.conversation_id, m.sender_id, "
-                      "m.receiver_id, m.message_text, m.created_at_ms "
+                      "m.receiver_id, m.message_text, m.created_at_ms, m.client_msg_id "
                       "FROM offline_messages om "
                       "JOIN messages m ON m.message_id = om.message_id "
                       "WHERE om.user_id = ? AND om.message_id = ? "

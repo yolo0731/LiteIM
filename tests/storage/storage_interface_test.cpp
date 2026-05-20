@@ -31,6 +31,11 @@ public:
         return liteim::Status::ok();
     }
 
+    liteim::Status findMessageByClientMessageId(std::uint64_t, const std::string&,
+                                                liteim::MessageRecord&) override {
+        return liteim::Status::error(liteim::ErrorCode::NotFound, "message was not found");
+    }
+
     liteim::Status addFriendship(std::uint64_t, std::uint64_t) override {
         return liteim::Status::ok();
     }
@@ -117,7 +122,7 @@ public:
     liteim::Status getHistory(const liteim::HistoryQuery&,
                               std::vector<liteim::MessageRecord>& messages) override {
         messages.push_back(liteim::MessageRecord{
-            1001, {liteim::ConversationType::kPrivate, 7}, 42, 7, "hello", 400});
+            1001, {liteim::ConversationType::kPrivate, 7}, 42, 7, "hello", 400, ""});
         return liteim::Status::ok();
     }
 };
@@ -167,14 +172,16 @@ TEST(StorageInterfaceTest, CanBeImplementedByFakeStorage) {
 
     std::uint64_t message_id = 0;
     const auto save_status = interface.saveMessage(
-        liteim::MessageRecord{0, {liteim::ConversationType::kPrivate, 7}, 42, 7, "hello", 400},
+        liteim::MessageRecord{0, {liteim::ConversationType::kPrivate, 7}, 42, 7, "hello", 400,
+                              ""},
         message_id);
     ASSERT_TRUE(save_status.isOk()) << save_status.message();
     EXPECT_EQ(message_id, 1001U);
 
     liteim::MessageRecord saved_message;
     const auto combined_status = interface.saveMessageWithOfflineRecipients(
-        liteim::MessageRecord{0, {liteim::ConversationType::kPrivate, 7}, 42, 7, "offline", 500},
+        liteim::MessageRecord{0, {liteim::ConversationType::kPrivate, 7}, 42, 7, "offline", 500,
+                              ""},
         {7}, saved_message);
     ASSERT_TRUE(combined_status.isOk()) << combined_status.message();
     EXPECT_EQ(saved_message.message_id, 1001U);

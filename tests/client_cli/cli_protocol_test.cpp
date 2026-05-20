@@ -173,6 +173,20 @@ TEST(ClientCliCommandTest, PrivateCommandKeepsMessageTextWithSpaces) {
     EXPECT_EQ(stringField(packet, liteim::TlvType::MessageText), "hello bob from cli");
 }
 
+TEST(ClientCliCommandTest, PrivateIdCommandAddsClientMessageId) {
+    liteim::Packet packet;
+
+    const auto status =
+        liteim::cli::buildPacketFromLine("private-id 1002 cli-msg-1 hello bob", 47, packet);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(packet.header.msg_type, liteim::MessageType::PrivateMessageRequest);
+    EXPECT_EQ(packet.header.seq_id, 47U);
+    EXPECT_EQ(uint64Field(packet, liteim::TlvType::ReceiverId), 1002U);
+    EXPECT_EQ(stringField(packet, liteim::TlvType::ClientMessageId), "cli-msg-1");
+    EXPECT_EQ(stringField(packet, liteim::TlvType::MessageText), "hello bob");
+}
+
 TEST(ClientCliCommandTest, HistoryCommandBuildsCursorRequest) {
     liteim::Packet packet;
 
@@ -209,6 +223,8 @@ TEST(ClientCliCommandTest, DescribePacketIncludesMessageFields) {
     ASSERT_TRUE(liteim::appendUint64(liteim::TlvType::MessageId, 5001, packet.body).isOk());
     ASSERT_TRUE(liteim::appendUint64(liteim::TlvType::SenderId, 1001, packet.body).isOk());
     ASSERT_TRUE(liteim::appendUint64(liteim::TlvType::ReceiverId, 1002, packet.body).isOk());
+    ASSERT_TRUE(liteim::appendString(liteim::TlvType::ClientMessageId, "cli-msg-1", packet.body)
+                    .isOk());
     ASSERT_TRUE(liteim::appendString(liteim::TlvType::MessageText, "hello", packet.body).isOk());
 
     const auto description = liteim::cli::describePacket(packet);
@@ -217,6 +233,7 @@ TEST(ClientCliCommandTest, DescribePacketIncludesMessageFields) {
     EXPECT_NE(description.find("message_id=5001"), std::string::npos);
     EXPECT_NE(description.find("sender_id=1001"), std::string::npos);
     EXPECT_NE(description.find("receiver_id=1002"), std::string::npos);
+    EXPECT_NE(description.find("client_msg_id=\"cli-msg-1\""), std::string::npos);
     EXPECT_NE(description.find("text=\"hello\""), std::string::npos);
 }
 

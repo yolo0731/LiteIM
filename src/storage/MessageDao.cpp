@@ -12,6 +12,7 @@ namespace liteim {
 namespace {
 
 constexpr std::uint32_t kMaxHistoryLimit = 50;  // 限制一次查询历史消息的最大条数
+constexpr unsigned int kMysqlDuplicateEntry = 1062;
 
 Status malformedMessageRowStatus() {
     return Status::error(ErrorCode::InternalError, "messages query returned a malformed row");
@@ -83,7 +84,7 @@ Status bindConversationType(PreparedStatement& statement, std::size_t index,
 
 // 把 MySQL 查出来的一行消息数据，转换成 MessageRecord。
 Status rowToMessageRecord(const MySqlRow& row, MessageRecord& message) {
-    if (row.values.size() != 7U) {
+    if (row.values.size() != 8U) {
         return malformedMessageRowStatus();
     }
 
@@ -151,6 +152,9 @@ Status rowToMessageRecord(const MySqlRow& row, MessageRecord& message) {
         return created_parse_status;
     }
     parsed_message.text = *message_text;
+    if (row.values[7].has_value()) {
+        parsed_message.client_msg_id = *row.values[7];
+    }
 
     message = std::move(parsed_message);
     return Status::ok();
@@ -218,7 +222,7 @@ Status queryLastInsertedMessage(MySqlConnection& connection, MessageRecord& mess
     PreparedStatement query(connection);
     const auto prepare_status = query.prepare(
         "SELECT message_id, conversation_type, conversation_id, sender_id, receiver_id, "
-        "message_text, created_at_ms "
+        "message_text, created_at_ms, client_msg_id "
         "FROM messages WHERE message_id = LAST_INSERT_ID() LIMIT 1");
     if (!prepare_status.isOk()) {
         return prepare_status;
@@ -258,8 +262,9 @@ Status saveMessageWithType(MySqlPool& pool, std::chrono::milliseconds acquire_ti
     PreparedStatement statement(*guard);
     const auto prepare_status = statement.prepare(
         "INSERT INTO messages "
-        "(conversation_type, conversation_id, sender_id, receiver_id, message_text, created_at_ms) "
-        "VALUES (?, ?, ?, ?, ?, ?)");
+        "(conversation_type, conversation_id, sender_id, receiver_id, message_text, created_at_ms, "
+        "client_msg_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''))");
     if (!prepare_status.isOk()) {
         return rollbackAndReturn(*guard, prepare_status);
     }
@@ -289,11 +294,20 @@ Status saveMessageWithType(MySqlPool& pool, std::chrono::milliseconds acquire_ti
     if (!created_status.isOk()) {
         return rollbackAndReturn(*guard, created_status);
     }
+    const auto client_msg_status = statement.bindString(6, message.client_msg_id);
+    if (!client_msg_status.isOk()) {
+        return rollbackAndReturn(*guard, client_msg_status);
+    }
 
     std::uint64_t affected_rows = 0;
     // 执行 INSERT 语句，affected_rows 应该是 1，如果不是，说明插入失败，回滚事务并返回错误。
     const auto insert_status = statement.executeUpdate(affected_rows);
     if (!insert_status.isOk()) {
+        if (!message.client_msg_id.empty() && statement.lastErrorNumber() == kMysqlDuplicateEntry) {
+            return rollbackAndReturn(
+                *guard,
+                Status::error(ErrorCode::AlreadyExists, "client message id already exists"));
+        }
         return rollbackAndReturn(*guard, insert_status);
     }
     if (affected_rows != 1U) {
@@ -310,6 +324,43 @@ Status saveMessageWithType(MySqlPool& pool, std::chrono::milliseconds acquire_ti
     return guard->executeSimple("COMMIT");  // 提交事务
 }
 
+Status findMessageByClientMessageId(MySqlPool& pool, std::chrono::milliseconds acquire_timeout,
+                                    std::uint64_t sender_id,
+                                    const std::string& client_msg_id,
+                                    MessageRecord& message) {
+    message = {};
+    if (sender_id == 0U) {
+        return Status::error(ErrorCode::InvalidArgument, "sender id must not be zero");
+    }
+    if (client_msg_id.empty()) {
+        return Status::error(ErrorCode::InvalidArgument, "client message id must not be empty");
+    }
+
+    ConnectionGuard guard;
+    const auto acquire_status = pool.acquire(acquire_timeout, guard);
+    if (!acquire_status.isOk()) {
+        return acquire_status;
+    }
+
+    PreparedStatement statement(*guard);
+    const auto prepare_status = statement.prepare(
+        "SELECT message_id, conversation_type, conversation_id, sender_id, receiver_id, "
+        "message_text, created_at_ms, client_msg_id "
+        "FROM messages WHERE sender_id = ? AND client_msg_id = ? LIMIT 1");
+    if (!prepare_status.isOk()) {
+        return prepare_status;
+    }
+    const auto sender_status = statement.bindUInt64(0, sender_id);
+    if (!sender_status.isOk()) {
+        return sender_status;
+    }
+    const auto client_status = statement.bindString(1, client_msg_id);
+    if (!client_status.isOk()) {
+        return client_status;
+    }
+    return querySingleMessage(statement, message);
+}
+
 }  // namespace
 
 MessageDao::MessageDao(MySqlPool& pool, std::chrono::milliseconds acquire_timeout)
@@ -324,6 +375,12 @@ Status MessageDao::saveGroupMessage(const MessageRecord& message, MessageRecord&
     // message是调用方传进来的“待保存消息”，saved_message是MySQL 保存后查回来的“完整消息”
     return saveMessageWithType(*pool_, acquire_timeout_, message, ConversationType::kGroup,
                                saved_message);
+}
+
+Status MessageDao::findByClientMessageId(std::uint64_t sender_id, const std::string& client_msg_id,
+                                         MessageRecord& message) {
+    return findMessageByClientMessageId(*pool_, acquire_timeout_, sender_id, client_msg_id,
+                                        message);
 }
 
 Status MessageDao::getHistoryByConversation(const HistoryQuery& query,
@@ -348,17 +405,16 @@ Status MessageDao::getHistoryByConversation(const HistoryQuery& query,
     PreparedStatement statement(*guard);
     // 根据是否有 before_message_id 来选择不同的 SQL，查询消息历史记录，结果按照 message_id 降序排列，如果 before_message_id 不为零，还要加一个 message_id < before_message_id 的条件来实现分页查询。
     // 分页查询: 第一次请求不传 before_message_id，查询最新的 limit 条消息；第二次请求传上次返回的最后一条消息的 message_id 作为 before_message_id，就能查询到更早的 limit 条消息
-    const auto sql = query.before_message_id == 0U
-                         ? "SELECT message_id, conversation_type, conversation_id, sender_id, "
-                           "receiver_id, message_text, "
-                           "created_at_ms FROM messages "
-                           "WHERE conversation_type = ? AND conversation_id = ? "
-                           "ORDER BY message_id DESC LIMIT ?"
-                         : "SELECT message_id, conversation_type, conversation_id, sender_id, "
-                           "receiver_id, message_text, "
-                           "created_at_ms FROM messages "
-                           "WHERE conversation_type = ? AND conversation_id = ? AND message_id < ? "
-                           "ORDER BY message_id DESC LIMIT ?";
+    const auto sql =
+        query.before_message_id == 0U
+            ? "SELECT message_id, conversation_type, conversation_id, sender_id, receiver_id, "
+              "message_text, created_at_ms, client_msg_id FROM messages "
+              "WHERE conversation_type = ? AND conversation_id = ? "
+              "ORDER BY message_id DESC LIMIT ?"
+            : "SELECT message_id, conversation_type, conversation_id, sender_id, receiver_id, "
+              "message_text, created_at_ms, client_msg_id FROM messages "
+              "WHERE conversation_type = ? AND conversation_id = ? AND message_id < ? "
+              "ORDER BY message_id DESC LIMIT ?";
 
     const auto prepare_status = statement.prepare(sql);
     if (!prepare_status.isOk()) {

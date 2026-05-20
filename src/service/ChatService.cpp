@@ -29,6 +29,10 @@ Status emptyMessageTextStatus() {
     return Status::error(ErrorCode::InvalidArgument, "message text must not be empty");
 }
 
+Status emptyClientMessageIdStatus() {
+    return Status::error(ErrorCode::InvalidArgument, "client message id must not be empty");
+}
+
 // 用两个用户 ID 生成一个私聊会话 ID
 Status privateConversationId(std::uint64_t sender_id, std::uint64_t receiver_id,
                              std::uint64_t& conversation_id) {
@@ -102,6 +106,23 @@ Status ChatService::handlePrivateMessage(const MessageRouter::RouterRequest& req
         return text_length_status;
     }
 
+    std::string client_msg_id;
+    if (request.fields.find(TlvType::ClientMessageId) != request.fields.end()) {
+        const auto client_status =
+            getString(request.fields, TlvType::ClientMessageId, client_msg_id);
+        if (!client_status.isOk()) {
+            return client_status;
+        }
+        if (client_msg_id.empty()) {
+            return emptyClientMessageIdStatus();
+        }
+        const auto client_length_status =
+            validateMaxBytes(client_msg_id, kMaxClientMessageIdBytes, "client message id");
+        if (!client_length_status.isOk()) {
+            return client_length_status;
+        }
+    }
+
     UserRecord receiver;
     const auto find_status = storage_.findUserById(receiver_id, receiver);
     if (!find_status.isOk()) {
@@ -130,6 +151,7 @@ Status ChatService::handlePrivateMessage(const MessageRouter::RouterRequest& req
     message.sender_id = sender_id;
     message.receiver_id = receiver_id;
     message.text = std::move(message_text);
+    message.client_msg_id = std::move(client_msg_id);
 
     // 如果离线，offline_user_ids数组里放 receiver_id，然后在 saveMessageWithOfflineRecipients 里插入到offline_messages表里
     const std::vector<std::uint64_t> offline_user_ids =
@@ -140,7 +162,17 @@ Status ChatService::handlePrivateMessage(const MessageRouter::RouterRequest& req
     const auto save_status =
         storage_.saveMessageWithOfflineRecipients(message, offline_user_ids, saved_message);
     if (!save_status.isOk()) {
-        return save_status;
+        if (save_status.code() != ErrorCode::AlreadyExists || message.client_msg_id.empty()) {
+            return save_status;
+        }
+        const auto find_status = storage_.findMessageByClientMessageId(
+            sender_id, message.client_msg_id, saved_message);
+        if (!find_status.isOk()) {
+            return find_status;
+        }
+        response.header.msg_type = MessageType::PrivateMessageResponse;
+        response.header.seq_id = request.packet.header.seq_id;
+        return appendMessageFields(saved_message, response);
     }
 
     if (receiver_online) {

@@ -24,6 +24,9 @@ public:
     Status createUser(const CreateUserRequest& request, UserRecord& created_user) override;
     Status findUserByUsername(const std::string& username, UserRecord& user) override;
     Status findUserById(std::uint64_t user_id, UserRecord& user) override;
+    Status findMessageByClientMessageId(std::uint64_t sender_id,
+                                        const std::string& client_msg_id,
+                                        MessageRecord& message) override;
 
     Status addFriendship(std::uint64_t user_id, std::uint64_t friend_id) override;
     Status getFriends(std::uint64_t user_id, std::vector<UserProfileRecord>& friends) override;

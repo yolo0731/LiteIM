@@ -32,6 +32,7 @@ enum class TlvType : std::uint16_t {
     Limit = 48,
     UnreadCount = 49,
     DeliveryStatus = 50,
+    ClientMessageId = 51,
 
     ErrorCode = 90,
     ErrorMessage = 91,

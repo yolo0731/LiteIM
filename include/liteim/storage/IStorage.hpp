@@ -16,6 +16,9 @@ public:
     virtual Status createUser(const CreateUserRequest& request, UserRecord& created_user) = 0;
     virtual Status findUserByUsername(const std::string& username, UserRecord& user) = 0;
     virtual Status findUserById(std::uint64_t user_id, UserRecord& user) = 0;
+    virtual Status findMessageByClientMessageId(std::uint64_t sender_id,
+                                                const std::string& client_msg_id,
+                                                MessageRecord& message) = 0;
 
     virtual Status addFriendship(std::uint64_t user_id, std::uint64_t friend_id) = 0;
     virtual Status getFriends(std::uint64_t user_id, std::vector<UserProfileRecord>& friends) = 0;
