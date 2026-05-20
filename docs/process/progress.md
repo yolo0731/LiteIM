@@ -1,5 +1,42 @@
 # LiteIM Progress
 
+## 2026-05-20 Step 58 Final README Showcase Materials
+
+本次完成 `Step 58：最终 README、架构图、Qt 截图、面试说明和压测报告`。
+
+恢复路线：
+
+- 用户确认原 Step53 final README/showcase 应删除并整体移动到 Step58，作为 LiteIM 第一阶段最后一个结尾 Step。
+- Step53-57 已补离线 ACK、`client_msg_id` 幂等、私聊 delivery ACK、业务线程池队列上限、真实 IP 登录限流验证、好友申请和私聊好友权限。
+- Step58 不新增服务端行为，只让 README、报告、截图、教程和 process 文档统一反映当前项目边界。
+
+实施记录：
+
+- README 刷新当前能力说明，补充 `Delivery Semantics`，明确 `server-stored`、`delivered`、`read` 三种状态。
+- README benchmark 改指向 `docs/reports/liteim_benchmark_report_2026-05-20.md`，并更新 smoke / baseline / stress 三组本机结果。
+- README MySQL/Redis 说明补齐 `friend_requests`、`message_deliveries`、`054_delivery_ack.sql`、`055_client_msg_id.sql` 和 `057_friend_requests.sql`。
+- README `Interview Notes` 增加 ACK / `client_msg_id` / delivered / read 区分；新增 `Known Limitations And Future Work`，主动列出单机、无多设备、无 TLS/token、无完整群 ACK、无 read receipt 和 PersonaAgent 尚未实现。
+- 新增 `docs/reports/liteim_benchmark_report_2026-05-20.md`，记录当前本机闭环压测环境、命令、结果和面试口径。
+- 刷新 `docs/reports/qt_client_showcase.png`，截图由当前 Qt Widgets `MainWindow` / `ConversationListWidget` / `ChatPage` / `MessageBubble` 代码路径渲染生成，画面改为 Step58/ACK/好友权限展示文案。
+- 新增 `docs/tutorials/step58_final_docs_showcase.md`，按固定 0-10 教程模板收口。
+- 同步 `docs/process/task_plan.md` 和 `docs/process/findings.md`。
+
+当前 benchmark 数据：
+
+- Smoke：4 连接，64B，20ms，1 秒，`qps=110.558`，`p99=9.537ms`，`error_count=0`。
+- Baseline：10 连接，128B，10ms，10 秒，`qps=561.682`，`p99=11.006ms`，`error_count=0`。
+- Stress sample：30 连接，128B，5ms，10 秒，`qps=712.749`，`p99=49.918ms`，`error_count=0`。
+
+当前验证：
+
+- `cmake --build build --target liteim_tests liteim_server liteim_bench -j2`：通过。
+- `docker compose -f docker/docker-compose.yml ps`：MySQL `mysql:8.0` 和 Redis `redis:7.2-alpine` 均为 healthy。
+- `ctest --test-dir build --output-on-failure`：通过，411/411。
+- `cmake --build build-qt --target liteim_qt_client_tests liteim_qt_client -j2`：通过。
+- `ctest --test-dir build-qt -R "LiteIMQtClient.Step46|LiteIMQtClient.Step47|LiteIMQtClient.Step48|LiteIMQtClient.Step49|LiteIMQtClient.Step50|LiteIMQtClient.Step51|LiteIMQtClient.Step52|LiteIMCMake.QtClientFoundation" --output-on-failure`：通过，8/8。
+- `docs/tutorials/step58_final_docs_showcase.md` 标题脚本检查：0-10 结构通过，最后一节是 `## 10. 面试常见追问`。
+- `file docs/reports/qt_client_showcase.png && test -s docs/reports/qt_client_showcase.png`：PNG 存在，1080x720。
+
 ## 2026-05-20 Step 57 Friend Requests And Private Permission
 
 本次进入 `Step 57：好友申请和私聊权限`。

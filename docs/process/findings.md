@@ -8,6 +8,25 @@
 - `LiteIM/docs/process/task_plan.md`、`LiteIM/docs/process/findings.md` 和 `LiteIM/docs/process/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-20 Step 58 Final README Showcase Findings
+
+当前采用的边界：
+
+- Step 58 是 LiteIM 第一阶段最终展示材料收口，不新增服务端协议、MySQL schema、Redis key 或业务 handler。
+- 原 Step53 final README/showcase 角色已经按用户要求移动到 Step58；当前 Step53 保持离线 ACK，Step54-57 保持可靠性和权限 hardening。
+- README 必须明确 LiteIM 是“比较完整的单机 C++ 后端实习项目”，不是成熟生产级 IM 集群。
+- `server-stored`、`delivered`、`read` 必须拆开说明：`PrivateMessageResponse` 只表示 server-stored，receiver ACK 才表示 delivered，read receipt 当前未实现。
+- 新 benchmark 报告采用 2026-05-20 当前代码链路；`liteim_bench` setup 阶段先完成好友申请/接受，计时阶段只统计私聊 request/response RTT。
+- Qt 截图必须由当前 Qt Widgets 代码路径渲染，展示普通三栏 IM 客户端，不使用第三方 IM 品牌、logo、截图或素材。
+- `Known Limitations And Future Work` 主动列出单机、无多设备、无 TLS/token、无完整群 ACK、无 read receipt 和 PersonaAgent 尚未实现，避免过度宣称。
+
+验证关注：
+
+- README 不能继续指向旧 `liteim_benchmark_report_2026-05-18.md` 作为当前结果。
+- `docs/reports/qt_client_showcase.png` 不能再展示旧 Step53 文案。
+- Step58 教程必须保持固定 0-10 模板，最后主章节是 `面试常见追问`。
+- 文档收口后仍要跑默认 CTest 和 Qt CTest，确认没有伴随代码漂移。
+
 ## 2026-05-20 Step 57 Friend Requests And Private Permission Findings
 
 当前采用的边界：

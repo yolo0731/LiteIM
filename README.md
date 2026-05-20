@@ -192,6 +192,18 @@ Private chat requires an accepted friendship. `AddFriendRequest(target_user_id=1
 
 Private-message delivery ACK is receiver-side. After Bob's client receives `PrivateMessagePush(message_id=5001)`, it may send `DeliveryAckRequest(message_id=5001)`. The server verifies Bob is the receiver and records `message_deliveries.status = delivered`, then returns `DeliveryAckResponse` with `DeliveryStatus = 2`. This is separate from `PrivateMessageResponse`, which only means the server stored or reused the message for Alice.
 
+### Delivery Semantics
+
+LiteIM now separates three message states that are often confused in IM interviews:
+
+| State | Meaning | Current LiteIM support |
+| --- | --- | --- |
+| `server-stored` | The server has accepted and persisted the sender's message. | `PrivateMessageResponse` / `GroupMessageResponse` mean this level only. For private chat, optional `ClientMessageId` makes sender retries idempotent. |
+| `delivered` | The receiver's client has acknowledged receiving a pushed or offline message. | Private online push uses `DeliveryAckRequest`; offline pull uses `OfflineMessagesAckRequest`. Both update MySQL delivery state after client ACK, not when the server merely queues bytes to a socket. |
+| `read` | The user has opened or read the message. | Reserved in `message_deliveries`, but no read-receipt protocol is implemented yet. README and interview wording should not claim read receipts. |
+
+TCP ACK is not counted as delivered in this README. It only confirms bytes at the transport layer and does not prove that the application decoded, stored, or displayed the message.
+
 ### MySQL Table Summary
 
 | Table | Responsibility |
@@ -348,16 +360,16 @@ docker compose -f docker/docker-compose.yml up -d --wait
 Verified local smoke result, not a capacity claim:
 
 ```text
-Date: 2026-05-16
+Date: 2026-05-20
 OS: Linux 6.8.0-111-generic x86_64
 CPU: 13th Gen Intel(R) Core(TM) i9-13900HX, 32 logical CPUs
 Memory: 31 GiB total
 Compiler: g++ 13.3.0
 Build type: Release
 Dependencies: Docker Compose MySQL and Redis healthy on local default ports
-Server config: host=0.0.0.0, port=9000, io_threads=4, business_threads=4, business_queue_capacity=1024
-Command: ./build/bench/liteim_bench --host 127.0.0.1 --port 9000 --connections 4 --message-size 64 --interval-ms 20 --duration-sec 1 --format json
-Result: connection_success=4/4, request_success=114, error_count=0, qps=111.874, average_latency_us=6665.71, p50_us=6494, p95_us=8984, p99_us=9403
+Server config: host=0.0.0.0, port=19058, io_threads=4, business_threads=4, business_queue_capacity=1024
+Command: ./build/bench/liteim_bench --host 127.0.0.1 --port 19058 --connections 4 --message-size 64 --interval-ms 20 --duration-sec 1 --format json
+Result: connection_success=4/4, request_success=111, error_count=0, qps=110.558, average_latency_us=7044.14, p50_us=7005, p95_us=8770, p99_us=9537
 ```
 
 Configuration keys are parsed by `liteim::Config::loadFromFile()`. Network-facing defaults include:
@@ -377,15 +389,15 @@ Service-layer validation currently caps usernames and nicknames at 64 bytes, gro
 
 ## Benchmark Report
 
-The full benchmark writeup is stored in `docs/reports/liteim_benchmark_report_2026-05-18.md`. It records the local machine, build type, Docker MySQL/Redis state, command lines, smoke/baseline/stress results, and interview-safe wording.
+The current benchmark writeup is stored in `docs/reports/liteim_benchmark_report_2026-05-20.md`. It records the local machine, build type, Docker MySQL/Redis state, command lines, smoke/baseline/stress results, and interview-safe wording after the ACK, idempotency, limiter, and friend-permission hardening route.
 
 Latest documented local results:
 
 | Scenario | Connections | Message size | Interval | Duration | QPS | p99 | Errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Smoke | 4 | 64B | 20ms | 1s | 111.984 | 9.238ms | 0 |
-| Baseline | 10 | 128B | 10ms | 10s | 579.714 | 9.548ms | 0 |
-| Stress sample | 30 | 128B | 5ms | 10s | 758.092 | 48.122ms | 0 |
+| Smoke | 4 | 64B | 20ms | 1s | 110.558 | 9.537ms | 0 |
+| Baseline | 10 | 128B | 10ms | 10s | 561.682 | 11.006ms | 0 |
+| Stress sample | 30 | 128B | 5ms | 10s | 712.749 | 49.918ms | 0 |
 
 These numbers are local closed-loop measurements, not production capacity claims. The benchmark path is real TCP/TLV clients, server business handlers, MySQL persistence, Redis state, and response/push handling on one machine. Compare future changes against the exact command and environment instead of quoting the QPS alone.
 
@@ -395,7 +407,7 @@ LiteIM's local development stack uses Docker Compose for MySQL and Redis. The se
 
 Runtime responsibilities:
 
-- MySQL stores users, friendships, groups, messages, offline-message rows, and per-user delivery states.
+- MySQL stores users, friend requests, accepted friendships, groups, messages, offline-message rows, and per-user delivery states.
 - Redis stores online-session TTL state, unread counters, and login failure windows.
 - Register/login, friend, private chat, group chat, offline pull, history, and heartbeat handlers run through the business pool.
 - `HeartbeatService` returns `HeartbeatResponse` for legal heartbeat packets and refreshes Redis online TTL on a best-effort basis for logged-in sessions.
@@ -425,6 +437,7 @@ The MySQL service uses the `mysql:8.0` image so MySQL Workbench 8.0 can connect 
 The MySQL container runs `scripts/init_mysql.sql` and `scripts/seed_test_data.sql` the first time its data volume is created. The init script creates the main LiteIM tables:
 
 - `users`
+- `friend_requests`
 - `friendships`
 - `chat_groups`
 - `group_members`
@@ -432,7 +445,7 @@ The MySQL container runs `scripts/init_mysql.sql` and `scripts/seed_test_data.sq
 - `offline_messages`
 - `message_deliveries`
 
-The `messages` table includes optional `client_msg_id` for retry-safe private sends; existing databases can be upgraded with `scripts/migrations/055_client_msg_id.sql`. The seed script inserts local test users, a `dev_group`, sample messages, pending offline-message rows, and pending delivery state rows. Redis starts empty but requires the local development password. Runtime Redis keys include `online:user:<user_id>`, per-user/per-conversation unread counters, and username/remote-ip login failure windows.
+The `messages` table includes optional `client_msg_id` for retry-safe private sends. Existing databases from earlier Steps can be upgraded with `scripts/migrations/054_delivery_ack.sql`, `scripts/migrations/055_client_msg_id.sql`, and `scripts/migrations/057_friend_requests.sql`. The seed script inserts local test users, accepted friend relations, a `dev_group`, sample messages, pending offline-message rows, and pending delivery state rows. Redis starts empty but requires the local development password. Runtime Redis keys include `online:user:<user_id>`, per-user/per-conversation unread counters, and username/remote-ip login failure windows.
 
 Useful checks:
 
@@ -622,9 +635,25 @@ These are not a public architecture manual. They are retained because they docum
 | How are MySQL pool and RAII designed? | `MySqlPool` owns a fixed set of connections. `ConnectionGuard` returns a borrowed connection to the pool on destruction, including early-return error paths. `PreparedStatement` wraps bind/execute/result behavior. |
 | Why does Redis online state need TTL? | If a process crashes or a connection disappears without a clean logout, the `online:user:<user_id>` key eventually expires. Heartbeat refreshes TTL for logged-in sessions. |
 | How does slow-client backpressure protect memory? | Each `Session` tracks pending output bytes. If a push would exceed `server.output_high_water_mark_bytes`, LiteIM logs the condition and closes that slow connection instead of growing memory unbounded. Business work has a separate `server.business_queue_capacity` limit, so slow MySQL/Redis cannot create an unbounded pending-task queue. |
+| How do ACK, `client_msg_id`, delivered, and read differ? | `client_msg_id` is sender-side idempotency for retry-safe storage. `PrivateMessageResponse` is server-stored ACK. `DeliveryAckRequest` and `OfflineMessagesAckRequest` are receiver-side delivered ACKs. Read receipt is not implemented yet, even though the delivery table reserves a read state. |
 | Why is the Qt client only a demo layer? | The backend architecture is the core project. Qt uses `QTcpSocket` and the same protocol to demonstrate login/chat/history/reconnect flows without reimplementing server-side epoll or storage logic. |
 | How do Qt signals/slots decouple UI and network? | `TcpClient` emits packet and connection signals, controllers translate UI actions into TLV packets, and widgets only react to controller/runtime signals. UI code does not manipulate raw socket bytes. |
 | Why is the AI Agent external? | PersonaAgent is planned as a Python BotClient and AgentService using LangGraph/RAG/safety. It logs in as an ordinary LiteIM account, so the C++ server stays a protocol and message system instead of embedding LLM behavior. |
+
+## Known Limitations And Future Work
+
+LiteIM is a realistic C++ backend internship project, not a production IM cluster. Current important limits:
+
+- Single process and single node only; there is no cross-node routing, Redis Pub/Sub, Redis Streams, distributed lock, or message broker fanout layer.
+- The current delivery model is enough to demonstrate ACK semantics for private push and offline pull, but it is not a full multi-device delivery state machine. `device_id` is not part of the current protocol.
+- Group chat supports basic create/join/list/send flows, but it does not implement group owner approval, admin roles, mute, kick, invitation-only groups, or per-member group ACK fanout.
+- Read receipts are not implemented. `message_deliveries` reserves a read state so the distinction can be explained without falsely claiming a feature.
+- Authentication is session-bound TCP login in the first version. There is no TLS termination setup, access token, refresh token, token revocation, or multi-device session management yet.
+- Password hashing uses the current project PBKDF2 implementation for the local demo path. Production deployment would need stronger password policy, migration strategy, secret management, TLS, and audited crypto parameters.
+- Default Docker credentials are local development defaults only. They are not production secrets.
+- Friend requests and accepted-friend private permission exist, but blacklist, remarks, friend deletion, privacy policy, abuse reporting, and richer risk control are future work.
+- Benchmark numbers are local closed-loop measurements with server, client, MySQL, and Redis on one machine. They are useful for regression comparison, not for claiming production capacity.
+- PersonaAgent remains a planned external project-two client/service. No LLM, LangGraph, RAG, or AI identity logic is embedded in LiteIM's C++ server.
 
 ## Roadmap
 
@@ -634,7 +663,7 @@ LiteIM is being built in phases:
 | --- | --- |
 | Network base | CMake, GoogleTest, base utilities, TLV protocol, frame decoder, Buffer, socket helpers, Reactor interfaces, `Epoller`, `Channel`, `EventLoop`, `Acceptor`, `Session`, multi-Reactor `TcpServer`, business `ThreadPool`, timerfd heartbeat cleanup, and signalfd shutdown. |
 | Storage and cache | MySQL C API wrapper, prepared statement wrapper with signed/unsigned 64-bit binding, MySQL connection pool, RAII connection guard, user/auth DAO layer, message/offline-message DAO layer, `MySqlStorage` adapter, Redis client/pool, online status cache, unread counters, login rate limiting, and `RedisCache` adapter. |
-| IM services | Session binding, online-state synchronization, async message routing, register/login, friend list, private chat, group chat, offline messages, history loading, heartbeat protocol, and graceful shutdown. |
+| IM services | Session binding, online-state synchronization, async message routing, register/login, friend requests, accepted-friend private chat, `client_msg_id` idempotency, private delivery ACK, group chat, offline pull plus ACK, history loading, heartbeat protocol, and graceful shutdown. |
 | Tooling and validation | CLI client, Python E2E tests, benchmark tooling, broader GoogleTest/gMock coverage, CTest labels, ASan/UBSan, and repository CI. |
 | Demo clients | Qt Widgets chat client with login, conversation list, message bubbles, group chat, ordinary PersonaAgent contact/conversation entry, heartbeat state, and disconnect feedback. |
 | PersonaAgent integration | Planned Python BotClient and separate FastAPI / LangGraph AgentService using Knowledge, Memory, Authorized Style RAG, Persona, Safety, tracing, checkpointing, and evaluation. |
