@@ -28,6 +28,12 @@ public:
                                         const std::string& client_msg_id,
                                         MessageRecord& message) override;
 
+    Status createFriendRequest(std::uint64_t requester_id, std::uint64_t target_user_id,
+                               FriendRequestRecord& request) override;
+    Status acceptFriendRequest(std::uint64_t requester_id, std::uint64_t target_user_id) override;
+    Status rejectFriendRequest(std::uint64_t requester_id, std::uint64_t target_user_id) override;
+    Status areFriends(std::uint64_t user_id, std::uint64_t friend_id,
+                      bool& are_friends) override;
     Status addFriendship(std::uint64_t user_id, std::uint64_t friend_id) override;
     Status getFriends(std::uint64_t user_id, std::vector<UserProfileRecord>& friends) override;
 

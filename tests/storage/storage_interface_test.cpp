@@ -36,6 +36,26 @@ public:
         return liteim::Status::error(liteim::ErrorCode::NotFound, "message was not found");
     }
 
+    liteim::Status createFriendRequest(std::uint64_t requester_id, std::uint64_t target_user_id,
+                                       liteim::FriendRequestRecord& request) override {
+        request = liteim::FriendRequestRecord{requester_id, target_user_id,
+                                              liteim::FriendRequestStatus::kPending, 100, 100};
+        return liteim::Status::ok();
+    }
+
+    liteim::Status acceptFriendRequest(std::uint64_t, std::uint64_t) override {
+        return liteim::Status::ok();
+    }
+
+    liteim::Status rejectFriendRequest(std::uint64_t, std::uint64_t) override {
+        return liteim::Status::ok();
+    }
+
+    liteim::Status areFriends(std::uint64_t, std::uint64_t, bool& are_friends) override {
+        are_friends = true;
+        return liteim::Status::ok();
+    }
+
     liteim::Status addFriendship(std::uint64_t, std::uint64_t) override {
         return liteim::Status::ok();
     }
@@ -161,6 +181,17 @@ TEST(StorageInterfaceTest, CanBeImplementedByFakeStorage) {
     ASSERT_TRUE(friends_status.isOk()) << friends_status.message();
     ASSERT_EQ(friends.size(), 1U);
     EXPECT_EQ(friends.front().user_id, 7U);
+
+    liteim::FriendRequestRecord request;
+    const auto request_status = interface.createFriendRequest(user.user_id, 7, request);
+    ASSERT_TRUE(request_status.isOk()) << request_status.message();
+    EXPECT_EQ(request.requester_id, user.user_id);
+    EXPECT_EQ(request.target_user_id, 7U);
+    EXPECT_EQ(request.status, liteim::FriendRequestStatus::kPending);
+    ASSERT_TRUE(interface.acceptFriendRequest(user.user_id, 7).isOk());
+    bool are_friends = false;
+    ASSERT_TRUE(interface.areFriends(user.user_id, 7, are_friends).isOk());
+    EXPECT_TRUE(are_friends);
 
     liteim::GroupRecord group;
     const auto group_status = interface.findGroupById(9, group);

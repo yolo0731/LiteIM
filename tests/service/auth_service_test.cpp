@@ -137,6 +137,25 @@ public:
         return liteim::Status::error(liteim::ErrorCode::NotFound, "message was not found");
     }
 
+    liteim::Status createFriendRequest(std::uint64_t, std::uint64_t,
+                                       liteim::FriendRequestRecord& request) override {
+        request = {};
+        return liteim::Status::ok();
+    }
+
+    liteim::Status acceptFriendRequest(std::uint64_t, std::uint64_t) override {
+        return liteim::Status::ok();
+    }
+
+    liteim::Status rejectFriendRequest(std::uint64_t, std::uint64_t) override {
+        return liteim::Status::ok();
+    }
+
+    liteim::Status areFriends(std::uint64_t, std::uint64_t, bool& are_friends) override {
+        are_friends = true;
+        return liteim::Status::ok();
+    }
+
     liteim::Status addFriendship(std::uint64_t, std::uint64_t) override {
         return liteim::Status::ok();
     }

@@ -276,6 +276,29 @@ public:
         return liteim::Status::ok();
     }
 
+    liteim::Status createFriendRequest(std::uint64_t, std::uint64_t,
+                                       liteim::FriendRequestRecord& request) override {
+        request = {};
+        return liteim::Status::ok();
+    }
+
+    liteim::Status acceptFriendRequest(std::uint64_t, std::uint64_t) override {
+        return liteim::Status::ok();
+    }
+
+    liteim::Status rejectFriendRequest(std::uint64_t, std::uint64_t) override {
+        return liteim::Status::ok();
+    }
+
+    liteim::Status areFriends(std::uint64_t user_id, std::uint64_t friend_id,
+                              bool& are_friends) override {
+        ++are_friends_calls;
+        last_are_friends_user_id = user_id;
+        last_are_friends_friend_id = friend_id;
+        are_friends = friendships.count(friendKey(user_id, friend_id)) != 0U;
+        return liteim::Status::ok();
+    }
+
     liteim::Status ackPrivateMessageDelivery(std::uint64_t user_id, std::uint64_t message_id,
                                              liteim::MessageRecord& message) override {
         ++ack_private_delivery_calls;
@@ -400,6 +423,11 @@ public:
         users[user_id] = user;
     }
 
+    void addExistingFriendship(std::uint64_t user_id, std::uint64_t friend_id) {
+        friendships.insert(friendKey(user_id, friend_id));
+        friendships.insert(friendKey(friend_id, user_id));
+    }
+
     void addPrivateMessage(std::uint64_t message_id, std::uint64_t sender_id,
                            std::uint64_t receiver_id) {
         liteim::MessageRecord message;
@@ -416,9 +444,14 @@ public:
         return std::to_string(sender_id) + ":" + client_message_id;
     }
 
+    static std::string friendKey(std::uint64_t user_id, std::uint64_t friend_id) {
+        return std::to_string(user_id) + ":" + std::to_string(friend_id);
+    }
+
     std::unordered_map<std::uint64_t, liteim::UserRecord> users;
     std::unordered_map<std::uint64_t, liteim::MessageRecord> messages_by_id;
     std::unordered_map<std::string, liteim::MessageRecord> client_messages;
+    std::unordered_set<std::string> friendships;
     std::unordered_set<std::uint64_t> delivered_messages;
     liteim::MessageRecord last_message;
     std::vector<std::uint64_t> last_offline_user_ids;
@@ -426,12 +459,15 @@ public:
     std::vector<liteim::MessageRecord> saved_messages;
     std::string last_find_client_message_id;
     std::uint64_t last_find_sender_id{0};
+    std::uint64_t last_are_friends_user_id{0};
+    std::uint64_t last_are_friends_friend_id{0};
     std::uint64_t last_ack_user_id{0};
     std::uint64_t last_ack_message_id{0};
     std::uint64_t next_message_id{5001};
     std::int64_t next_created_at_ms{1700000000000LL};
     int save_message_calls{0};
     int find_client_message_calls{0};
+    int are_friends_calls{0};
     int ack_private_delivery_calls{0};
 };
 
@@ -573,6 +609,7 @@ TEST(ChatServiceTest, HeaderIsSelfContained) {
 }
 
 TEST_F(ChatServiceFixture, PrivateMessageToOfflineUserRecordsOfflineUnread) {
+    storage.addExistingFriendship(1001, 1002);
     auto session = bindAlice();
     auto request = requestFor(session, liteim::MessageType::PrivateMessageRequest,
                               privateMessageBody(1002, "hello bob"));
@@ -586,6 +623,23 @@ TEST_F(ChatServiceFixture, PrivateMessageToOfflineUserRecordsOfflineUnread) {
     EXPECT_EQ(storage.last_offline_user_ids.front(), 1002U);
     EXPECT_EQ(cache.incr_unread_calls, 1);
     EXPECT_EQ(cache.last_unread_key.user_id, 1002U);
+}
+
+TEST_F(ChatServiceFixture, PrivateMessageRequiresAcceptedFriendship) {
+    auto session = bindAlice();
+    auto request = requestFor(session, liteim::MessageType::PrivateMessageRequest,
+                              privateMessageBody(1002, "hello stranger"));
+    liteim::Packet response;
+
+    const auto status = service.handlePrivateMessage(request, response);
+
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
+    EXPECT_EQ(storage.are_friends_calls, 1);
+    EXPECT_EQ(storage.last_are_friends_user_id, 1001U);
+    EXPECT_EQ(storage.last_are_friends_friend_id, 1002U);
+    EXPECT_EQ(storage.save_message_calls, 0);
+    EXPECT_EQ(cache.incr_unread_calls, 0);
 }
 
 TEST_F(ChatServiceFixture, PrivateMessageRequiresLoggedInSession) {
@@ -631,6 +685,7 @@ TEST_F(ChatServiceFixture, PrivateMessageRejectsTextAboveServiceLimit) {
 }
 
 TEST_F(ChatServiceFixture, OfflineReceiverSavesMessageAndIncrementsUnread) {
+    storage.addExistingFriendship(1001, 1002);
     auto session = bindAlice();
     auto request = requestFor(session, liteim::MessageType::PrivateMessageRequest,
                               privateMessageBody(1002, "hello bob"));
@@ -666,6 +721,7 @@ TEST_F(ChatServiceFixture, OfflineReceiverSavesMessageAndIncrementsUnread) {
 }
 
 TEST_F(ChatServiceFixture, DuplicateClientMessageIdReturnsExistingMessageWithoutSecondUnread) {
+    storage.addExistingFriendship(1001, 1002);
     auto session = bindAlice();
     auto first_request =
         requestFor(session, liteim::MessageType::PrivateMessageRequest,
@@ -698,6 +754,7 @@ TEST_F(ChatServiceFixture, DuplicateClientMessageIdReturnsExistingMessageWithout
 }
 
 TEST_F(ChatServiceFixture, OfflineUnreadFailureStillReturnsSenderSuccess) {
+    storage.addExistingFriendship(1001, 1002);
     cache.fail_incr_unread = true;
     auto session = bindAlice();
     auto request = requestFor(session, liteim::MessageType::PrivateMessageRequest,
@@ -718,6 +775,7 @@ TEST_F(ChatServiceFixture, OfflineUnreadFailureStillReturnsSenderSuccess) {
 }
 
 TEST_F(ChatServiceFixture, OnlineReceiverGetsPushWithoutOfflineUnread) {
+    storage.addExistingFriendship(1001, 1002);
     auto sender = bindAlice();
     RunningSession receiver(7002);
     ASSERT_TRUE(online.bindUser(1002, receiver.session()).isOk());
@@ -803,6 +861,7 @@ TEST_F(ChatServiceFixture, DeliveryAckIsIdempotentForReceiver) {
 }
 
 TEST_F(ChatServiceFixture, RegisteredHandlerSendsSenderResponseThroughRouter) {
+    storage.addExistingFriendship(1001, 1002);
     RunningSession sender(7001);
     ASSERT_TRUE(online.bindUser(1001, sender.session()).isOk());
 

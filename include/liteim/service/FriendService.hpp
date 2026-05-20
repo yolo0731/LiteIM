@@ -18,8 +18,12 @@ public:
 
     // 注册好友相关handler
     Status registerHandlers(MessageRouter& router);
-    // 处理添加好友，返回新好友信息
+    // 处理好友申请，返回申请目标信息
     Status handleAddFriend(const MessageRouter::RouterRequest& request, Packet& response);
+    // 处理接受好友申请，返回申请发起者信息
+    Status handleAcceptFriend(const MessageRouter::RouterRequest& request, Packet& response);
+    // 处理拒绝好友申请，返回申请发起者信息
+    Status handleRejectFriend(const MessageRouter::RouterRequest& request, Packet& response);
     // 处理列出好友,返回好友列表和在线状态
     Status handleListFriends(const MessageRouter::RouterRequest& request, Packet& response);
 
@@ -27,6 +31,7 @@ private:
     Status currentUserId(const MessageRouter::RouterRequest& request, std::uint64_t& user_id);
     // 添加好友信息到响应Packet的body中，包含在线状态
     Status appendFriendFields(const UserProfileRecord& friend_profile, Packet& response);
+    Status appendFriendRequestStatus(FriendRequestStatus status, Packet& response);
 
     IStorage& storage_;
     ICache& cache_;

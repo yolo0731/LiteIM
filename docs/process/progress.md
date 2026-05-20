@@ -1,5 +1,56 @@
 # LiteIM Progress
 
+## 2026-05-20 Step 57 Friend Requests And Private Permission
+
+本次进入 `Step 57：好友申请和私聊权限`。
+
+恢复路线：
+
+- Step 53-56 已补离线 ACK、`client_msg_id` 幂等、私聊 delivery ACK、业务线程池队列上限和真实 IP 登录限流验证。
+- Step 57 解决权限短板：好友关系不再由 `AddFriendRequest` 直接创建，私聊发送前必须确认双方已是 accepted friends。
+- 本 Step 不做黑名单、好友备注、好友删除、好友重新申请、群审批、群管理员、禁言、群聊全员 ACK 或已读回执。
+
+TDD RED：
+
+- 更新协议测试，要求 `AcceptFriendRequest` / `AcceptFriendResponse` / `RejectFriendRequest` / `RejectFriendResponse` 有稳定名字并被识别为 request/response。
+- 更新 TLV 测试，要求 `FriendRequestStatus` 有稳定字段名。
+- 更新 `FriendService` 测试，要求 add friend 只创建 pending request，accept 才创建双向好友关系，reject 不创建好友关系，重复 accept 返回清晰错误。
+- 更新 `ChatService` 测试，要求未接受好友不能私聊，已接受好友保持原私聊流程。
+- 更新 DAO / MySqlStorage 集成测试，要求 `friend_requests` 状态流转、`areFriends()` 和重复操作错误语义可验证。
+- 更新 CLI 和 Python E2E，覆盖 accept/reject 命令、私聊前置好友关系、拒绝申请后不能私聊。
+- 首次 `cmake --build build --target liteim_tests -j2` 按预期失败于缺少 `FriendRequestRecord`、`FriendRequestStatus`、`IStorage::createFriendRequest()` 和 `FriendDao::createFriendRequest()` 等接口。
+
+GREEN 实现：
+
+- 协议新增 `AcceptFriendRequest = 204`、`AcceptFriendResponse = 205`、`RejectFriendRequest = 206`、`RejectFriendResponse = 207`，TLV 新增 `FriendRequestStatus = 23`。
+- 存储层新增 `FriendRequestStatus`、`FriendRequestRecord`、`createFriendRequest()`、`acceptFriendRequest()`、`rejectFriendRequest()` 和 `areFriends()`。
+- MySQL 初始化脚本新增 `friend_requests` 表；新增 `scripts/migrations/057_friend_requests.sql`。
+- `FriendDao` 实现 pending request 创建、事务化 accept、reject 和 accepted friendship 查询；`MySqlStorage` 转发新接口。
+- `FriendService` 把 `AddFriendRequest` 改成 pending request，新增 accept/reject handlers，并在响应中返回 `FriendRequestStatus`。
+- `ChatService` 在保存消息、离线写入、unread 增加和 online push 前检查 accepted friendship。
+- CLI 新增 `accept-friend <requester_id>` 和 `reject-friend <requester_id>`，响应打印 `friend_request_status`。
+- Python E2E helper 新增 accept/reject；离线、背压和私聊用例补齐好友申请/接受前置。
+- `liteim_bench` 的 setup 阶段为每个 sender 和 receiver 完成好友申请/接受；计时阶段仍只统计普通私聊 request/response RTT。
+- 新增 `docs/tutorials/step57_friend_requests_private_permission.md`，并同步 README、Step03、Step21、Step27、Step36、Step41 等当前-facing 文档。
+
+当前验证：
+
+- `cmake --build build --target liteim_tests liteim_server -j2`：通过。
+- `cmake --build build --target liteim_tests liteim_server liteim_bench -j2`：通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：MySQL / Redis healthy。
+- `mysql -h127.0.0.1 -P33060 -uliteim -p6 liteim < scripts/migrations/057_friend_requests.sql`：通过，本地数据库已补 `friend_requests` schema。
+- `ctest --test-dir build -R "MessageType|TlvType|ClientCliCommandTest|FriendService|ChatService|FriendGroupDaoIntegrationTest|MySqlStorageIntegrationTest|LiteIME2E.test_private_chat" --output-on-failure`：通过，61/61。
+- 首次全量 `ctest --test-dir build --output-on-failure`：失败 2/410，原因是旧 `LiteIME2E.test_offline` 和 `LiteIME2E.test_backpressure` 未建立 accepted friendship，触发 Step57 新权限规则。
+- `ctest --test-dir build -R "LiteIME2E.test_offline|LiteIME2E.test_backpressure" --output-on-failure`：修正 E2E 前置后通过，2/2。
+- 修 benchmark 前最小 smoke：`./build/bench/liteim_bench --host 127.0.0.1 --port 9000 --connections 2 --message-size 16 --interval-ms 1 --duration-sec 1 --format json` 返回 `request_success=0,error_count=1`，证明旧 benchmark 未建立 accepted friendship。
+- `ctest --test-dir build -R "Benchmark|MessageType|TlvType|ClientCliCommandTest|FriendService|ChatService|FriendGroupDaoIntegrationTest|MySqlStorageIntegrationTest|LiteIME2E.test_private_chat|LiteIME2E.test_offline|LiteIME2E.test_backpressure" --output-on-failure`：通过，71/71。
+- 修 benchmark 后最小 smoke：`./build/bench/liteim_bench --host 127.0.0.1 --port 19057 --connections 2 --message-size 16 --interval-ms 1 --duration-sec 1 --format json` 返回 `request_success=152,error_count=0`。
+- `ctest --test-dir build --output-on-failure`：通过，411/411。
+- `git diff --check`：通过。
+- `docs/tutorials/step57_friend_requests_private_permission.md` 标题脚本检查：0-10 结构通过，最后一节是 `## 10. 面试常见追问`。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" README.md docs/tutorials/step57_friend_requests_private_permission.md docs/tutorials/step03_protocol_types.md docs/tutorials/step41_cli_client.md docs/tutorials/step36_chat_service.md docs/tutorials/step21_storage_cache_interfaces.md docs/tutorials/step27_friend_group_dao.md`：无输出。
+- 当前-facing 好友权限文案扫描只命中 Step57 / Step36 的显式历史对比，不是当前规则漂移。
+
 ## 2026-05-20 Step 54 Client Message Idempotency
 
 本次进入 `Step 54：client_msg_id 幂等发送`。

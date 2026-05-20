@@ -7,6 +7,8 @@ TEST(TlvTypeTest, CoreTypesReturnReadableNames) {
     EXPECT_STREQ(liteim::toString(liteim::TlvType::UserId), "USER_ID");
     EXPECT_STREQ(liteim::toString(liteim::TlvType::FriendId), "FRIEND_ID");
     EXPECT_STREQ(liteim::toString(liteim::TlvType::OnlineStatus), "ONLINE_STATUS");
+    EXPECT_STREQ(liteim::toString(liteim::TlvType::FriendRequestStatus),
+                 "FRIEND_REQUEST_STATUS");
     EXPECT_STREQ(liteim::toString(liteim::TlvType::GroupId), "GROUP_ID");
     EXPECT_STREQ(liteim::toString(liteim::TlvType::ConversationId), "CONVERSATION_ID");
     EXPECT_STREQ(liteim::toString(liteim::TlvType::MessageText), "MESSAGE_TEXT");

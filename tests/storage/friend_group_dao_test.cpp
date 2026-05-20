@@ -77,6 +77,11 @@ void cleanupStep27Rows(const liteim::MySqlConfig& config) {
         connection, "DELETE FROM friendships "
                     "WHERE user_id IN (SELECT user_id FROM users WHERE username LIKE 'step27\\_%') "
                     "OR friend_id IN (SELECT user_id FROM users WHERE username LIKE 'step27\\_%')");
+    executeCleanupSql(
+        connection,
+        "DELETE FROM friend_requests "
+        "WHERE requester_id IN (SELECT user_id FROM users WHERE username LIKE 'step27\\_%') "
+        "OR target_user_id IN (SELECT user_id FROM users WHERE username LIKE 'step27\\_%')");
     executeCleanupSql(connection, "DELETE FROM users WHERE username LIKE 'step27\\_%'");
 }
 
@@ -187,6 +192,64 @@ TEST_F(FriendGroupDaoIntegrationTest, RepeatedAddFriendshipDoesNotCreateDuplicat
     ASSERT_TRUE(friend_dao->getFriends(bob.user_id, bob_friends).isOk());
     ASSERT_EQ(bob_friends.size(), 1U);
     EXPECT_EQ(bob_friends.front().user_id, alice.user_id);
+}
+
+TEST_F(FriendGroupDaoIntegrationTest, FriendRequestRequiresAcceptanceBeforeFriendship) {
+    const auto alice = createUser();
+    const auto bob = createUser();
+
+    liteim::FriendRequestRecord request;
+    const auto create_status =
+        friend_dao->createFriendRequest(alice.user_id, bob.user_id, request);
+    ASSERT_TRUE(create_status.isOk()) << create_status.message();
+    EXPECT_EQ(request.requester_id, alice.user_id);
+    EXPECT_EQ(request.target_user_id, bob.user_id);
+    EXPECT_EQ(request.status, liteim::FriendRequestStatus::kPending);
+
+    bool are_friends = true;
+    ASSERT_TRUE(friend_dao->areFriends(alice.user_id, bob.user_id, are_friends).isOk());
+    EXPECT_FALSE(are_friends);
+
+    const auto accept_status = friend_dao->acceptFriendRequest(alice.user_id, bob.user_id);
+    ASSERT_TRUE(accept_status.isOk()) << accept_status.message();
+    ASSERT_TRUE(friend_dao->areFriends(alice.user_id, bob.user_id, are_friends).isOk());
+    EXPECT_TRUE(are_friends);
+
+    std::vector<liteim::UserProfileRecord> alice_friends;
+    ASSERT_TRUE(friend_dao->getFriends(alice.user_id, alice_friends).isOk());
+    ASSERT_EQ(alice_friends.size(), 1U);
+    EXPECT_EQ(alice_friends.front().user_id, bob.user_id);
+}
+
+TEST_F(FriendGroupDaoIntegrationTest, RejectFriendRequestDoesNotCreateFriendship) {
+    const auto alice = createUser();
+    const auto bob = createUser();
+
+    liteim::FriendRequestRecord request;
+    ASSERT_TRUE(friend_dao->createFriendRequest(alice.user_id, bob.user_id, request).isOk());
+    const auto reject_status = friend_dao->rejectFriendRequest(alice.user_id, bob.user_id);
+    ASSERT_TRUE(reject_status.isOk()) << reject_status.message();
+
+    bool are_friends = true;
+    ASSERT_TRUE(friend_dao->areFriends(alice.user_id, bob.user_id, are_friends).isOk());
+    EXPECT_FALSE(are_friends);
+}
+
+TEST_F(FriendGroupDaoIntegrationTest, RepeatedFriendRequestAndAcceptReturnClearErrors) {
+    const auto alice = createUser();
+    const auto bob = createUser();
+
+    liteim::FriendRequestRecord request;
+    ASSERT_TRUE(friend_dao->createFriendRequest(alice.user_id, bob.user_id, request).isOk());
+    const auto duplicate_create =
+        friend_dao->createFriendRequest(alice.user_id, bob.user_id, request);
+    EXPECT_FALSE(duplicate_create.isOk());
+    EXPECT_EQ(duplicate_create.code(), liteim::ErrorCode::AlreadyExists);
+
+    ASSERT_TRUE(friend_dao->acceptFriendRequest(alice.user_id, bob.user_id).isOk());
+    const auto duplicate_accept = friend_dao->acceptFriendRequest(alice.user_id, bob.user_id);
+    EXPECT_FALSE(duplicate_accept.isOk());
+    EXPECT_EQ(duplicate_accept.code(), liteim::ErrorCode::AlreadyExists);
 }
 
 TEST_F(FriendGroupDaoIntegrationTest, CreateGroupPersistsGroupAndOwnerMembership) {

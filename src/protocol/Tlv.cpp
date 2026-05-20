@@ -22,6 +22,8 @@ const char* toString(TlvType type) noexcept {
         return "TARGET_USER_ID";
     case TlvType::OnlineStatus:
         return "ONLINE_STATUS";
+    case TlvType::FriendRequestStatus:
+        return "FRIEND_REQUEST_STATUS";
     case TlvType::GroupId:
         return "GROUP_ID";
     case TlvType::GroupName:

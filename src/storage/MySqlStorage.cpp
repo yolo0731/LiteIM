@@ -395,6 +395,27 @@ Status MySqlStorage::findMessageByClientMessageId(std::uint64_t sender_id,
     return message_dao_.findByClientMessageId(sender_id, client_msg_id, message);
 }
 
+Status MySqlStorage::createFriendRequest(std::uint64_t requester_id,
+                                         std::uint64_t target_user_id,
+                                         FriendRequestRecord& request) {
+    return friend_dao_.createFriendRequest(requester_id, target_user_id, request);
+}
+
+Status MySqlStorage::acceptFriendRequest(std::uint64_t requester_id,
+                                         std::uint64_t target_user_id) {
+    return friend_dao_.acceptFriendRequest(requester_id, target_user_id);
+}
+
+Status MySqlStorage::rejectFriendRequest(std::uint64_t requester_id,
+                                         std::uint64_t target_user_id) {
+    return friend_dao_.rejectFriendRequest(requester_id, target_user_id);
+}
+
+Status MySqlStorage::areFriends(std::uint64_t user_id, std::uint64_t friend_id,
+                                bool& are_friends) {
+    return friend_dao_.areFriends(user_id, friend_id, are_friends);
+}
+
 Status MySqlStorage::addFriendship(std::uint64_t user_id, std::uint64_t friend_id) {
     return friend_dao_.addFriendship(user_id, friend_id);
 }

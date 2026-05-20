@@ -511,6 +511,14 @@ Status buildPacketFromLine(const std::string& line, std::uint64_t seq_id, Packet
         return buildOneIdCommand(stream, seq_id, MessageType::AddFriendRequest,
                                  TlvType::TargetUserId, "target_user_id", packet);
     }
+    if (command == "accept-friend") {
+        return buildOneIdCommand(stream, seq_id, MessageType::AcceptFriendRequest,
+                                 TlvType::TargetUserId, "requester_id", packet);
+    }
+    if (command == "reject-friend") {
+        return buildOneIdCommand(stream, seq_id, MessageType::RejectFriendRequest,
+                                 TlvType::TargetUserId, "requester_id", packet);
+    }
     if (command == "friends") {
         resetPacket(MessageType::ListFriendsRequest, seq_id, packet);
         return Status::ok();
@@ -575,6 +583,8 @@ std::string describePacket(const Packet& packet) {
     appendUint64FieldDescription(fields, TlvType::FriendId, "friend_id", stream);
     appendUint64FieldDescription(fields, TlvType::TargetUserId, "target_user_id", stream);
     appendUint64FieldDescription(fields, TlvType::OnlineStatus, "online", stream);
+    appendUint64FieldDescription(fields, TlvType::FriendRequestStatus, "friend_request_status",
+                                 stream);
     appendUint64FieldDescription(fields, TlvType::GroupId, "group_id", stream);
     appendStringFieldDescription(fields, TlvType::GroupName, "group_name", stream);
     appendUint64FieldDescription(fields, TlvType::ConversationType, "conversation_type", stream);
@@ -600,6 +610,8 @@ std::string helpText() {
   register <username> <password> [nickname...]
   login <username> <password>
   add-friend <user_id>
+  accept-friend <requester_id>
+  reject-friend <requester_id>
   friends
   private <receiver_id> <text...>
   private-id <receiver_id> <client_msg_id> <text...>

@@ -24,7 +24,7 @@ Step 27 的目标是在 MySQL 存储层补齐好友关系和群组成员 DAO。
 
 好友和群组属于 IM 的关系层数据。
 
-好友关系第一版使用直接双向关系：
+好友关系第一版使用直接双向关系；Step 57 之后，当前运行时新增 `friend_requests` 表，`addFriendship()` 主要保留为 DAO/测试层直接创建 accepted 关系的底层能力：
 
 ```text
 addFriendship(1001, 1002)
@@ -39,7 +39,7 @@ chat_groups.owner_id
 group_members(group_id, user_id)
 ```
 
-不做：
+Step 27 当时不做：
 
 - 好友申请审批。
 - 拉黑、备注、分组。
@@ -47,6 +47,8 @@ group_members(group_id, user_id)
 - 群禁言。
 - 群公告。
 - 入群审批。
+
+当前代码在 Step 57 已补上好友申请、接受、拒绝和 accepted 好友检查；群审批、禁言、踢人仍不属于当前实现。
 
 Step 27 只做 DAO，不接入 ChatService，也不做 Redis 缓存。
 

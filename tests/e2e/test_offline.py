@@ -14,6 +14,13 @@ class OfflineMessagesE2ETest(E2ETestCase):
 
         with self.connect() as sender:
             sender_id = sender.register_and_login(sender_name, "secret")
+            sender.add_friend(receiver_id)
+
+            with self.connect() as receiver:
+                login = receiver.login(receiver_name, "secret")
+                self.assertEqual(login.uint64(TlvType.USER_ID), receiver_id)
+                receiver.accept_friend(sender_id)
+
             response = sender.private_message(receiver_id, "offline hello from python e2e")
             self.assertEqual(response.msg_type, MessageType.PRIVATE_MESSAGE_RESPONSE)
             self.assertEqual(response.uint64(TlvType.SENDER_ID), sender_id)

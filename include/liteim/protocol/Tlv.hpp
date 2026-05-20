@@ -17,6 +17,7 @@ enum class TlvType : std::uint16_t {
     FriendId = 20,
     TargetUserId = 21,
     OnlineStatus = 22,
+    FriendRequestStatus = 23,
 
     GroupId = 30,
     GroupName = 31,

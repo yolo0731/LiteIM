@@ -104,3 +104,10 @@ TEST(BenchmarkPayloadTest, BuildsPayloadWithExactSize) {
     EXPECT_EQ(payload.size(), 12U);
     EXPECT_EQ(payload, "liteim-load-");
 }
+
+TEST(BenchmarkHelpTest, DocumentsAcceptedFriendshipSetup) {
+    const auto help = liteim::bench::benchmarkHelpText();
+
+    EXPECT_NE(help.find("establish accepted friendship"), std::string::npos);
+    EXPECT_NE(help.find("PrivateMessageRequest"), std::string::npos);
+}

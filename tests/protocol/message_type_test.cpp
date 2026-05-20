@@ -19,6 +19,10 @@ TEST(MessageTypeTest, CoreTypesReturnReadableNames) {
                  "DELIVERY_ACK_REQUEST");
     EXPECT_STREQ(liteim::toString(liteim::MessageType::DeliveryAckResponse),
                  "DELIVERY_ACK_RESPONSE");
+    EXPECT_STREQ(liteim::toString(liteim::MessageType::AcceptFriendRequest),
+                 "ACCEPT_FRIEND_REQUEST");
+    EXPECT_STREQ(liteim::toString(liteim::MessageType::RejectFriendResponse),
+                 "REJECT_FRIEND_RESPONSE");
     EXPECT_STREQ(liteim::toString(liteim::MessageType::ErrorResponse), "ERROR_RESPONSE");
 }
 
@@ -32,6 +36,7 @@ TEST(MessageTypeTest, RequestTypesAreClassified) {
         liteim::MessageType::HeartbeatRequest,      liteim::MessageType::RegisterRequest,
         liteim::MessageType::LoginRequest,          liteim::MessageType::LogoutRequest,
         liteim::MessageType::AddFriendRequest,      liteim::MessageType::ListFriendsRequest,
+        liteim::MessageType::AcceptFriendRequest,   liteim::MessageType::RejectFriendRequest,
         liteim::MessageType::PrivateMessageRequest, liteim::MessageType::CreateGroupRequest,
         liteim::MessageType::JoinGroupRequest,      liteim::MessageType::ListGroupsRequest,
         liteim::MessageType::GroupMessageRequest,   liteim::MessageType::OfflineMessagesRequest,
@@ -51,6 +56,7 @@ TEST(MessageTypeTest, ResponseTypesAreClassified) {
         liteim::MessageType::HeartbeatResponse,      liteim::MessageType::RegisterResponse,
         liteim::MessageType::LoginResponse,          liteim::MessageType::LogoutResponse,
         liteim::MessageType::AddFriendResponse,      liteim::MessageType::ListFriendsResponse,
+        liteim::MessageType::AcceptFriendResponse,   liteim::MessageType::RejectFriendResponse,
         liteim::MessageType::PrivateMessageResponse, liteim::MessageType::CreateGroupResponse,
         liteim::MessageType::JoinGroupResponse,      liteim::MessageType::ListGroupsResponse,
         liteim::MessageType::GroupMessageResponse,   liteim::MessageType::OfflineMessagesResponse,

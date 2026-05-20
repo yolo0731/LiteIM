@@ -39,6 +39,10 @@ class MessageType(enum.IntEnum):
     ADD_FRIEND_RESPONSE = 201
     LIST_FRIENDS_REQUEST = 202
     LIST_FRIENDS_RESPONSE = 203
+    ACCEPT_FRIEND_REQUEST = 204
+    ACCEPT_FRIEND_RESPONSE = 205
+    REJECT_FRIEND_REQUEST = 206
+    REJECT_FRIEND_RESPONSE = 207
     PRIVATE_MESSAGE_REQUEST = 300
     PRIVATE_MESSAGE_RESPONSE = 301
     PRIVATE_MESSAGE_PUSH = 302
@@ -71,6 +75,7 @@ class TlvType(enum.IntEnum):
     FRIEND_ID = 20
     TARGET_USER_ID = 21
     ONLINE_STATUS = 22
+    FRIEND_REQUEST_STATUS = 23
     GROUP_ID = 30
     GROUP_NAME = 31
     CONVERSATION_TYPE = 40
@@ -376,6 +381,20 @@ class LiteIMClient:
             MessageType.ADD_FRIEND_REQUEST,
             [_uint64_field(TlvType.TARGET_USER_ID, user_id)],
             MessageType.ADD_FRIEND_RESPONSE,
+        )
+
+    def accept_friend(self, requester_id: int) -> Packet:
+        return self.request(
+            MessageType.ACCEPT_FRIEND_REQUEST,
+            [_uint64_field(TlvType.TARGET_USER_ID, requester_id)],
+            MessageType.ACCEPT_FRIEND_RESPONSE,
+        )
+
+    def reject_friend(self, requester_id: int) -> Packet:
+        return self.request(
+            MessageType.REJECT_FRIEND_REQUEST,
+            [_uint64_field(TlvType.TARGET_USER_ID, requester_id)],
+            MessageType.REJECT_FRIEND_RESPONSE,
         )
 
     def list_friends(self) -> Packet:

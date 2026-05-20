@@ -216,6 +216,28 @@ TEST(ClientCliCommandTest, OfflineAckCommandBuildsBatchAckRequest) {
     EXPECT_EQ(ids, (std::vector<std::uint64_t>{5001, 5002}));
 }
 
+TEST(ClientCliCommandTest, AcceptFriendCommandBuildsRequest) {
+    liteim::Packet packet;
+
+    const auto status = liteim::cli::buildPacketFromLine("accept-friend 1001", 49, packet);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(packet.header.msg_type, liteim::MessageType::AcceptFriendRequest);
+    EXPECT_EQ(packet.header.seq_id, 49U);
+    EXPECT_EQ(uint64Field(packet, liteim::TlvType::TargetUserId), 1001U);
+}
+
+TEST(ClientCliCommandTest, RejectFriendCommandBuildsRequest) {
+    liteim::Packet packet;
+
+    const auto status = liteim::cli::buildPacketFromLine("reject-friend 1001", 50, packet);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(packet.header.msg_type, liteim::MessageType::RejectFriendRequest);
+    EXPECT_EQ(packet.header.seq_id, 50U);
+    EXPECT_EQ(uint64Field(packet, liteim::TlvType::TargetUserId), 1001U);
+}
+
 TEST(ClientCliCommandTest, DeliveryAckCommandBuildsRequest) {
     liteim::Packet packet;
 
@@ -260,6 +282,20 @@ TEST(ClientCliCommandTest, DescribePacketIncludesDeliveryStatus) {
     EXPECT_NE(description.find("OFFLINE_MESSAGES_ACK_RESPONSE"), std::string::npos);
     EXPECT_NE(description.find("message_id=5001"), std::string::npos);
     EXPECT_NE(description.find("delivery_status=2"), std::string::npos);
+}
+
+TEST(ClientCliCommandTest, DescribePacketIncludesFriendRequestStatus) {
+    liteim::Packet packet;
+    packet.header.msg_type = liteim::MessageType::AddFriendResponse;
+    packet.header.seq_id = 49;
+    ASSERT_TRUE(liteim::appendUint64(liteim::TlvType::FriendId, 1002, packet.body).isOk());
+    ASSERT_TRUE(liteim::appendUint64(liteim::TlvType::FriendRequestStatus, 0, packet.body).isOk());
+
+    const auto description = liteim::cli::describePacket(packet);
+
+    EXPECT_NE(description.find("ADD_FRIEND_RESPONSE"), std::string::npos);
+    EXPECT_NE(description.find("friend_id=1002"), std::string::npos);
+    EXPECT_NE(description.find("friend_request_status=0"), std::string::npos);
 }
 
 TEST(ClientCliProtocolClientTest, ConnectsAndSendsPacketToLoopbackServer) {

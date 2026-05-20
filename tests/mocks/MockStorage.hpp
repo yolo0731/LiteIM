@@ -17,6 +17,16 @@ public:
                 (std::uint64_t sender_id, const std::string& client_msg_id,
                  MessageRecord& message),
                 (override));
+    MOCK_METHOD(Status, createFriendRequest,
+                (std::uint64_t requester_id, std::uint64_t target_user_id,
+                 FriendRequestRecord& request),
+                (override));
+    MOCK_METHOD(Status, acceptFriendRequest,
+                (std::uint64_t requester_id, std::uint64_t target_user_id), (override));
+    MOCK_METHOD(Status, rejectFriendRequest,
+                (std::uint64_t requester_id, std::uint64_t target_user_id), (override));
+    MOCK_METHOD(Status, areFriends,
+                (std::uint64_t user_id, std::uint64_t friend_id, bool& are_friends), (override));
     MOCK_METHOD(Status, addFriendship, (std::uint64_t user_id, std::uint64_t friend_id),
                 (override));
     MOCK_METHOD(Status, getFriends,

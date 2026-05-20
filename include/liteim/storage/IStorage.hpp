@@ -20,6 +20,15 @@ public:
                                                 const std::string& client_msg_id,
                                                 MessageRecord& message) = 0;
 
+    virtual Status createFriendRequest(std::uint64_t requester_id,
+                                       std::uint64_t target_user_id,
+                                       FriendRequestRecord& request) = 0;
+    virtual Status acceptFriendRequest(std::uint64_t requester_id,
+                                       std::uint64_t target_user_id) = 0;
+    virtual Status rejectFriendRequest(std::uint64_t requester_id,
+                                       std::uint64_t target_user_id) = 0;
+    virtual Status areFriends(std::uint64_t user_id, std::uint64_t friend_id,
+                              bool& are_friends) = 0;
     virtual Status addFriendship(std::uint64_t user_id, std::uint64_t friend_id) = 0;
     virtual Status getFriends(std::uint64_t user_id, std::vector<UserProfileRecord>& friends) = 0;
     // 群组相关接口

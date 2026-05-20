@@ -16,6 +16,11 @@ class FriendDao {
 public:
     explicit FriendDao(MySqlPool& pool,
                        std::chrono::milliseconds acquire_timeout = std::chrono::milliseconds(500));
+    Status createFriendRequest(std::uint64_t requester_id, std::uint64_t target_user_id,
+                               FriendRequestRecord& request);
+    Status acceptFriendRequest(std::uint64_t requester_id, std::uint64_t target_user_id);
+    Status rejectFriendRequest(std::uint64_t requester_id, std::uint64_t target_user_id);
+    Status areFriends(std::uint64_t user_id, std::uint64_t friend_id, bool& are_friends);
     Status addFriendship(std::uint64_t user_id, std::uint64_t friend_id);
     Status getFriends(std::uint64_t user_id, std::vector<UserProfileRecord>& friends);
     //将user_id的好友列表查询结果放到friends里

@@ -231,7 +231,7 @@ Status addFriendship(std::uint64_t user_id, std::uint64_t friend_id);
 Status getFriends(std::uint64_t user_id, std::vector<UserProfileRecord>& friends);
 ```
 
-第一版好友关系是直接双向添加，不做好友申请审批。`getFriends()` 返回公开 `UserProfileRecord`，不返回密码 hash 或 salt。
+第一版好友关系是直接双向添加；Step 57 已在当前接口上补充 `createFriendRequest()`、`acceptFriendRequest()`、`rejectFriendRequest()` 和 `areFriends()`，让业务层能区分 pending 申请和 accepted 好友。`getFriends()` 返回公开 `UserProfileRecord`，不返回密码 hash 或 salt。
 
 ### 群组接口
 

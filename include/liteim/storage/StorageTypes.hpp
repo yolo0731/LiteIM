@@ -17,6 +17,12 @@ enum class DeliveryStatus : std::uint8_t {
     kReadReserved = 3,
 };
 
+enum class FriendRequestStatus : std::uint8_t {
+    kPending = 0,
+    kAccepted = 1,
+    kRejected = 2,
+};
+
 struct ConversationKey {
     ConversationType type{ConversationType::kPrivate};
     std::uint64_t id{0};
@@ -43,6 +49,14 @@ struct UserProfileRecord {
     std::string username;
     std::string nickname;
     std::int64_t created_at_ms{0};
+};
+
+struct FriendRequestRecord {
+    std::uint64_t requester_id{0};
+    std::uint64_t target_user_id{0};
+    FriendRequestStatus status{FriendRequestStatus::kPending};
+    std::int64_t created_at_ms{0};
+    std::int64_t updated_at_ms{0};
 };
 
 struct CreateGroupRequest {

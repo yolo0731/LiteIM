@@ -12,6 +12,7 @@ class PrivateChatE2ETest(E2ETestCase):
             alice_id = alice.register_and_login(alice_name, "secret")
             bob_id = bob.register_and_login(bob_name, "secret")
             alice.add_friend(bob_id)
+            bob.accept_friend(alice_id)
 
             response = alice.private_message(bob_id, "hello bob from python e2e")
             self.assertEqual(response.msg_type, MessageType.PRIVATE_MESSAGE_RESPONSE)
@@ -43,12 +44,13 @@ class PrivateChatE2ETest(E2ETestCase):
         text = "idempotent private hello from python e2e"
         client_message_id = unique_name("client_msg")
 
-        with self.connect() as setup:
-            register = setup.register(bob_name, "secret", "Idempotent Bob")
-            bob_id = register.uint64(TlvType.USER_ID)
-
         with self.connect() as alice:
             alice_id = alice.register_and_login(alice_name, "secret")
+            with self.connect() as bob_setup:
+                bob_id = bob_setup.register_and_login(bob_name, "secret")
+                alice.add_friend(bob_id)
+                bob_setup.accept_friend(alice_id)
+
             first = alice.private_message(bob_id, text, client_message_id=client_message_id)
             duplicate = alice.private_message(bob_id, text, client_message_id=client_message_id)
 
@@ -65,6 +67,24 @@ class PrivateChatE2ETest(E2ETestCase):
             matching = [record for record in offline.message_records() if record.text == text]
             self.assertEqual(len(matching), 1)
             self.assertEqual(matching[0].message_id, first.uint64(TlvType.MESSAGE_ID))
+
+    def test_rejected_friend_request_cannot_private_chat(self):
+        alice_name = unique_name("alice_reject")
+        bob_name = unique_name("bob_reject")
+
+        with self.connect() as alice, self.connect() as bob:
+            alice_id = alice.register_and_login(alice_name, "secret")
+            bob_id = bob.register_and_login(bob_name, "secret")
+            alice.add_friend(bob_id)
+            reject = bob.reject_friend(alice_id)
+            self.assertEqual(reject.msg_type, MessageType.REJECT_FRIEND_RESPONSE)
+
+            denied = alice.private_message(
+                bob_id,
+                "this should not be delivered",
+                expected=MessageType.ERROR_RESPONSE,
+            )
+            self.assertEqual(denied.msg_type, MessageType.ERROR_RESPONSE)
 
 
 if __name__ == "__main__":

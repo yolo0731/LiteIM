@@ -139,6 +139,70 @@ public:
         return liteim::Status::error(liteim::ErrorCode::NotFound, "message was not found");
     }
 
+    liteim::Status createFriendRequest(std::uint64_t requester_id, std::uint64_t target_user_id,
+                                       liteim::FriendRequestRecord& request) override {
+        ++create_friend_request_calls;
+        last_requester_id = requester_id;
+        last_target_user_id = target_user_id;
+        if (requester_id == 0 || target_user_id == 0 || requester_id == target_user_id) {
+            return liteim::Status::error(liteim::ErrorCode::InvalidArgument,
+                                         "friend request user ids are invalid");
+        }
+        if (areFriendIds(requester_id, target_user_id) ||
+            pending_requests.count({requester_id, target_user_id}) != 0U ||
+            accepted_requests.count({requester_id, target_user_id}) != 0U ||
+            rejected_requests.count({requester_id, target_user_id}) != 0U) {
+            return liteim::Status::error(liteim::ErrorCode::AlreadyExists,
+                                         "friend request already exists");
+        }
+        pending_requests.insert({requester_id, target_user_id});
+        request = liteim::FriendRequestRecord{requester_id, target_user_id,
+                                              liteim::FriendRequestStatus::kPending, 1001, 1001};
+        return liteim::Status::ok();
+    }
+
+    liteim::Status acceptFriendRequest(std::uint64_t requester_id,
+                                       std::uint64_t target_user_id) override {
+        ++accept_friend_request_calls;
+        last_requester_id = requester_id;
+        last_target_user_id = target_user_id;
+        const auto key = std::make_pair(requester_id, target_user_id);
+        if (pending_requests.erase(key) == 0U) {
+            if (accepted_requests.count(key) != 0U || areFriendIds(requester_id, target_user_id)) {
+                return liteim::Status::error(liteim::ErrorCode::AlreadyExists,
+                                             "friend request already accepted");
+            }
+            return liteim::Status::error(liteim::ErrorCode::NotFound,
+                                         "pending friend request was not found");
+        }
+        accepted_requests.insert(key);
+        addExistingFriendship(requester_id, target_user_id);
+        return liteim::Status::ok();
+    }
+
+    liteim::Status rejectFriendRequest(std::uint64_t requester_id,
+                                       std::uint64_t target_user_id) override {
+        ++reject_friend_request_calls;
+        last_requester_id = requester_id;
+        last_target_user_id = target_user_id;
+        const auto key = std::make_pair(requester_id, target_user_id);
+        if (pending_requests.erase(key) == 0U) {
+            return liteim::Status::error(liteim::ErrorCode::AlreadyExists,
+                                         "friend request is not pending");
+        }
+        rejected_requests.insert(key);
+        return liteim::Status::ok();
+    }
+
+    liteim::Status areFriends(std::uint64_t user_id, std::uint64_t friend_id,
+                              bool& are_friends) override {
+        ++are_friends_calls;
+        last_are_friends_user_id = user_id;
+        last_are_friends_friend_id = friend_id;
+        are_friends = areFriendIds(user_id, friend_id);
+        return liteim::Status::ok();
+    }
+
     liteim::Status addFriendship(std::uint64_t user_id, std::uint64_t friend_id) override {
         ++add_friendship_calls;
         if (user_id == 0 || friend_id == 0 || user_id == friend_id) {
@@ -248,10 +312,32 @@ public:
 
     std::unordered_map<std::uint64_t, liteim::UserRecord> users;
     std::unordered_map<std::uint64_t, std::vector<liteim::UserProfileRecord>> friends;
+    std::set<std::pair<std::uint64_t, std::uint64_t>> pending_requests;
+    std::set<std::pair<std::uint64_t, std::uint64_t>> accepted_requests;
+    std::set<std::pair<std::uint64_t, std::uint64_t>> rejected_requests;
     std::uint64_t next_user_id{10000};
+    std::uint64_t last_requester_id{0};
+    std::uint64_t last_target_user_id{0};
+    std::uint64_t last_are_friends_user_id{0};
+    std::uint64_t last_are_friends_friend_id{0};
+    int create_friend_request_calls{0};
+    int accept_friend_request_calls{0};
+    int reject_friend_request_calls{0};
+    int are_friends_calls{0};
     int add_friendship_calls{0};
 
 private:
+    bool areFriendIds(std::uint64_t user_id, std::uint64_t friend_id) const {
+        const auto it = friends.find(user_id);
+        if (it == friends.end()) {
+            return false;
+        }
+        return std::any_of(it->second.begin(), it->second.end(),
+                           [&](const liteim::UserProfileRecord& profile) {
+                               return profile.user_id == friend_id;
+                           });
+    }
+
     void insertFriendProfile(std::uint64_t user_id, const liteim::UserRecord& friend_user) {
         auto& list = friends[user_id];
         const auto exists =
@@ -372,6 +458,12 @@ protected:
         return session;
     }
 
+    liteim::Session::Ptr bindBob(std::uint64_t session_id = 7002) {
+        auto session = makeSession(loop, session_id);
+        EXPECT_TRUE(online.bindUser(1002, session).isOk());
+        return session;
+    }
+
     liteim::EventLoop loop;
     FakeStorage storage;
     FakeCache cache;
@@ -425,6 +517,11 @@ void cleanupStep35Rows(const liteim::MySqlConfig& config) {
         connection, "DELETE FROM friendships "
                     "WHERE user_id IN (SELECT user_id FROM users WHERE username LIKE 's35\\_%') "
                     "OR friend_id IN (SELECT user_id FROM users WHERE username LIKE 's35\\_%')");
+    executeCleanupSql(
+        connection,
+        "DELETE FROM friend_requests "
+        "WHERE requester_id IN (SELECT user_id FROM users WHERE username LIKE 's35\\_%') "
+        "OR target_user_id IN (SELECT user_id FROM users WHERE username LIKE 's35\\_%')");
     executeCleanupSql(connection, "DELETE FROM users WHERE username LIKE 's35\\_%'");
 }
 
@@ -528,6 +625,14 @@ TEST(FriendServiceTest, HeaderIsSelfContained) {
                                  liteim::Status (Service::*)(
                                      const liteim::MessageRouter::RouterRequest&,
                                      liteim::Packet&)>);
+    static_assert(std::is_same_v<decltype(&Service::handleAcceptFriend),
+                                 liteim::Status (Service::*)(
+                                     const liteim::MessageRouter::RouterRequest&,
+                                     liteim::Packet&)>);
+    static_assert(std::is_same_v<decltype(&Service::handleRejectFriend),
+                                 liteim::Status (Service::*)(
+                                     const liteim::MessageRouter::RouterRequest&,
+                                     liteim::Packet&)>);
     static_assert(std::is_same_v<decltype(&Service::handleListFriends),
                                  liteim::Status (Service::*)(
                                      const liteim::MessageRouter::RouterRequest&,
@@ -543,10 +648,10 @@ TEST_F(FriendServiceFixture, AddFriendRequiresLoggedInSession) {
 
     EXPECT_FALSE(status.isOk());
     EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
-    EXPECT_EQ(storage.add_friendship_calls, 0);
+    EXPECT_EQ(storage.create_friend_request_calls, 0);
 }
 
-TEST_F(FriendServiceFixture, AddFriendCreatesFriendshipAndReturnsFriendOnlineStatus) {
+TEST_F(FriendServiceFixture, AddFriendCreatesPendingRequestAndReturnsFriendOnlineStatus) {
     auto session = bindAlice();
     cache.online_users.insert(1002);
     auto request = requestFor(session, liteim::MessageType::AddFriendRequest, addFriendBody(1002));
@@ -555,19 +660,23 @@ TEST_F(FriendServiceFixture, AddFriendCreatesFriendshipAndReturnsFriendOnlineSta
     const auto status = service.handleAddFriend(request, response);
 
     ASSERT_TRUE(status.isOk()) << status.message();
-    EXPECT_EQ(storage.add_friendship_calls, 1);
-    ASSERT_EQ(storage.friends[1001].size(), 1U);
-    EXPECT_EQ(storage.friends[1001].front().user_id, 1002U);
+    EXPECT_EQ(storage.create_friend_request_calls, 1);
+    EXPECT_EQ(storage.last_requester_id, 1001U);
+    EXPECT_EQ(storage.last_target_user_id, 1002U);
+    EXPECT_TRUE(storage.friends[1001].empty());
+    EXPECT_EQ(storage.pending_requests.count({1001, 1002}), 1U);
     EXPECT_EQ(response.header.msg_type, liteim::MessageType::AddFriendResponse);
     EXPECT_EQ(firstUint64Field(response, liteim::TlvType::FriendId), 1002U);
     EXPECT_EQ(firstStringField(response, liteim::TlvType::Username), "bob");
     EXPECT_EQ(firstStringField(response, liteim::TlvType::Nickname), "Bob");
     EXPECT_EQ(firstUint64Field(response, liteim::TlvType::OnlineStatus), 1U);
+    EXPECT_EQ(firstUint64Field(response, liteim::TlvType::FriendRequestStatus),
+              static_cast<std::uint64_t>(liteim::FriendRequestStatus::kPending));
 }
 
 TEST_F(FriendServiceFixture, RepeatedAddFriendReturnsAlreadyExists) {
     auto session = bindAlice();
-    storage.addExistingFriendship(1001, 1002);
+    storage.pending_requests.insert({1001, 1002});
     auto request = requestFor(session, liteim::MessageType::AddFriendRequest, addFriendBody(1002));
     liteim::Packet response;
 
@@ -575,7 +684,68 @@ TEST_F(FriendServiceFixture, RepeatedAddFriendReturnsAlreadyExists) {
 
     EXPECT_FALSE(status.isOk());
     EXPECT_EQ(status.code(), liteim::ErrorCode::AlreadyExists);
-    EXPECT_EQ(storage.add_friendship_calls, 0);
+    EXPECT_EQ(storage.create_friend_request_calls, 1);
+}
+
+TEST_F(FriendServiceFixture, AcceptFriendRequestCreatesAcceptedFriendship) {
+    auto session = bindBob();
+    cache.online_users.insert(1001);
+    storage.pending_requests.insert({1001, 1002});
+    auto request =
+        requestFor(session, liteim::MessageType::AcceptFriendRequest, addFriendBody(1001));
+    liteim::Packet response;
+
+    const auto status = service.handleAcceptFriend(request, response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(storage.accept_friend_request_calls, 1);
+    EXPECT_EQ(storage.last_requester_id, 1001U);
+    EXPECT_EQ(storage.last_target_user_id, 1002U);
+    ASSERT_EQ(storage.friends[1001].size(), 1U);
+    ASSERT_EQ(storage.friends[1002].size(), 1U);
+    EXPECT_EQ(storage.friends[1001].front().user_id, 1002U);
+    EXPECT_EQ(storage.friends[1002].front().user_id, 1001U);
+    EXPECT_EQ(response.header.msg_type, liteim::MessageType::AcceptFriendResponse);
+    EXPECT_EQ(firstUint64Field(response, liteim::TlvType::FriendId), 1001U);
+    EXPECT_EQ(firstStringField(response, liteim::TlvType::Username), "alice");
+    EXPECT_EQ(firstUint64Field(response, liteim::TlvType::OnlineStatus), 1U);
+    EXPECT_EQ(firstUint64Field(response, liteim::TlvType::FriendRequestStatus),
+              static_cast<std::uint64_t>(liteim::FriendRequestStatus::kAccepted));
+}
+
+TEST_F(FriendServiceFixture, RejectFriendRequestDoesNotCreateFriendship) {
+    auto session = bindBob();
+    storage.pending_requests.insert({1001, 1002});
+    auto request =
+        requestFor(session, liteim::MessageType::RejectFriendRequest, addFriendBody(1001));
+    liteim::Packet response;
+
+    const auto status = service.handleRejectFriend(request, response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(storage.reject_friend_request_calls, 1);
+    EXPECT_EQ(storage.rejected_requests.count({1001, 1002}), 1U);
+    EXPECT_TRUE(storage.friends[1001].empty());
+    EXPECT_TRUE(storage.friends[1002].empty());
+    EXPECT_EQ(response.header.msg_type, liteim::MessageType::RejectFriendResponse);
+    EXPECT_EQ(firstUint64Field(response, liteim::TlvType::FriendId), 1001U);
+    EXPECT_EQ(firstUint64Field(response, liteim::TlvType::FriendRequestStatus),
+              static_cast<std::uint64_t>(liteim::FriendRequestStatus::kRejected));
+}
+
+TEST_F(FriendServiceFixture, RepeatedAcceptFriendRequestReturnsAlreadyExists) {
+    auto session = bindBob();
+    storage.accepted_requests.insert({1001, 1002});
+    storage.addExistingFriendship(1001, 1002);
+    auto request =
+        requestFor(session, liteim::MessageType::AcceptFriendRequest, addFriendBody(1001));
+    liteim::Packet response;
+
+    const auto status = service.handleAcceptFriend(request, response);
+
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::AlreadyExists);
+    EXPECT_EQ(storage.accept_friend_request_calls, 1);
 }
 
 TEST_F(FriendServiceFixture, ListFriendsReturnsProfilesAndOnlineStatus) {
@@ -620,7 +790,8 @@ TEST_F(FriendServiceFixture, ListFriendsDegradesOfflineWhenRedisOnlineStatusFail
     EXPECT_EQ(cache.queried_online_users, (std::vector<std::uint64_t>{1002}));
 }
 
-TEST_F(FriendServiceIntegrationTest, AddAndListFriendsWithMySqlStorageAndRedisOnlineStatus) {
+TEST_F(FriendServiceIntegrationTest,
+       RequestAcceptAndListFriendsWithMySqlStorageAndRedisOnlineStatus) {
     ASSERT_NE(service, nullptr);
     const auto alice = createUser("alice");
     const auto bob = createUser("bob");
@@ -639,6 +810,26 @@ TEST_F(FriendServiceIntegrationTest, AddAndListFriendsWithMySqlStorageAndRedisOn
     ASSERT_TRUE(add_status.isOk()) << add_status.message();
     EXPECT_EQ(firstUint64Field(add_response, liteim::TlvType::FriendId), bob.user_id);
     EXPECT_EQ(firstUint64Field(add_response, liteim::TlvType::OnlineStatus), 1U);
+    EXPECT_EQ(firstUint64Field(add_response, liteim::TlvType::FriendRequestStatus),
+              static_cast<std::uint64_t>(liteim::FriendRequestStatus::kPending));
+
+    auto pending_list_request =
+        requestFor(alice_session, liteim::MessageType::ListFriendsRequest);
+    liteim::Packet pending_list_response;
+    const auto pending_list_status =
+        service->handleListFriends(pending_list_request, pending_list_response);
+    ASSERT_TRUE(pending_list_status.isOk()) << pending_list_status.message();
+    EXPECT_TRUE(pending_list_response.body.empty());
+
+    auto accept_request =
+        requestFor(bob_session, liteim::MessageType::AcceptFriendRequest,
+                   addFriendBody(alice.user_id));
+    liteim::Packet accept_response;
+    const auto accept_status = service->handleAcceptFriend(accept_request, accept_response);
+    ASSERT_TRUE(accept_status.isOk()) << accept_status.message();
+    EXPECT_EQ(firstUint64Field(accept_response, liteim::TlvType::FriendId), alice.user_id);
+    EXPECT_EQ(firstUint64Field(accept_response, liteim::TlvType::FriendRequestStatus),
+              static_cast<std::uint64_t>(liteim::FriendRequestStatus::kAccepted));
 
     auto list_request = requestFor(alice_session, liteim::MessageType::ListFriendsRequest);
     liteim::Packet list_response;

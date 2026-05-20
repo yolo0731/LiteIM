@@ -176,6 +176,14 @@ Status makePrivatePacket(std::uint64_t receiver_id, const std::string& payload,
     return appendString(TlvType::MessageText, payload, packet.body);
 }
 
+Status makeOneIdPacket(MessageType msg_type, TlvType tlv_type, std::uint64_t value,
+                       std::uint64_t seq_id, Packet& packet) {
+    packet = Packet{};
+    packet.header.msg_type = msg_type;
+    packet.header.seq_id = seq_id;
+    return appendUint64(tlv_type, value, packet.body);
+}
+
 Status waitForResponse(cli::ProtocolClient& client, std::uint64_t seq_id, MessageType expected_type,
                        Packet& response) {
     for (;;) {
@@ -216,6 +224,31 @@ Status extractUserId(const Packet& packet, std::uint64_t& user_id) {
         return status;
     }
     return getUint64(fields, TlvType::UserId, user_id);
+}
+
+Status establishAcceptedFriendship(cli::ProtocolClient& requester,
+                                   cli::ProtocolClient& target,
+                                   std::uint64_t requester_id,
+                                   std::uint64_t target_user_id,
+                                   std::uint64_t& next_seq) {
+    Packet packet;
+    auto status = makeOneIdPacket(MessageType::AddFriendRequest, TlvType::TargetUserId,
+                                  target_user_id, next_seq++, packet);
+    if (!status.isOk()) {
+        return status;
+    }
+    Packet response;
+    status = request(requester, packet, MessageType::AddFriendResponse, response);
+    if (!status.isOk()) {
+        return status;
+    }
+
+    status = makeOneIdPacket(MessageType::AcceptFriendRequest, TlvType::TargetUserId,
+                             requester_id, next_seq++, packet);
+    if (!status.isOk()) {
+        return status;
+    }
+    return request(target, packet, MessageType::AcceptFriendResponse, response);
 }
 
 Status registerAndLogin(cli::ProtocolClient& client, const BenchmarkOptions& options,
@@ -473,7 +506,8 @@ options:
   --help                        show this help
 
 The benchmark uses one receiver connection and connections-1 sender connections.
-All clients register unique users, log in, and send ordinary PrivateMessageRequest packets.)";
+All clients register unique users, log in, establish accepted friendship with
+the receiver, and send ordinary PrivateMessageRequest packets.)";
 }
 
 // 执行压测并返回结果
@@ -508,18 +542,6 @@ Status runBenchmark(const BenchmarkOptions& options, BenchmarkResult& result) {
     }
     ++result.connection_success;
 
-    // 启动 receiver_thread 不断读取消息直到压测结束，避免服务器端发送的消息导致发送线程阻塞无法继续压测
-    std::atomic<bool> drain_receiver{true};
-    std::thread receiver_thread([&receiver, &drain_receiver]() {
-        while (drain_receiver.load()) {
-            Packet packet;
-            const auto read_status = receiver.readPacket(packet);
-            if (!read_status.isOk()) {
-                break;
-            }
-        }
-    });
-
     // 多个用户同时给同一个用户发私聊消息
     std::vector<std::unique_ptr<cli::ProtocolClient>> senders;
     senders.reserve(options.connections - 1U);
@@ -539,18 +561,33 @@ Status runBenchmark(const BenchmarkOptions& options, BenchmarkResult& result) {
             continue;
         }
 
+        status = establishAcceptedFriendship(*client, receiver, user_id, receiver_id,
+                                             next_setup_seq);
+        if (!status.isOk()) {
+            ++result.error_count;
+            continue;
+        }
+
         ++result.connection_success;
         senders.push_back(std::move(client));
     }
 
     if (senders.empty()) {
-        drain_receiver.store(false);
         receiver.close();
-        if (receiver_thread.joinable()) {
-            receiver_thread.join();
-        }
         return Status::error(ErrorCode::IoError, "no sender connection is available");
     }
+
+    // 启动 receiver_thread 不断读取消息直到压测结束，避免服务器端发送的消息导致发送线程阻塞无法继续压测
+    std::atomic<bool> drain_receiver{true};
+    std::thread receiver_thread([&receiver, &drain_receiver]() {
+        while (drain_receiver.load()) {
+            Packet packet;
+            const auto read_status = receiver.readPacket(packet);
+            if (!read_status.isOk()) {
+                break;
+            }
+        }
+    });
 
     std::mutex latency_mutex;
     std::vector<std::chrono::microseconds> latencies;

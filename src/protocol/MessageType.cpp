@@ -28,6 +28,14 @@ const char* toString(MessageType type) noexcept {
         return "LIST_FRIENDS_REQUEST";
     case MessageType::ListFriendsResponse:
         return "LIST_FRIENDS_RESPONSE";
+    case MessageType::AcceptFriendRequest:
+        return "ACCEPT_FRIEND_REQUEST";
+    case MessageType::AcceptFriendResponse:
+        return "ACCEPT_FRIEND_RESPONSE";
+    case MessageType::RejectFriendRequest:
+        return "REJECT_FRIEND_REQUEST";
+    case MessageType::RejectFriendResponse:
+        return "REJECT_FRIEND_RESPONSE";
     case MessageType::PrivateMessageRequest:
         return "PRIVATE_MESSAGE_REQUEST";
     case MessageType::PrivateMessageResponse:
@@ -85,6 +93,8 @@ bool isRequestType(MessageType type) noexcept {
     case MessageType::LogoutRequest:
     case MessageType::AddFriendRequest:
     case MessageType::ListFriendsRequest:
+    case MessageType::AcceptFriendRequest:
+    case MessageType::RejectFriendRequest:
     case MessageType::PrivateMessageRequest:
     case MessageType::CreateGroupRequest:
     case MessageType::JoinGroupRequest:
@@ -102,6 +112,8 @@ bool isRequestType(MessageType type) noexcept {
     case MessageType::LogoutResponse:
     case MessageType::AddFriendResponse:
     case MessageType::ListFriendsResponse:
+    case MessageType::AcceptFriendResponse:
+    case MessageType::RejectFriendResponse:
     case MessageType::PrivateMessageResponse:
     case MessageType::PrivateMessagePush:
     case MessageType::CreateGroupResponse:
@@ -128,6 +140,8 @@ bool isResponseType(MessageType type) noexcept {
     case MessageType::LogoutResponse:
     case MessageType::AddFriendResponse:
     case MessageType::ListFriendsResponse:
+    case MessageType::AcceptFriendResponse:
+    case MessageType::RejectFriendResponse:
     case MessageType::PrivateMessageResponse:
     case MessageType::CreateGroupResponse:
     case MessageType::JoinGroupResponse:
@@ -146,6 +160,8 @@ bool isResponseType(MessageType type) noexcept {
     case MessageType::LogoutRequest:
     case MessageType::AddFriendRequest:
     case MessageType::ListFriendsRequest:
+    case MessageType::AcceptFriendRequest:
+    case MessageType::RejectFriendRequest:
     case MessageType::PrivateMessageRequest:
     case MessageType::PrivateMessagePush:
     case MessageType::CreateGroupRequest:
@@ -181,6 +197,10 @@ bool isPushType(MessageType type) noexcept {
     case MessageType::AddFriendResponse:
     case MessageType::ListFriendsRequest:
     case MessageType::ListFriendsResponse:
+    case MessageType::AcceptFriendRequest:
+    case MessageType::AcceptFriendResponse:
+    case MessageType::RejectFriendRequest:
+    case MessageType::RejectFriendResponse:
     case MessageType::PrivateMessageRequest:
     case MessageType::PrivateMessageResponse:
     case MessageType::CreateGroupRequest:

@@ -8,6 +8,27 @@
 - `LiteIM/docs/process/task_plan.md`、`LiteIM/docs/process/findings.md` 和 `LiteIM/docs/process/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-20 Step 57 Friend Requests And Private Permission Findings
+
+当前采用的边界：
+
+- Step 57 只补好友申请和私聊权限，不做黑名单、好友备注、好友删除、群审批、群管理员、禁言或 read receipt。
+- `friendships` 保持“已接受好友关系”表；新增 `friend_requests` 表记录申请流转状态，避免继续把 `AddFriendRequest` 解释成直接成为好友。
+- `AddFriendRequest` 现在表示发起 pending 申请；新增 `AcceptFriendRequest` / `RejectFriendRequest`，两者复用 `TargetUserId` 表示 requester id。
+- 第一版拒绝后不支持重新申请；重复申请、重复接受、已拒绝再接受都返回清晰错误，不做复杂 re-open 状态机。
+- `ChatService` 在私聊入库、离线写入、在线 push、unread 增加之前先调用 `IStorage::areFriends()`，未接受好友直接返回 `ErrorResponse`。
+- E2E 的离线消息和背压用例必须先建立 accepted friendship；否则服务端拒绝私聊是正确行为。
+- `liteim_bench` 也必须在 setup 阶段为每个 sender 和 receiver 建立 accepted friendship；计时循环只统计私聊 request/response RTT，不把好友申请/接受耗时混进 QPS 和延迟指标。
+- 当前不改变群聊权限模型；群聊成员关系和群消息流程仍按 Step38 规则运行。
+
+TDD 和验证关注：
+
+- RED 先增加协议枚举、TLV、FriendService、ChatService、FriendDao/MySqlStorage、CLI 和 Python E2E 测试，首次构建按预期失败于缺少 friend request DTO、storage 接口和新 message type。
+- GREEN 增加 `friend_requests` schema、DAO 事务接受流程、service handlers、CLI `accept-friend` / `reject-friend`、E2E helper 和 Step57 教程。
+- 首轮全量 CTest 暴露旧 E2E 仍绕过好友申请：`LiteIME2E.test_offline` 被新权限拒绝，`LiteIME2E.test_backpressure` 没有 push 压到慢接收端。补齐申请/接受前置后两个用例复绿。
+- 手动最小 benchmark smoke 暴露旧 `liteim_bench` 直接私聊会得到 `request_success=0,error_count=1`；修复为 setup 阶段完成 `AddFriendRequest` / `AcceptFriendRequest` 后，2 连接 smoke 变为 `request_success=152,error_count=0`。
+- 本地已有数据库需要执行 `scripts/migrations/057_friend_requests.sql`，否则集成测试会在缺少 `friend_requests` 表时报错。
+
 ## 2026-05-20 Step 53 Offline Delivery ACK Findings
 
 当前采用的边界：

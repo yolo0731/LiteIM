@@ -21,6 +21,10 @@ enum class MessageType : std::uint16_t {
     AddFriendResponse = 201,
     ListFriendsRequest = 202,
     ListFriendsResponse = 203,
+    AcceptFriendRequest = 204,
+    AcceptFriendResponse = 205,
+    RejectFriendRequest = 206,
+    RejectFriendResponse = 207,
 
     PrivateMessageRequest = 300,
     PrivateMessageResponse = 301,

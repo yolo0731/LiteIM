@@ -37,6 +37,10 @@ Status invalidMessageIdStatus() {
     return Status::error(ErrorCode::InvalidArgument, "message id is invalid");
 }
 
+Status notAcceptedFriendStatus() {
+    return Status::error(ErrorCode::InvalidArgument, "receiver is not an accepted friend");
+}
+
 // 用两个用户 ID 生成一个私聊会话 ID
 Status privateConversationId(std::uint64_t sender_id, std::uint64_t receiver_id,
                              std::uint64_t& conversation_id) {
@@ -141,6 +145,15 @@ Status ChatService::handlePrivateMessage(const MessageRouter::RouterRequest& req
     const auto find_status = storage_.findUserById(receiver_id, receiver);
     if (!find_status.isOk()) {
         return find_status;
+    }
+
+    bool are_friends = false;
+    const auto friendship_status = storage_.areFriends(sender_id, receiver_id, are_friends);
+    if (!friendship_status.isOk()) {
+        return friendship_status;
+    }
+    if (!are_friends) {
+        return notAcceptedFriendStatus();
     }
 
     //生成私聊会话 ID

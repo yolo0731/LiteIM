@@ -28,7 +28,7 @@ Step 41 的作用是：
 - 新增 `describePacket()`，把 response / push TLV 字段打印成人可读文本。
 - 新增 `ProtocolClient`，提供阻塞 TCP `connectTo()`、`sendPacket()`、`readPacket()` 和 `close()`。
 - 新增 `liteim_cli` 入口，支持 `--host` / `--port`。
-- 支持 register、login、add-friend、friends、private、private-id、create-group、join-group、groups、group、history、offline、offline-ack、delivery-ack、heartbeat、help、quit。
+- 支持 register、login、add-friend、accept-friend、reject-friend、friends、private、private-id、create-group、join-group、groups、group、history、offline、offline-ack、delivery-ack、heartbeat、help、quit。
 - 新增 CLI 单元测试和本地 loopback TCP 发送测试。
 
 ### 本 Step 不做
@@ -187,6 +187,10 @@ CLI 不新增协议。比如：
 
 ```text
 friends       -> ListFriendsRequest
+accept-friend 1001
+              -> AcceptFriendRequest + TargetUserId(requester_id)
+reject-friend 1001
+              -> RejectFriendRequest + TargetUserId(requester_id)
 groups        -> ListGroupsRequest
 offline 20    -> OfflineMessagesRequest + Limit
 history group 2001 20 5003

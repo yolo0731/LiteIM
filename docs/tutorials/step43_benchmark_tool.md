@@ -5,7 +5,7 @@
 - 目标：Step 43 增加 `liteim_bench`，用普通 LiteIM TCP/TLV 客户端行为做本地压测。
 - 前置依赖：依赖 Step 41 的 CLI 协议流程、Step 42 的端到端验证，以及 Step 34-40 的服务端业务 handler。
 - 主要交付：新增 `bench/`、`liteim_bench_core`、`liteim_bench` 和 `Benchmark*` 单元测试。
-- 压测边界：工具注册/登录唯一用户，然后发送普通 `PrivateMessageRequest`，不使用特殊测试协议。
+- 压测边界：工具注册/登录唯一用户，当前代码会先建立 accepted friendship，然后发送普通 `PrivateMessageRequest`，不使用特殊测试协议。
 - 报告边界：输出 JSON 或 Markdown；README 不写未实测的性能数字。
 
 ## 1. 为什么需要这个 Step
@@ -27,6 +27,7 @@ Step 43 的压测工具不是为了制造夸张数据，而是为了给后续优
 - 支持配置 host、port、连接数、消息大小、发送间隔、持续时间、报告格式和用户名前缀。
 - 使用 1 个 receiver 连接和 `connections - 1` 个 sender 连接。
 - 每个连接注册唯一用户并登录。
+- Step 57 之后，每个 sender 先通过普通好友申请/接受流程和 receiver 建立 accepted friendship。
 - sender 持续发送普通私聊消息到 receiver。
 - 统计 connection success、request success、error count、QPS、平均延迟、p50、p95、p99、RSS 和 CPU 使用率。
 - 输出 JSON 或 Markdown 报告。
@@ -114,9 +115,11 @@ docker compose up -d --wait
 ```text
 parseBenchmarkOptions()
     -> receiver connect/register/login
-    -> receiver 后台读 PrivateMessagePush
     -> 创建 connections - 1 个 sender
     -> 每个 sender connect/register/login
+    -> 每个 sender AddFriendRequest(receiver)
+    -> receiver AcceptFriendRequest(sender)
+    -> receiver 后台读 PrivateMessagePush
     -> 多线程循环发送 PrivateMessageRequest
     -> sender 等待同 seq PrivateMessageResponse
     -> 汇总延迟和错误
@@ -141,13 +144,13 @@ bench_sender_2_12345_1715840000000
 bench_sender_3_12345_1715840000000
 ```
 
-receiver 登录后不主动发消息，只负责持续读取 push；三个 sender 每隔 20 ms 发送一条 64 字节文本私聊给 receiver。
+receiver 登录后先接受三个 sender 的好友申请，然后不主动发消息，只负责持续读取 push；三个 sender 每隔 20 ms 发送一条 64 字节文本私聊给 receiver。
 
 ## 6. 关键实现点
 
 ### 1. 压测仍走普通 IM 协议
 
-`liteim_bench` 不添加专用 benchmark request，也不绕过业务层。它和普通客户端一样注册、登录、发送 `PrivateMessageRequest`，这样测到的是真实 service、MySQL、Redis 和网络回包路径。
+`liteim_bench` 不添加专用 benchmark request，也不绕过业务层。它和普通客户端一样注册、登录、走好友申请/接受协议、发送 `PrivateMessageRequest`，这样测到的是真实 service、MySQL、Redis 和网络回包路径。
 
 ### 2. receiver 必须读 push
 
@@ -176,6 +179,7 @@ value = sorted[rank - 1]
 | p99 统计偏一位 | `BenchmarkStatsTest.ComputesNearestRankPercentiles` |
 | 报告缺关键字段 | `BenchmarkReportTest.RendersJsonReportWithRequiredMetrics` |
 | payload 大小影响消息体 | `BenchmarkPayloadTest.BuildsPayloadWithExactSize` |
+| Step 57 后 benchmark 忘记好友前置 | `BenchmarkHelpTest.DocumentsAcceptedFriendshipSetup` 和本地 smoke |
 | 真实压测入口不可运行 | 手动启动 server 后运行小规模 `liteim_bench` smoke |
 
 ## 8. 验证命令

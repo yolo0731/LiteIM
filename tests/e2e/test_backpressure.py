@@ -33,8 +33,10 @@ class BackpressureE2ETest(E2ETestCase):
         receiver_name = unique_name("slow")
 
         with self.connect() as sender, self.connect(rcvbuf=4096) as slow_receiver:
-            sender.register_and_login(sender_name, "secret")
+            sender_id = sender.register_and_login(sender_name, "secret")
             receiver_id = slow_receiver.register_and_login(receiver_name, "secret")
+            sender.add_friend(receiver_id)
+            slow_receiver.accept_friend(sender_id)
 
             payload = "x" * 7900
             for index in range(700):

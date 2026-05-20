@@ -80,6 +80,11 @@ void cleanupPre31Rows(const liteim::MySqlConfig& config) {
                     "OR friend_id IN (SELECT user_id FROM users WHERE username LIKE 'pre31\\_%')");
     executeCleanupSql(
         connection,
+        "DELETE FROM friend_requests "
+        "WHERE requester_id IN (SELECT user_id FROM users WHERE username LIKE 'pre31\\_%') "
+        "OR target_user_id IN (SELECT user_id FROM users WHERE username LIKE 'pre31\\_%')");
+    executeCleanupSql(
+        connection,
         "DELETE FROM group_members "
         "WHERE group_id IN (SELECT group_id FROM chat_groups WHERE group_name LIKE 'pre31\\_%') "
         "OR user_id IN (SELECT user_id FROM users WHERE username LIKE 'pre31\\_%')");
@@ -194,8 +199,19 @@ TEST_F(MySqlStorageIntegrationTest, ImplementsIStorageForUsersFriendsAndPublicPr
     const auto bob = createUser();
     liteim::IStorage& interface = *storage;
 
-    const auto add_status = interface.addFriendship(alice.user_id, bob.user_id);
-    ASSERT_TRUE(add_status.isOk()) << add_status.message();
+    liteim::FriendRequestRecord request;
+    const auto request_status = interface.createFriendRequest(alice.user_id, bob.user_id, request);
+    ASSERT_TRUE(request_status.isOk()) << request_status.message();
+    EXPECT_EQ(request.status, liteim::FriendRequestStatus::kPending);
+
+    bool are_friends = true;
+    ASSERT_TRUE(interface.areFriends(alice.user_id, bob.user_id, are_friends).isOk());
+    EXPECT_FALSE(are_friends);
+
+    const auto accept_status = interface.acceptFriendRequest(alice.user_id, bob.user_id);
+    ASSERT_TRUE(accept_status.isOk()) << accept_status.message();
+    ASSERT_TRUE(interface.areFriends(alice.user_id, bob.user_id, are_friends).isOk());
+    EXPECT_TRUE(are_friends);
 
     std::vector<liteim::UserProfileRecord> friends;
     const auto friends_status = interface.getFriends(alice.user_id, friends);

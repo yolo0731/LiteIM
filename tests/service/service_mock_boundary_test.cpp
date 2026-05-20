@@ -382,6 +382,8 @@ TEST_F(ServiceMockBoundaryTest, ChatOnlineReceiverSkipsOfflineRowsAndUnreadCount
 
     EXPECT_CALL(storage, findUserById(1002, _))
         .WillOnce(DoAll(SetArgReferee<1>(receiver_user), Return(liteim::Status::ok())));
+    EXPECT_CALL(storage, areFriends(1001, 1002, _))
+        .WillOnce(DoAll(SetArgReferee<2>(true), Return(liteim::Status::ok())));
     EXPECT_CALL(storage, saveMessageWithOfflineRecipients(
                              Truly([](const liteim::MessageRecord& message) {
                                  return message.conversation.type ==
@@ -419,6 +421,8 @@ TEST_F(ServiceMockBoundaryTest, ChatOfflineReceiverWritesOfflineRecipientAndUnre
 
     EXPECT_CALL(storage, findUserById(1002, _))
         .WillOnce(DoAll(SetArgReferee<1>(receiver_user), Return(liteim::Status::ok())));
+    EXPECT_CALL(storage, areFriends(1001, 1002, _))
+        .WillOnce(DoAll(SetArgReferee<2>(true), Return(liteim::Status::ok())));
     EXPECT_CALL(storage, saveMessageWithOfflineRecipients(_, ElementsAre(1002), _))
         .WillOnce(Invoke([](const liteim::MessageRecord& message,
                             const std::vector<std::uint64_t>&,
