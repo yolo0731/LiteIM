@@ -20,6 +20,7 @@ TEST(ChannelTest, EnableAndDisableEventsUpdateInterestMask) {
     EXPECT_FALSE(channel.isNoneEvent());
     EXPECT_TRUE(channel.isReading());
     EXPECT_FALSE(channel.isWriting());
+    EXPECT_NE(channel.events() & static_cast<std::uint32_t>(EPOLLRDHUP), 0U);
 
     channel.enableWriting();
     EXPECT_TRUE(channel.isReading());

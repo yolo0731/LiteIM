@@ -18,8 +18,7 @@ namespace liteim {
 struct AuthServiceOptions {
     std::uint32_t max_login_failures{3};
     std::chrono::seconds login_failure_ttl{std::chrono::minutes{5}};  // 登录失败记录保留 5 分钟
-    std::string default_remote_ip{
-        "unknown"};  // 当前还没有把真实客户端 IP 接进 AuthService，先用默认值
+    std::string default_remote_ip{"unknown"};  // Session 没有 peer IP 时的登录限流兜底值
 };
 
 class AuthService {

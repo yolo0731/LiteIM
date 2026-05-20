@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
 
 namespace liteim {
 
@@ -32,13 +33,14 @@ public:
     using MessageCallback = std::function<void(const Ptr&, const Packet&)>;
     using CloseCallback = std::function<void(const Ptr&)>;
 
-    Session(EventLoop* loop, UniqueFd fd, std::uint64_t id = 0);
+    Session(EventLoop* loop, UniqueFd fd, std::uint64_t id = 0, std::string peer_ip = {});
     ~Session() = default;
 
     Session(const Session&) = delete;
     Session& operator=(const Session&) = delete;
 
     std::uint64_t id() const noexcept;
+    const std::string& peerIp() const noexcept;
     EventLoop* ownerLoop() const noexcept;
     bool closed() const noexcept;
     std::size_t outputHighWaterMark() const noexcept;
@@ -64,6 +66,7 @@ private:
     EventLoop* loop_;
     UniqueFd fd_;
     std::uint64_t id_{0};
+    std::string peer_ip_;
     std::unique_ptr<Channel> channel_;
     FrameDecoder decoder_;
     Buffer output_buffer_;

@@ -258,6 +258,31 @@ TEST(TcpServerTest, EchoesPacketToClient) {
     EXPECT_EQ(received, expected);
 }
 
+TEST(TcpServerTest, AcceptedLoopbackSessionStoresPeerIp) {
+    std::mutex mutex;
+    std::condition_variable callback_ready;
+    std::string observed_peer_ip;
+
+    RunningTcpServer server(1, [&](liteim::TcpServer& tcp_server, liteim::EventLoop&) {
+        tcp_server.setMessageCallback(
+            [&](const liteim::Session::Ptr& session, const liteim::Packet&) {
+                {
+                    std::lock_guard<std::mutex> lock(mutex);
+                    observed_peer_ip = session->peerIp();
+                }
+                callback_ready.notify_one();
+            });
+    });
+
+    auto client = connectTo(server.port());
+    ASSERT_GE(client.fd(), 0);
+    writeAll(client.fd(), encodeOrDie(makePacket("peer-ip", 102)));
+
+    std::unique_lock<std::mutex> lock(mutex);
+    ASSERT_TRUE(callback_ready.wait_for(lock, 2s, [&]() { return !observed_peer_ip.empty(); }));
+    EXPECT_EQ(observed_peer_ip, "127.0.0.1");
+}
+
 TEST(TcpServerTest, DistributesConnectionsAcrossIoLoops) {
     std::mutex mutex;
     std::condition_variable callback_ready;

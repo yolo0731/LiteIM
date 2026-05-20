@@ -504,6 +504,29 @@ TEST(QtAuthControllerTest, ErrorResponseEmitsAuthFailed) {
     EXPECT_FALSE(controller.session().isLoggedIn());
 }
 
+TEST(QtAuthControllerTest, BuildFailureClearsPendingAuthRequest) {
+    QTcpServer server;
+    ASSERT_TRUE(server.listen(QHostAddress::LocalHost, 0));
+
+    liteim::client::AuthController controller;
+    QSignalSpy failed_spy(&controller, &liteim::client::AuthController::authFailed);
+    QSignalSpy server_spy(&server, &QTcpServer::newConnection);
+
+    const QString oversized_password(static_cast<int>(liteim::kMaxTlvValueLength + 1U),
+                                     QLatin1Char('p'));
+    controller.login(QStringLiteral("127.0.0.1"),
+                     server.serverPort(),
+                     QStringLiteral("alice"),
+                     oversized_password);
+
+    ASSERT_TRUE(waitForSpyCount(server_spy, 1) || server.hasPendingConnections());
+    std::unique_ptr<QTcpSocket> server_socket(server.nextPendingConnection());
+    ASSERT_NE(server_socket, nullptr);
+    ASSERT_TRUE(waitForSpyCount(failed_spy, 1));
+    EXPECT_EQ(controller.session().pendingCount(), 0U);
+    EXPECT_FALSE(controller.session().isLoggedIn());
+}
+
 TEST(QtClientAppTest, LoginSuccessOpensMainWindowAndClosesLoginWindow) {
     liteim::client::LoginWindow login_window;
     QObject context;

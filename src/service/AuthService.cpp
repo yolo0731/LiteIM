@@ -147,6 +147,14 @@ Status recordLoginFailure(ICache& cache, const LoginAttemptKey& key,
     return login_status;
 }
 
+std::string remoteIpForRequest(const MessageRouter::RouterRequest& request,
+                               const AuthServiceOptions& options) {
+    if (request.session != nullptr && !request.session->peerIp().empty()) {
+        return request.session->peerIp();
+    }
+    return options.default_remote_ip;
+}
+
 }  // namespace
 
 AuthService::AuthService(IStorage& storage, ICache& cache, OnlineService& online_service,
@@ -276,7 +284,7 @@ Status AuthService::handleLogin(const MessageRouter::RouterRequest& request, Pac
         return password_length_status;
     }
 
-    const LoginAttemptKey login_key{username, options_.default_remote_ip};
+    const LoginAttemptKey login_key{username, remoteIpForRequest(request, options_)};
     bool allowed = false;
     const auto allow_status =
         cache_.allowLoginAttempt(login_key, options_.max_login_failures, allowed);

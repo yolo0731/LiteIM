@@ -527,6 +527,7 @@ LiteIM/
 │   ├── include/liteim_client/
 │   │   ├── app/
 │   │   ├── auth/
+│   │   ├── chat/
 │   │   ├── model/
 │   │   ├── network/
 │   │   ├── protocol/
@@ -535,6 +536,7 @@ LiteIM/
 │   │   ├── CMakeLists.txt
 │   │   ├── app/
 │   │   ├── auth/
+│   │   ├── chat/
 │   │   ├── model/
 │   │   ├── network/
 │   │   ├── protocol/
@@ -570,7 +572,7 @@ Directory conventions:
 - Public headers live under `include/liteim/<module>/`.
 - Library implementations live under `src/<module>/`.
 - Executable entry points live under `server/`, `client_cli/`, `client_qt/`, and `bench/`.
-- `client_qt/` is optional and only builds when `LITEIM_BUILD_QT_CLIENT=ON`; its Qt code is grouped by `app`, `auth`, `model`, `network`, `protocol`, and `ui`, while its resources must not use third-party IM product branding.
+- `client_qt/` is optional and only builds when `LITEIM_BUILD_QT_CLIENT=ON`; its Qt code is grouped by `app`, `auth`, `chat`, `model`, `network`, `protocol`, and `ui`, while its resources must not use third-party IM product branding.
 - `.github/workflows/` contains repository CI automation.
 - `docs/tutorials/` contains per-step teaching notes.
 - `docs/reports/` contains final showcase artifacts such as benchmark reports and Qt screenshots.

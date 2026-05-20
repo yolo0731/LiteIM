@@ -81,19 +81,24 @@ Status OfflineMessageService::handleOfflineMessages(const MessageRouter::RouterR
     if (!append_status.isOk()) {
         return append_status;
     }
-    // 清 Redis 未读数
-    const auto clear_status = clearUnreadForMessages(user_id, messages);
-    if (!clear_status.isOk()) {
-        Logger::get()->warn("Failed to clear unread counters for user {} after offline pull: {}",
-                            user_id, clear_status.message());
-    }
     // 将这些消息标记为已投递
     std::vector<std::uint64_t> message_ids;
     message_ids.reserve(messages.size());
     for (const auto& message : messages) {
         message_ids.push_back(message.message.message_id);
     }
-    return storage_.markOfflineDelivered(user_id, message_ids);
+    const auto mark_status = storage_.markOfflineDelivered(user_id, message_ids);
+    if (!mark_status.isOk()) {
+        return mark_status;
+    }
+
+    // Redis 未读数是派生计数。MySQL delivered 成功后再清，失败只告警，避免回滚已构造响应。
+    const auto clear_status = clearUnreadForMessages(user_id, messages);
+    if (!clear_status.isOk()) {
+        Logger::get()->warn("Failed to clear unread counters for user {} after offline pull: {}",
+                            user_id, clear_status.message());
+    }
+    return Status::ok();
 }
 
 const OfflineMessageServiceOptions& OfflineMessageService::options() const noexcept {

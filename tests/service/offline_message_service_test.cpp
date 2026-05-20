@@ -200,6 +200,12 @@ public:
         ++mark_delivered_calls;
         last_mark_user_id = user_id;
         last_mark_message_ids = message_ids;
+        if (events != nullptr) {
+            events->push_back("mark-delivered");
+        }
+        if (fail_mark_delivered) {
+            return liteim::Status::error(liteim::ErrorCode::IoError, "mark delivered failed");
+        }
         auto& list = pending[user_id];
         list.erase(std::remove_if(list.begin(), list.end(),
                                   [&](const liteim::OfflineMessageRecord& record) {
@@ -235,6 +241,8 @@ public:
     std::uint32_t last_get_limit{0};
     int get_offline_calls{0};
     int mark_delivered_calls{0};
+    std::vector<std::string>* events{nullptr};
+    bool fail_mark_delivered{false};
 };
 
 class FakeCache final : public liteim::ICache {
@@ -286,6 +294,9 @@ public:
     liteim::Status clearUnread(const liteim::UnreadKey& key) override {
         ++clear_unread_calls;
         cleared_unread_keys.push_back(key);
+        if (events != nullptr) {
+            events->push_back("clear-unread:" + std::to_string(key.conversation.id));
+        }
         if (fail_clear_unread) {
             return liteim::Status::error(liteim::ErrorCode::IoError, "redis clear failed");
         }
@@ -309,6 +320,7 @@ public:
 
     std::unordered_map<std::uint64_t, liteim::OnlineSession> online_users;
     std::vector<liteim::UnreadKey> cleared_unread_keys;
+    std::vector<std::string>* events{nullptr};
     int clear_unread_calls{0};
     bool fail_clear_unread{false};
 };
@@ -317,6 +329,8 @@ class OfflineMessageServiceFixture : public ::testing::Test {
 protected:
     OfflineMessageServiceFixture()
         : online(sessions, cache, "server-a", 30s), service(storage, cache, online) {
+        storage.events = &events;
+        cache.events = &events;
         storage.addUser(1001, "alice");
         storage.addUser(1002, "bob");
     }
@@ -337,6 +351,7 @@ protected:
     }
 
     liteim::EventLoop loop;
+    std::vector<std::string> events;
     FakeStorage storage;
     FakeCache cache;
     liteim::SessionManager sessions;
@@ -531,6 +546,10 @@ TEST_F(OfflineMessageServiceFixture, OfflineMessagesReturnPendingRowsMarkDeliver
     EXPECT_EQ(cache.cleared_unread_keys[0].conversation.id, 10011002U);
     EXPECT_EQ(cache.cleared_unread_keys[1].conversation.type, liteim::ConversationType::kGroup);
     EXPECT_EQ(cache.cleared_unread_keys[1].conversation.id, 88U);
+    ASSERT_EQ(events.size(), 3U);
+    EXPECT_EQ(events[0], "mark-delivered");
+    EXPECT_EQ(events[1], "clear-unread:10011002");
+    EXPECT_EQ(events[2], "clear-unread:88");
 
     EXPECT_EQ(uint64Fields(response, liteim::TlvType::MessageId),
               (std::vector<std::uint64_t>{5001, 5002}));
@@ -593,6 +612,27 @@ TEST_F(OfflineMessageServiceFixture, ClearUnreadFailureDoesNotBlockDeliveredMark
     EXPECT_EQ(cache.clear_unread_calls, 1);
     EXPECT_EQ(storage.mark_delivered_calls, 1);
     EXPECT_EQ(storage.last_mark_message_ids, (std::vector<std::uint64_t>{5001}));
+}
+
+TEST_F(OfflineMessageServiceFixture, MarkDeliveredFailureDoesNotClearUnreadCounters) {
+    storage.fail_mark_delivered = true;
+    auto session = bindAlice();
+    storage.pending[1001] = {
+        makeOfflineRecord(1, 1001, liteim::ConversationType::kPrivate, 10011002, 5001, 1002, 1001,
+                          "hello alice", 1700000000000LL),
+    };
+
+    auto request = requestFor(session, offlineRequestBody());
+    liteim::Packet response;
+    const auto status = service.handleOfflineMessages(request, response);
+
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::IoError);
+    EXPECT_EQ(storage.mark_delivered_calls, 1);
+    EXPECT_EQ(cache.clear_unread_calls, 0);
+    ASSERT_EQ(events.size(), 1U);
+    EXPECT_EQ(events[0], "mark-delivered");
+    ASSERT_EQ(storage.pending[1001].size(), 1U);
 }
 
 TEST_F(OfflineMessageServiceFixture, OfflineMessagesRejectZeroLimit) {

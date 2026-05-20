@@ -50,8 +50,9 @@ public:
 
 private:
     void stopInLoop() noexcept;
-    void handleNewConnection(UniqueFd accepted_fd);
-    void createSessionInLoop(EventLoop* io_loop, std::shared_ptr<UniqueFd> accepted_fd);
+    void handleNewConnection(UniqueFd accepted_fd, std::string peer_ip);
+    void createSessionInLoop(EventLoop* io_loop, std::shared_ptr<UniqueFd> accepted_fd,
+                             std::string peer_ip);
     void handleMessage(const Session::Ptr& session, const Packet& packet);
     void removeSession(std::uint64_t session_id);
     void handleSessionClose(std::uint64_t session_id);

@@ -512,13 +512,14 @@ GitHub CI 对 LiteIM 有价值，但不需要拆成单独 Step。它的职责是
 - 用户不存在和密码错误都返回统一的 `invalid username or password`，并记录一次登录失败，避免通过错误消息枚举用户。
 - 登录成功先清理 Redis 登录失败计数，再调用 `OnlineService::bindUser()` 写在线状态并绑定 `SessionManager`。
 - 登录成功返回 `LoginResponse`，body 写入 `UserId`、`Username`、`Nickname`、`SessionId`。
-- 当前 `Session` 不暴露 peer IP，本 Step 不改网络层公开接口；`LoginAttemptKey.remote_ip` 暂时使用 `AuthServiceOptions::default_remote_ip`。
+- Step 34 当时先用 `AuthServiceOptions::default_remote_ip` 打通登录限流；2026-05-20 review hardening 已补 `Session::peerIp()`，该配置现在只是兜底值。
 - `server/main.cpp` 现在启动 MySQL / Redis pool，注入 `MySqlStorage` / `RedisCache` / `OnlineService` / `AuthService`，并继续保持 `SignalWatcher::start()` 早于业务线程池启动。
 
 本次不采用/不改：
 
 - 不修改 MySQL schema，不新增协议消息类型或 TLV 字段。
-- 不实现 JWT、OAuth、短信、邮箱验证码、生产级账号安全体系或真实 peer IP 获取。
+- 不实现 JWT、OAuth、短信、邮箱验证码或生产级账号安全体系。
+- 真实 peer IP 获取已在 2026-05-20 review hardening 中补齐。
 - 不把 MySQL / Redis 阻塞调用放进 Reactor I/O 线程。
 - 不接入好友、私聊、群聊、离线消息、历史消息。
 
@@ -1942,3 +1943,12 @@ TDD RED：
 - `ProtocolClient` 第一版使用阻塞 socket；这是 CLI 调试工具的实现选择，不改变服务端非阻塞 Reactor 路线。
 - loopback 发送测试最初失败不是生产发送逻辑问题，而是测试在 server accept/read 线程 join 前读取 `packet_`；修正为先 `server.wait()` 再断言。
 - Step 41 不增加新的协议枚举、TLV 字段、MySQL schema、Redis key 或服务端 handler。
+
+## 2026-05-20 Post-Step53 Review Hardening Findings
+
+- Claude Code 的 `client_qt` 文档漂移判断成立：README 和 process memory 漏写 Step 51 新增的 `chat/` 目录，`PROJECT_MEMORY.md` 的 Qt 目录说明也容易误导后续读者。
+- GPT Pro 的离线消息一致性判断成立：`OfflineMessageService` 不能先清 Redis unread 再标记 MySQL delivered；现在改为先 `markOfflineDelivered()`，成功后再 best-effort 清 unread。
+- GPT Pro 的 Qt pending 清理判断成立：`AuthController::sendPendingRequest()` 在 TLV 构包失败或 `sendPacket()` 失败后必须 `takePending(seq_id)`，否则 `ClientSession` 会留下脏 pending 请求。
+- `Channel::handleEvent()` 已处理 `EPOLLRDHUP`，因此 read interest 也应注册 `EPOLLRDHUP`，保持半关闭事件订阅和处理分支一致。
+- 登录限流应优先使用 `Session::peerIp()`；`AuthServiceOptions::default_remote_ip` 只作为 Session 没有 peer IP 时的兜底值。
+- `OfflineMessageDao::markOfflineDelivered()` 现在采用严格语义：每个待标记 message id 必须实际更新 1 行，否则回滚并返回 `NotFound`，避免错误 id、已 delivered id 或不属于该 user 的 id 被当成成功。

@@ -216,6 +216,11 @@ TEST_F(MessageDaoIntegrationTest, OfflineMessageSaveFetchAndDeliveredFlow) {
         offline_message_dao->markOfflineDelivered(receiver.user_id, {saved_message.message_id});
     ASSERT_TRUE(mark_status.isOk()) << mark_status.message();
 
+    const auto second_mark_status =
+        offline_message_dao->markOfflineDelivered(receiver.user_id, {saved_message.message_id});
+    EXPECT_FALSE(second_mark_status.isOk());
+    EXPECT_EQ(second_mark_status.code(), liteim::ErrorCode::NotFound);
+
     pending.clear();
     const auto refetch_status =
         offline_message_dao->getOfflineMessages(receiver.user_id, 100, pending);

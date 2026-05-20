@@ -6,6 +6,9 @@
 #include "liteim/net/UniqueFd.hpp"
 #include "liteim/timer/TimerManager.hpp"
 
+#include <arpa/inet.h>
+
+#include <array>
 #include <chrono>
 #include <exception>
 #include <stdexcept>
@@ -13,6 +16,17 @@
 #include <vector>
 
 namespace liteim {
+namespace {
+
+std::string peerIpFrom(const sockaddr_in& peer_address) {
+    std::array<char, INET_ADDRSTRLEN> buffer{};
+    if (::inet_ntop(AF_INET, &peer_address.sin_addr, buffer.data(), buffer.size()) == nullptr) {
+        return {};
+    }
+    return std::string(buffer.data());
+}
+
+}  // namespace
 
 TcpServer::TcpServer(EventLoop* base_loop, std::string listen_ip, std::uint16_t port,
                      std::size_t io_thread_count)
@@ -77,8 +91,9 @@ void TcpServer::start() {
     io_threads_.start();
     try {
         auto acceptor = std::make_unique<Acceptor>(base_loop_, listen_ip_, requested_port_);
-        acceptor->setNewConnectionCallback([this](UniqueFd accepted_fd, const sockaddr_in&) {
-            handleNewConnection(std::move(accepted_fd));
+        acceptor->setNewConnectionCallback([this](UniqueFd accepted_fd,
+                                                  const sockaddr_in& peer_address) {
+            handleNewConnection(std::move(accepted_fd), peerIpFrom(peer_address));
         });
 
         port_ = acceptor->port();
@@ -178,7 +193,7 @@ void TcpServer::stopInLoop() noexcept {
     io_threads_.stop();
 }
 
-void TcpServer::handleNewConnection(UniqueFd accepted_fd) {
+void TcpServer::handleNewConnection(UniqueFd accepted_fd, std::string peer_ip) {
     base_loop_->assertInLoopThread();
     if (!started_.load() || !accepted_fd) {
         return;
@@ -186,18 +201,21 @@ void TcpServer::handleNewConnection(UniqueFd accepted_fd) {
 
     EventLoop* io_loop = io_threads_.getNextLoop();
     auto accepted_holder = std::make_shared<UniqueFd>(std::move(accepted_fd));
-    io_loop->queueInLoop(
-        [this, io_loop, accepted_holder]() { createSessionInLoop(io_loop, accepted_holder); });
+    io_loop->queueInLoop([this, io_loop, accepted_holder, peer_ip = std::move(peer_ip)]() mutable {
+        createSessionInLoop(io_loop, accepted_holder, std::move(peer_ip));
+    });
 }
 
-void TcpServer::createSessionInLoop(EventLoop* io_loop, std::shared_ptr<UniqueFd> accepted_fd) {
+void TcpServer::createSessionInLoop(EventLoop* io_loop, std::shared_ptr<UniqueFd> accepted_fd,
+                                    std::string peer_ip) {
     io_loop->assertInLoopThread();
     if (!started_.load() || accepted_fd == nullptr || !*accepted_fd) {
         return;
     }
 
     const auto session_id = next_session_id_.fetch_add(1);
-    auto session = std::make_shared<Session>(io_loop, std::move(*accepted_fd), session_id);
+    auto session =
+        std::make_shared<Session>(io_loop, std::move(*accepted_fd), session_id, std::move(peer_ip));
     session->setOutputHighWaterMark(session_output_high_water_mark_);
     session->setMessageCallback([this](const Session::Ptr& observed, const Packet& packet) {
         handleMessage(observed, packet);

@@ -48,9 +48,11 @@ SocketPair makeSocketPair() {
     return SocketPair{liteim::UniqueFd(fds[0]), liteim::UniqueFd(fds[1])};
 }
 
-std::shared_ptr<liteim::Session> makeSession(liteim::EventLoop& loop, std::uint64_t session_id) {
+std::shared_ptr<liteim::Session> makeSession(liteim::EventLoop& loop, std::uint64_t session_id,
+                                             std::string peer_ip = {}) {
     auto sockets = makeSocketPair();
-    return std::make_shared<liteim::Session>(&loop, std::move(sockets.server), session_id);
+    return std::make_shared<liteim::Session>(&loop, std::move(sockets.server), session_id,
+                                             std::move(peer_ip));
 }
 
 liteim::Packet makePacket(liteim::MessageType type, std::uint64_t seq_id, liteim::Bytes body) {
@@ -544,6 +546,23 @@ TEST_F(AuthServiceFixture, WrongPasswordRecordsFailureAndDoesNotBindSession) {
     std::uint64_t bound_user_id = 0;
     EXPECT_EQ(sessions.getUserBySession(session->id(), bound_user_id).code(),
               liteim::ErrorCode::NotFound);
+}
+
+TEST_F(AuthServiceFixture, LoginFailureUsesSessionPeerIpWhenAvailable) {
+    auto session = makeSession(loop, 5001, "10.0.0.5");
+    ASSERT_TRUE(registerUser(session, "alice", "secret").isOk());
+
+    auto request =
+        requestFor(session, liteim::MessageType::LoginRequest, authBody("alice", "wrong"));
+    liteim::Packet response;
+    const auto status = service.handleLogin(request, response);
+
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
+    EXPECT_EQ(cache.failureCount("alice", "10.0.0.5"), 1);
+    EXPECT_EQ(cache.failureCount("alice", "127.0.0.1"), 0);
+    ASSERT_FALSE(cache.login_keys.empty());
+    EXPECT_EQ(cache.login_keys.back().remote_ip, "10.0.0.5");
 }
 
 TEST_F(AuthServiceFixture, RepeatedWrongPasswordTriggersLoginLimit) {

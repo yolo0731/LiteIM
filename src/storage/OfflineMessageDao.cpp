@@ -366,6 +366,11 @@ Status OfflineMessageDao::markOfflineDelivered(std::uint64_t user_id,
             rollbackSilently(*guard);
             return update_status;
         }
+        if (affected_rows != 1U) {
+            statement.close();
+            rollbackSilently(*guard);
+            return Status::error(ErrorCode::NotFound, "offline message was not pending");
+        }
     }
 
     statement.close();

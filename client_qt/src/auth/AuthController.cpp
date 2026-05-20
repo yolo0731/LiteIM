@@ -144,29 +144,34 @@ void AuthController::sendPendingRequest() {
                                  : MessageType::LoginRequest;
     //  生成 seq_id
     packet.header.seq_id = runtime_.session().trackRequest(packet.header.msg_type);
+    const auto seq_id = packet.header.seq_id;
+    auto cleanupPendingAndFail = [this, seq_id](const QString& message) {
+        runtime_.session().takePending(seq_id);
+        finishWithError(message);
+    };
 
     // 给TLV字段赋值，追加到 packet.body 里
     auto status = PacketCodec::appendStringField(TlvType::Username, pending_username_, packet);
     if (!status.isOk()) {
-        finishWithError(statusMessage(status));
+        cleanupPendingAndFail(statusMessage(status));
         return;
     }
     status = PacketCodec::appendStringField(TlvType::Password, pending_password_, packet);
     if (!status.isOk()) {
-        finishWithError(statusMessage(status));
+        cleanupPendingAndFail(statusMessage(status));
         return;
     }
     if (pending_action_ == PendingAction::Register && !pending_nickname_.isEmpty()) {
         status = PacketCodec::appendStringField(TlvType::Nickname, pending_nickname_, packet);
         if (!status.isOk()) {
-            finishWithError(statusMessage(status));
+            cleanupPendingAndFail(statusMessage(status));
             return;
         }
     }
 
     status = runtime_.client().sendPacket(packet);
     if (!status.isOk()) {
-        finishWithError(statusMessage(status));
+        cleanupPendingAndFail(statusMessage(status));
     }
 }
 // 处理服务端响应的登录/注册结果，或者连接过程中发生的网络错误,保存到AuthResult里，发出对应的信号

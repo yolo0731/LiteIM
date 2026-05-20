@@ -21,6 +21,7 @@
 
 #include <chrono>
 #include <csignal>
+#include <exception>
 #include <iostream>
 #include <vector>
 
@@ -168,12 +169,22 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    server.start();
-    liteim::Logger::get()->info("LiteIM server is listening on {}:{}", config.server_host,
-                                server.port());
+    try {
+        server.start();
+        liteim::Logger::get()->info("LiteIM server is listening on {}:{}", config.server_host,
+                                    server.port());
+        loop.loop();
+        server.stop();
+    } catch (const std::exception& ex) {
+        liteim::Logger::get()->error("LiteIM server failed: {}", ex.what());
+        server.stop();
+        business_pool.stop();
+        redis_pool.close();
+        mysql_pool.close();
+        signal_watcher.stop();
+        return 1;
+    }
 
-    loop.loop();
-    server.stop();
     business_pool.stop();
     redis_pool.close();
     mysql_pool.close();

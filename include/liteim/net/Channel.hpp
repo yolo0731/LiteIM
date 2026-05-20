@@ -15,7 +15,7 @@ public:
 
     inline static constexpr std::uint32_t kNoneEvent = 0;
     inline static constexpr std::uint32_t kReadEvent =
-        static_cast<std::uint32_t>(EPOLLIN | EPOLLPRI);
+        static_cast<std::uint32_t>(EPOLLIN | EPOLLPRI | EPOLLRDHUP);
     inline static constexpr std::uint32_t kWriteEvent = static_cast<std::uint32_t>(EPOLLOUT);
 
     Channel(EventLoop* owner_loop, int fd);

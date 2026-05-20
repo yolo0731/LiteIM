@@ -3761,3 +3761,14 @@ TDD GREEN：
 收尾完成：
 
 - 提交完成：`feat(bench): add liteim benchmark tool`。
+
+## 2026-05-20 Post-Step53 Review Hardening
+
+- 采纳并修复外部审阅中成立的问题：`README.md` / `docs/process/task_plan.md` / `/home/yolo/jianli/PROJECT_MEMORY.md` 补齐 Qt `chat/` 目录说明。
+- 修复离线消息拉取的一致性顺序：先标记 MySQL offline delivered，再 best-effort 清 Redis unread；新增测试覆盖操作顺序和 mark 失败不清 unread。
+- 修复 Qt `AuthController` 发送前失败时的 pending 泄漏；新增 Qt Step47 测试覆盖超长字段构包失败后 `pendingCount()==0`。
+- 补齐 `Channel::kReadEvent` 的 `EPOLLRDHUP` 订阅，并用 `ChannelTest` 验证 read interest mask。
+- 为 `Session` 增加 peer IP，`TcpServer` 从 `Acceptor` 的 `sockaddr_in` 传入真实 IPv4，`AuthService` 登录限流优先按真实 peer IP 计数。
+- 收紧 `OfflineMessageDao::markOfflineDelivered()`：每个 message id 必须更新 1 行，否则事务回滚并返回 `NotFound`。
+- 给 `server/main.cpp` 的 `server.start()` / `loop.loop()` 外层增加异常保护，启动或事件循环异常时统一 stop server、业务线程池、Redis/MySQL pool 和 signal watcher。
+- 当前验证已通过：`cmake --build build --target liteim_tests -j2`、`ctest --test-dir build -R "ChannelTest|AuthService|OfflineMessageService|MessageDao" --output-on-failure`、`cmake --build build --target liteim_server -j2`、`cmake --build build-qt --target liteim_qt_client_tests -j2`、`ctest --test-dir build-qt -R "LiteIMQtClient.Step47" --output-on-failure`、新增 `TcpServerTest.AcceptedLoopbackSessionStoresPeerIp` 和 `AuthServiceFixture.LoginFailureUsesSessionPeerIpWhenAvailable` targeted test、`ctest --test-dir build -R "LiteIME2E.test_backpressure" --output-on-failure`、顺序重跑 `ctest --test-dir build --output-on-failure` 384/384、重建 Qt build 的默认测试后 `ctest --test-dir build-qt --output-on-failure` 391/391、`git diff --check`、关键 Qt 目录和 peer-IP 过期措辞扫描。

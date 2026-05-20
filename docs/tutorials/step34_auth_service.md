@@ -50,7 +50,7 @@ LoginRequest
 - `AuthService` 不直接读写 fd、`Channel` 或 `Buffer`。
 - 业务线程通过 `OnlineService` / `SessionManager` 做登录态绑定；`Session::close()` 仍通过 owner loop 执行。
 - 密码哈希是课程项目基础实现，使用 OpenSSL `PBKDF2-HMAC-SHA256`，不是完整生产级认证体系。
-- 当前 `Session` 不暴露 peer IP，所以第一版 `LoginAttemptKey.remote_ip` 使用 `AuthServiceOptions::default_remote_ip`。后续如果网络层补 peer address，再把真实来源地址传入 AuthService。
+- 登录限流优先使用 `Session::peerIp()` 里的真实客户端 IP；如果测试 session 或异常路径没有 peer IP，才退回 `AuthServiceOptions::default_remote_ip`。
 
 ## 2. 本 Step 边界
 
@@ -96,7 +96,7 @@ struct AuthServiceOptions {
 
 `login_failure_ttl` 是失败窗口 TTL。每次失败都会刷新 Redis key 的过期时间。
 
-`default_remote_ip` 是当前 runtime 的来源标识。由于 `Session` 暂时不保存 peer address，Step 34 不改网络层公开接口，先用固定来源字符串打通登录限流链路。
+`default_remote_ip` 是兜底来源标识。真实运行时 `TcpServer` 会从 accept 得到的 peer address 写入 `Session::peerIp()`，`AuthService` 按 username + peer IP 做登录失败窗口；只有测试 session 或缺失 peer IP 的路径才使用这个默认值。
 
 ### AuthService
 

@@ -21,8 +21,8 @@ constexpr std::size_t kReadBufferSize = 4096;
 
 }  // namespace
 
-Session::Session(EventLoop* loop, UniqueFd fd, std::uint64_t id)
-    : loop_(loop), fd_(std::move(fd)), id_(id), channel_(nullptr),
+Session::Session(EventLoop* loop, UniqueFd fd, std::uint64_t id, std::string peer_ip)
+    : loop_(loop), fd_(std::move(fd)), id_(id), peer_ip_(std::move(peer_ip)), channel_(nullptr),
       last_active_time_ms_(Timestamp::now().millisecondsSinceEpoch()) {
     if (loop_ == nullptr) {
         throw std::invalid_argument("Session requires a valid EventLoop");
@@ -40,6 +40,10 @@ Session::Session(EventLoop* loop, UniqueFd fd, std::uint64_t id)
 
 std::uint64_t Session::id() const noexcept {
     return id_;
+}
+
+const std::string& Session::peerIp() const noexcept {
+    return peer_ip_;
 }
 
 EventLoop* Session::ownerLoop() const noexcept {
