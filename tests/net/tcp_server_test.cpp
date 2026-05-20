@@ -465,7 +465,8 @@ TEST(TcpServerTest, SlowClientIsClosedWhenOutputExceedsHighWaterMark) {
     const auto status =
         server.sendToSession(observed_session_id, makePacket(std::string(128, 'x'), 362));
 
-    ASSERT_TRUE(status.isOk()) << status.message();
+    ASSERT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::ResourceExhausted);
     EXPECT_TRUE(waitUntil([&]() { return server.sessionCount() == 0; }, 2s));
 }
 
@@ -499,7 +500,8 @@ TEST(TcpServerTest, ClosedSlowClientIsRemovedFromSessionTable) {
 
     const auto push_status =
         server.sendToSession(observed_session_id, makePacket(std::string(128, 'x'), 372));
-    ASSERT_TRUE(push_status.isOk()) << push_status.message();
+    ASSERT_FALSE(push_status.isOk());
+    EXPECT_EQ(push_status.code(), liteim::ErrorCode::ResourceExhausted);
     ASSERT_TRUE(waitUntil([&]() { return server.sessionCount() == 0; }, 2s));
 
     const auto retry_status =

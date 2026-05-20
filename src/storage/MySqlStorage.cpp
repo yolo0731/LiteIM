@@ -10,234 +10,8 @@
 namespace liteim {
 namespace {
 
-constexpr unsigned int kMysqlDuplicateEntry = 1062;
-
-Status malformedMessageRowStatus() {
-    return Status::error(ErrorCode::InternalError, "messages query returned a malformed row");
-}
-
-Status requiredValue(const MySqlRow& row, std::size_t index, const std::string*& value) {
-    if (index >= row.values.size() || !row.values[index].has_value()) {
-        return malformedMessageRowStatus();
-    }
-    value = &(*row.values[index]);
-    return Status::ok();
-}
-
-Status parseUint64(const std::string& text, std::uint64_t& value) {
-    try {
-        std::size_t parsed = 0;
-        const auto result = std::stoull(text, &parsed, 10);
-        if (parsed != text.size()) {
-            return malformedMessageRowStatus();
-        }
-        value = static_cast<std::uint64_t>(result);
-        return Status::ok();
-    } catch (const std::exception&) {
-        return malformedMessageRowStatus();
-    }
-}
-
-Status parseInt64(const std::string& text, std::int64_t& value) {
-    try {
-        std::size_t parsed = 0;
-        const auto result = std::stoll(text, &parsed, 10);
-        if (parsed != text.size()) {
-            return malformedMessageRowStatus();
-        }
-        value = static_cast<std::int64_t>(result);
-        return Status::ok();
-    } catch (const std::exception&) {
-        return malformedMessageRowStatus();
-    }
-}
-
-Status parseConversationType(const std::string& text, ConversationType& type) {
-    std::uint64_t raw_type = 0;
-    const auto parse_status = parseUint64(text, raw_type);
-    if (!parse_status.isOk()) {
-        return parse_status;
-    }
-    if (raw_type == static_cast<std::uint64_t>(ConversationType::kPrivate)) {
-        type = ConversationType::kPrivate;
-        return Status::ok();
-    }
-    if (raw_type == static_cast<std::uint64_t>(ConversationType::kGroup)) {
-        type = ConversationType::kGroup;
-        return Status::ok();
-    }
-    return malformedMessageRowStatus();
-}
-
-Status bindConversationType(PreparedStatement& statement, std::size_t index,
-                            ConversationType type) {
-    return statement.bindInt64(index, static_cast<std::int64_t>(type));
-}
-
-Status rowToMessageRecord(const MySqlRow& row, MessageRecord& message) {
-    if (row.values.size() != 8U) {
-        return malformedMessageRowStatus();
-    }
-
-    const std::string* message_id = nullptr;
-    const std::string* conversation_type = nullptr;
-    const std::string* conversation_id = nullptr;
-    const std::string* sender_id = nullptr;
-    const std::string* receiver_id = nullptr;
-    const std::string* message_text = nullptr;
-    const std::string* created_at_ms = nullptr;
-
-    const auto message_id_status = requiredValue(row, 0, message_id);
-    if (!message_id_status.isOk()) {
-        return message_id_status;
-    }
-    const auto conversation_type_status = requiredValue(row, 1, conversation_type);
-    if (!conversation_type_status.isOk()) {
-        return conversation_type_status;
-    }
-    const auto conversation_id_status = requiredValue(row, 2, conversation_id);
-    if (!conversation_id_status.isOk()) {
-        return conversation_id_status;
-    }
-    const auto sender_status = requiredValue(row, 3, sender_id);
-    if (!sender_status.isOk()) {
-        return sender_status;
-    }
-    const auto receiver_status = requiredValue(row, 4, receiver_id);
-    if (!receiver_status.isOk()) {
-        return receiver_status;
-    }
-    const auto text_status = requiredValue(row, 5, message_text);
-    if (!text_status.isOk()) {
-        return text_status;
-    }
-    const auto created_status = requiredValue(row, 6, created_at_ms);
-    if (!created_status.isOk()) {
-        return created_status;
-    }
-
-    MessageRecord parsed_message;
-    const auto id_status = parseUint64(*message_id, parsed_message.message_id);
-    if (!id_status.isOk()) {
-        return id_status;
-    }
-    const auto type_status =
-        parseConversationType(*conversation_type, parsed_message.conversation.type);
-    if (!type_status.isOk()) {
-        return type_status;
-    }
-    const auto conversation_status = parseUint64(*conversation_id, parsed_message.conversation.id);
-    if (!conversation_status.isOk()) {
-        return conversation_status;
-    }
-    const auto sender_parse_status = parseUint64(*sender_id, parsed_message.sender_id);
-    if (!sender_parse_status.isOk()) {
-        return sender_parse_status;
-    }
-    const auto receiver_parse_status = parseUint64(*receiver_id, parsed_message.receiver_id);
-    if (!receiver_parse_status.isOk()) {
-        return receiver_parse_status;
-    }
-    const auto created_parse_status = parseInt64(*created_at_ms, parsed_message.created_at_ms);
-    if (!created_parse_status.isOk()) {
-        return created_parse_status;
-    }
-    parsed_message.text = *message_text;
-    if (row.values[7].has_value()) {
-        parsed_message.client_msg_id = *row.values[7];
-    }
-
-    message = std::move(parsed_message);
-    return Status::ok();
-}
-
-Status validateConversationKey(const ConversationKey& conversation) {
-    if (conversation.type != ConversationType::kPrivate &&
-        conversation.type != ConversationType::kGroup) {
-        return Status::error(ErrorCode::InvalidArgument, "conversation type is invalid");
-    }
-    if (conversation.id == 0U) {
-        return Status::error(ErrorCode::InvalidArgument, "conversation id must not be zero");
-    }
-    return Status::ok();
-}
-
-// 把准备插入 messages 表的数据补齐，根据 conversation type 确定 receiver_id，设置 created_at_ms 。
-Status normalizeMessageForInsert(const MessageRecord& input, std::uint64_t& receiver_id,
-                                 std::int64_t& created_at_ms) {
-    const auto conversation_status = validateConversationKey(input.conversation);
-    if (!conversation_status.isOk()) {
-        return conversation_status;
-    }
-    if (input.sender_id == 0U) {
-        return Status::error(ErrorCode::InvalidArgument, "sender id must not be zero");
-    }
-
-    receiver_id = input.receiver_id;
-    if (input.conversation.type == ConversationType::kPrivate && receiver_id == 0U) {
-        return Status::error(ErrorCode::InvalidArgument,
-                             "private message receiver id must not be zero");
-    }
-    if (input.conversation.type == ConversationType::kGroup && receiver_id == 0U) {
-        receiver_id = input.conversation.id;
-    }
-
-    created_at_ms =
-        input.created_at_ms > 0 ? input.created_at_ms : Timestamp::now().millisecondsSinceEpoch();
-    return Status::ok();
-}
-
-Status querySingleMessage(PreparedStatement& statement, MessageRecord& message) {
-    MySqlQueryResult result;
-    const auto query_status = statement.executeQuery(result);
-    if (!query_status.isOk()) {
-        return query_status;
-    }
-    if (result.rows().empty()) {
-        return Status::error(ErrorCode::NotFound, "message was not found");
-    }
-    if (result.rows().size() != 1U) {
-        return Status::error(ErrorCode::InternalError, "messages query returned multiple rows");
-    }
-    return rowToMessageRecord(result.rows().front(), message);
-}
-
-Status queryLastInsertedMessage(MySqlConnection& connection, MessageRecord& message) {
-    PreparedStatement query(connection);
-    const auto prepare_status = query.prepare(
-        "SELECT message_id, conversation_type, conversation_id, sender_id, receiver_id, "
-        "message_text, created_at_ms, client_msg_id "
-        "FROM messages WHERE message_id = LAST_INSERT_ID() LIMIT 1");
-    if (!prepare_status.isOk()) {
-        return prepare_status;
-    }
-    return querySingleMessage(query, message);
-}
-
-Status queryMessageById(MySqlConnection& connection, std::uint64_t message_id,
-                        MessageRecord& message) {
-    PreparedStatement query(connection);
-    const auto prepare_status = query.prepare(
-        "SELECT message_id, conversation_type, conversation_id, sender_id, receiver_id, "
-        "message_text, created_at_ms, client_msg_id "
-        "FROM messages WHERE message_id = ? LIMIT 1");
-    if (!prepare_status.isOk()) {
-        return prepare_status;
-    }
-    const auto bind_status = query.bindUInt64(0, message_id);
-    if (!bind_status.isOk()) {
-        return bind_status;
-    }
-    return querySingleMessage(query, message);
-}
-
 void rollbackSilently(MySqlConnection& connection) noexcept {
     (void)connection.executeSimple("ROLLBACK");
-}
-
-Status rollbackAndReturn(MySqlConnection& connection, const Status& status) {
-    rollbackSilently(connection);
-    return status;
 }
 
 Status rollbackClearAndReturn(MySqlConnection& connection, MessageRecord& saved_message,
@@ -370,6 +144,37 @@ Status upsertDeliveryDelivered(MySqlConnection& connection, std::uint64_t user_i
     return Status::ok();
 }
 
+Status parseDeliveryStatus(const std::string& text, DeliveryStatus& status) {
+    try {
+        std::size_t parsed = 0;
+        const auto raw_status = std::stoull(text, &parsed, 10);
+        if (parsed != text.size()) {
+            return Status::error(ErrorCode::InternalError,
+                                 "delivery status query returned malformed value");
+        }
+        switch (raw_status) {
+        case static_cast<std::uint64_t>(DeliveryStatus::kPending):
+            status = DeliveryStatus::kPending;
+            return Status::ok();
+        case static_cast<std::uint64_t>(DeliveryStatus::kPushed):
+            status = DeliveryStatus::kPushed;
+            return Status::ok();
+        case static_cast<std::uint64_t>(DeliveryStatus::kDelivered):
+            status = DeliveryStatus::kDelivered;
+            return Status::ok();
+        case static_cast<std::uint64_t>(DeliveryStatus::kReadReserved):
+            status = DeliveryStatus::kReadReserved;
+            return Status::ok();
+        default:
+            return Status::error(ErrorCode::InternalError,
+                                 "delivery status query returned unknown value");
+        }
+    } catch (const std::exception&) {
+        return Status::error(ErrorCode::InternalError,
+                             "delivery status query returned malformed value");
+    }
+}
+
 }  // namespace
 
 MySqlStorage::MySqlStorage(MySqlPool& pool, std::chrono::milliseconds acquire_timeout)
@@ -468,13 +273,6 @@ MySqlStorage::saveMessageWithOfflineRecipients(const MessageRecord& message,
                                                MessageRecord& saved_message) {
     saved_message = {};
 
-    std::uint64_t receiver_id = 0;
-    std::int64_t created_at_ms = 0;
-    const auto normalize_status = normalizeMessageForInsert(message, receiver_id, created_at_ms);
-    if (!normalize_status.isOk()) {
-        return normalize_status;
-    }
-
     std::vector<std::uint64_t> unique_offline_user_ids;
     const auto recipients_status =
         validateOfflineRecipients(offline_user_ids, unique_offline_user_ids);
@@ -493,64 +291,10 @@ MySqlStorage::saveMessageWithOfflineRecipients(const MessageRecord& message,
         return begin_status;
     }
 
-    PreparedStatement statement(*guard);
-    const auto prepare_status = statement.prepare(
-        "INSERT INTO messages "
-        "(conversation_type, conversation_id, sender_id, receiver_id, message_text, created_at_ms, "
-        "client_msg_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''))");
-    if (!prepare_status.isOk()) {
-        return rollbackAndReturn(*guard, prepare_status);
-    }
-
-    const auto type_status = bindConversationType(statement, 0, message.conversation.type);
-    if (!type_status.isOk()) {
-        return rollbackAndReturn(*guard, type_status);
-    }
-    const auto conversation_status = statement.bindUInt64(1, message.conversation.id);
-    if (!conversation_status.isOk()) {
-        return rollbackAndReturn(*guard, conversation_status);
-    }
-    const auto sender_status = statement.bindUInt64(2, message.sender_id);
-    if (!sender_status.isOk()) {
-        return rollbackAndReturn(*guard, sender_status);
-    }
-    const auto receiver_status = statement.bindUInt64(3, receiver_id);
-    if (!receiver_status.isOk()) {
-        return rollbackAndReturn(*guard, receiver_status);
-    }
-    const auto text_status = statement.bindString(4, message.text);
-    if (!text_status.isOk()) {
-        return rollbackAndReturn(*guard, text_status);
-    }
-    const auto created_status = statement.bindInt64(5, created_at_ms);
-    if (!created_status.isOk()) {
-        return rollbackAndReturn(*guard, created_status);
-    }
-    const auto client_msg_status = statement.bindString(6, message.client_msg_id);
-    if (!client_msg_status.isOk()) {
-        return rollbackAndReturn(*guard, client_msg_status);
-    }
-
-    std::uint64_t affected_rows = 0;
-    const auto insert_status = statement.executeUpdate(affected_rows);
+    const auto insert_status =
+        message_dao_.insertMessageInTransaction(*guard, message, saved_message);
     if (!insert_status.isOk()) {
-        if (!message.client_msg_id.empty() && statement.lastErrorNumber() == kMysqlDuplicateEntry) {
-            return rollbackAndReturn(
-                *guard,
-                Status::error(ErrorCode::AlreadyExists, "client message id already exists"));
-        }
-        return rollbackAndReturn(*guard, insert_status);
-    }
-    if (affected_rows != 1U) {
-        return rollbackAndReturn(
-            *guard,
-            Status::error(ErrorCode::InternalError, "save message affected unexpected row count"));
-    }
-
-    const auto query_status = queryLastInsertedMessage(*guard, saved_message);
-    if (!query_status.isOk()) {
-        return rollbackClearAndReturn(*guard, saved_message, query_status);
+        return rollbackClearAndReturn(*guard, saved_message, insert_status);
     }
 
     const auto offline_created_at_ms = Timestamp::now().millisecondsSinceEpoch();
@@ -566,7 +310,6 @@ MySqlStorage::saveMessageWithOfflineRecipients(const MessageRecord& message,
         }
     }
 
-    statement.close();
     const auto commit_status = guard->executeSimple("COMMIT");
     if (!commit_status.isOk()) {
         saved_message = {};
@@ -577,6 +320,54 @@ MySqlStorage::saveMessageWithOfflineRecipients(const MessageRecord& message,
 
 Status MySqlStorage::saveOfflineMessage(std::uint64_t user_id, std::uint64_t message_id) {
     return offline_message_dao_.saveOfflineMessage(user_id, message_id);
+}
+
+Status MySqlStorage::findDeliveryStatus(std::uint64_t user_id, std::uint64_t message_id,
+                                        DeliveryStatus& status) {
+    status = DeliveryStatus::kPending;
+    if (user_id == 0U) {
+        return Status::error(ErrorCode::InvalidArgument, "user id must not be zero");
+    }
+    if (message_id == 0U) {
+        return Status::error(ErrorCode::InvalidArgument, "message id must not be zero");
+    }
+
+    ConnectionGuard guard;
+    const auto acquire_status = pool_.acquire(acquire_timeout_, guard);
+    if (!acquire_status.isOk()) {
+        return acquire_status;
+    }
+
+    PreparedStatement statement(*guard);
+    const auto prepare_status =
+        statement.prepare("SELECT status FROM message_deliveries "
+                          "WHERE message_id = ? AND user_id = ? LIMIT 1");
+    if (!prepare_status.isOk()) {
+        return prepare_status;
+    }
+    const auto message_status = statement.bindUInt64(0, message_id);
+    if (!message_status.isOk()) {
+        return message_status;
+    }
+    const auto user_status = statement.bindUInt64(1, user_id);
+    if (!user_status.isOk()) {
+        return user_status;
+    }
+
+    MySqlQueryResult result;
+    const auto query_status = statement.executeQuery(result);
+    if (!query_status.isOk()) {
+        return query_status;
+    }
+    if (result.rows().empty()) {
+        return Status::error(ErrorCode::NotFound, "delivery status was not found");
+    }
+    if (result.rows().size() != 1U || result.rows().front().values.size() != 1U ||
+        !result.rows().front().values.front().has_value()) {
+        return Status::error(ErrorCode::InternalError,
+                             "delivery status query returned malformed row");
+    }
+    return parseDeliveryStatus(*result.rows().front().values.front(), status);
 }
 
 Status MySqlStorage::getOfflineMessages(std::uint64_t user_id, std::uint32_t limit,
@@ -617,7 +408,7 @@ Status MySqlStorage::ackPrivateMessageDelivery(std::uint64_t user_id, std::uint6
     }
 
     MessageRecord found;
-    const auto find_status = queryMessageById(*guard, message_id, found);
+    const auto find_status = message_dao_.findByIdInTransaction(*guard, message_id, found);
     if (!find_status.isOk()) {
         return rollbackClearAndReturn(*guard, message, find_status);
     }

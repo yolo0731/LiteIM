@@ -371,3 +371,38 @@ TEST_F(MySqlStorageIntegrationTest, PrivateDeliveryAckMarksDeliveredAndRejectsNo
     ASSERT_EQ(history.size(), 1U);
     EXPECT_EQ(history.front().message_id, saved.message_id);
 }
+
+TEST_F(MySqlStorageIntegrationTest, FindDeliveryStatusReturnsPendingAndDelivered) {
+    const auto sender = createUser();
+    const auto receiver = createUser();
+    const auto message = makePrivateMessage(sender, receiver, uniqueConversationId(),
+                                            uniqueMessageText("delivery_status_query"));
+
+    liteim::MessageRecord saved;
+    const auto save_status =
+        storage->saveMessageWithOfflineRecipients(message, {receiver.user_id}, saved);
+    ASSERT_TRUE(save_status.isOk()) << save_status.message();
+
+    liteim::DeliveryStatus pending_status = liteim::DeliveryStatus::kReadReserved;
+    const auto pending_query =
+        storage->findDeliveryStatus(receiver.user_id, saved.message_id, pending_status);
+    ASSERT_TRUE(pending_query.isOk()) << pending_query.message();
+    EXPECT_EQ(pending_status, liteim::DeliveryStatus::kPending);
+
+    liteim::MessageRecord acked;
+    const auto ack_status =
+        storage->ackPrivateMessageDelivery(receiver.user_id, saved.message_id, acked);
+    ASSERT_TRUE(ack_status.isOk()) << ack_status.message();
+
+    liteim::DeliveryStatus delivered_status = liteim::DeliveryStatus::kPending;
+    const auto delivered_query =
+        storage->findDeliveryStatus(receiver.user_id, saved.message_id, delivered_status);
+    ASSERT_TRUE(delivered_query.isOk()) << delivered_query.message();
+    EXPECT_EQ(delivered_status, liteim::DeliveryStatus::kDelivered);
+
+    liteim::DeliveryStatus missing_status = liteim::DeliveryStatus::kPending;
+    const auto missing_query =
+        storage->findDeliveryStatus(receiver.user_id, saved.message_id + 1000000U, missing_status);
+    ASSERT_FALSE(missing_query.isOk());
+    EXPECT_EQ(missing_query.code(), liteim::ErrorCode::NotFound);
+}

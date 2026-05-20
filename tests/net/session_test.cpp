@@ -355,12 +355,18 @@ TEST(SessionTest, CloseWhenPendingOutputExceedsHighWaterMark) {
     packet.body.assign(liteim::kMaxPacketBodyLength, static_cast<liteim::Byte>('x'));
     session->start();
 
+    bool high_water_rejected = false;
     for (std::uint64_t seq_id = 1; seq_id <= 5 && !session->closed(); ++seq_id) {
         packet.header.seq_id = seq_id;
         const auto status = session->sendPacket(packet);
-        ASSERT_TRUE(status.isOk()) << status.message();
+        if (!status.isOk()) {
+            EXPECT_EQ(status.code(), liteim::ErrorCode::ResourceExhausted);
+            high_water_rejected = true;
+            break;
+        }
     }
 
+    EXPECT_TRUE(high_water_rejected);
     EXPECT_TRUE(session->closed());
     EXPECT_EQ(session->pendingOutputBytes(), 0U);
 }
@@ -392,7 +398,8 @@ TEST(SessionTest, CloseWhenPendingOutputExceedsConfiguredHighWaterMark) {
 
     const auto status = session->sendPacket(makePacket(std::string(128, 'x'), 100));
 
-    ASSERT_TRUE(status.isOk()) << status.message();
+    ASSERT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::ResourceExhausted);
     EXPECT_TRUE(session->closed());
     EXPECT_EQ(session->pendingOutputBytes(), 0U);
 }

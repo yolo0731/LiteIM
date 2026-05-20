@@ -382,11 +382,41 @@ public:
             client_messages[clientKey(saved_message.sender_id, saved_message.client_msg_id)] =
                 saved_message;
         }
+        for (const auto user_id : offline_user_ids) {
+            offline_messages.insert(offlineKey(user_id, saved_message.message_id));
+        }
         return liteim::Status::ok();
     }
 
-    liteim::Status saveOfflineMessage(std::uint64_t, std::uint64_t) override {
+    liteim::Status saveOfflineMessage(std::uint64_t user_id, std::uint64_t message_id) override {
+        ++save_offline_message_calls;
+        last_save_offline_user_id = user_id;
+        last_save_offline_message_id = message_id;
+        if (fail_save_offline_message) {
+            return liteim::Status::error(liteim::ErrorCode::IoError, "offline save failed");
+        }
+        const auto key = offlineKey(user_id, message_id);
+        if (offline_messages.find(key) != offline_messages.end()) {
+            return liteim::Status::error(liteim::ErrorCode::AlreadyExists,
+                                         "offline message already exists");
+        }
+        offline_messages.insert(key);
         return liteim::Status::ok();
+    }
+
+    liteim::Status findDeliveryStatus(std::uint64_t user_id, std::uint64_t message_id,
+                                      liteim::DeliveryStatus& status) override {
+        if (delivered_messages.count(message_id) != 0U) {
+            status = liteim::DeliveryStatus::kDelivered;
+            return liteim::Status::ok();
+        }
+        if (offline_messages.count(offlineKey(user_id, message_id)) != 0U) {
+            status = liteim::DeliveryStatus::kPending;
+            return liteim::Status::ok();
+        }
+        status = liteim::DeliveryStatus::kPending;
+        return liteim::Status::error(liteim::ErrorCode::NotFound,
+                                     "delivery status was not found");
     }
 
     liteim::Status getOfflineMessages(std::uint64_t, std::uint32_t,
@@ -440,6 +470,19 @@ public:
         messages_by_id[message_id] = message;
     }
 
+    void addClientPrivateMessage(std::uint64_t message_id, std::uint64_t sender_id,
+                                 std::uint64_t receiver_id,
+                                 const std::string& client_message_id) {
+        addPrivateMessage(message_id, sender_id, receiver_id);
+        auto& message = messages_by_id[message_id];
+        message.client_msg_id = client_message_id;
+        client_messages[clientKey(sender_id, client_message_id)] = message;
+    }
+
+    void addOfflineMessage(std::uint64_t user_id, std::uint64_t message_id) {
+        offline_messages.insert(offlineKey(user_id, message_id));
+    }
+
     static std::string clientKey(std::uint64_t sender_id, const std::string& client_message_id) {
         return std::to_string(sender_id) + ":" + client_message_id;
     }
@@ -448,10 +491,15 @@ public:
         return std::to_string(user_id) + ":" + std::to_string(friend_id);
     }
 
+    static std::string offlineKey(std::uint64_t user_id, std::uint64_t message_id) {
+        return std::to_string(user_id) + ":" + std::to_string(message_id);
+    }
+
     std::unordered_map<std::uint64_t, liteim::UserRecord> users;
     std::unordered_map<std::uint64_t, liteim::MessageRecord> messages_by_id;
     std::unordered_map<std::string, liteim::MessageRecord> client_messages;
     std::unordered_set<std::string> friendships;
+    std::unordered_set<std::string> offline_messages;
     std::unordered_set<std::uint64_t> delivered_messages;
     liteim::MessageRecord last_message;
     std::vector<std::uint64_t> last_offline_user_ids;
@@ -463,12 +511,16 @@ public:
     std::uint64_t last_are_friends_friend_id{0};
     std::uint64_t last_ack_user_id{0};
     std::uint64_t last_ack_message_id{0};
+    std::uint64_t last_save_offline_user_id{0};
+    std::uint64_t last_save_offline_message_id{0};
     std::uint64_t next_message_id{5001};
     std::int64_t next_created_at_ms{1700000000000LL};
     int save_message_calls{0};
+    int save_offline_message_calls{0};
     int find_client_message_calls{0};
     int are_friends_calls{0};
     int ack_private_delivery_calls{0};
+    bool fail_save_offline_message{false};
 };
 
 class FakeCache final : public liteim::ICache {
@@ -803,6 +855,98 @@ TEST_F(ChatServiceFixture, OnlineReceiverGetsPushWithoutOfflineUnread) {
     EXPECT_EQ(uint64Field(*push, liteim::TlvType::ReceiverId), 1002U);
     EXPECT_EQ(stringField(*push, liteim::TlvType::MessageText), "online hello");
     EXPECT_EQ(uint64Field(*push, liteim::TlvType::TimestampMs), 1700000000000ULL);
+}
+
+TEST_F(ChatServiceFixture, OnlineReceiverSendFailureFallsBackToOfflineUnread) {
+    storage.addExistingFriendship(1001, 1002);
+    auto sender = bindAlice();
+    auto receiver = bindBob();
+    receiver->setOutputHighWaterMark(64);
+    receiver->start();
+
+    auto request = requestFor(sender, liteim::MessageType::PrivateMessageRequest,
+                              privateMessageBody(1002, std::string(128, 'x')));
+    liteim::Packet response;
+
+    const auto status = service.handlePrivateMessage(request, response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(response.header.msg_type, liteim::MessageType::PrivateMessageResponse);
+    EXPECT_EQ(storage.save_message_calls, 1);
+    EXPECT_TRUE(storage.last_offline_user_ids.empty());
+    EXPECT_EQ(storage.save_offline_message_calls, 1);
+    EXPECT_EQ(storage.last_save_offline_user_id, 1002U);
+    EXPECT_EQ(storage.last_save_offline_message_id, 5001U);
+    EXPECT_EQ(cache.incr_unread_calls, 1);
+    EXPECT_EQ(cache.last_unread_key.user_id, 1002U);
+    EXPECT_EQ(uint64Field(response, liteim::TlvType::MessageId), 5001U);
+    EXPECT_EQ(stringField(response, liteim::TlvType::MessageText), std::string(128, 'x'));
+}
+
+TEST_F(ChatServiceFixture, DuplicateClientMessageIdCreatesMissingOfflineFallback) {
+    storage.addExistingFriendship(1001, 1002);
+    storage.addClientPrivateMessage(9001, 1001, 1002, "retry-needs-offline");
+    auto sender = bindAlice();
+    auto request =
+        requestFor(sender, liteim::MessageType::PrivateMessageRequest,
+                   privateMessageBody(1002, "retry text ignored", "retry-needs-offline"));
+    liteim::Packet response;
+
+    const auto status = service.handlePrivateMessage(request, response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(storage.save_message_calls, 1);
+    EXPECT_EQ(storage.find_client_message_calls, 1);
+    EXPECT_TRUE(storage.saved_messages.empty());
+    EXPECT_EQ(storage.save_offline_message_calls, 1);
+    EXPECT_EQ(storage.last_save_offline_user_id, 1002U);
+    EXPECT_EQ(storage.last_save_offline_message_id, 9001U);
+    EXPECT_EQ(cache.incr_unread_calls, 1);
+    EXPECT_EQ(uint64Field(response, liteim::TlvType::MessageId), 9001U);
+    EXPECT_EQ(stringField(response, liteim::TlvType::ClientMessageId), "retry-needs-offline");
+}
+
+TEST_F(ChatServiceFixture, DuplicateClientMessageIdKeepsExistingOfflineFallbackIdempotent) {
+    storage.addExistingFriendship(1001, 1002);
+    storage.addClientPrivateMessage(9001, 1001, 1002, "retry-existing-offline");
+    storage.addOfflineMessage(1002, 9001);
+    auto sender = bindAlice();
+    auto request =
+        requestFor(sender, liteim::MessageType::PrivateMessageRequest,
+                   privateMessageBody(1002, "retry text ignored", "retry-existing-offline"));
+    liteim::Packet response;
+
+    const auto status = service.handlePrivateMessage(request, response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(storage.save_message_calls, 1);
+    EXPECT_EQ(storage.find_client_message_calls, 1);
+    EXPECT_EQ(storage.save_offline_message_calls, 1);
+    EXPECT_EQ(cache.incr_unread_calls, 0);
+    EXPECT_EQ(uint64Field(response, liteim::TlvType::MessageId), 9001U);
+    EXPECT_EQ(stringField(response, liteim::TlvType::ClientMessageId), "retry-existing-offline");
+}
+
+TEST_F(ChatServiceFixture, DuplicateClientMessageIdSkipsFallbackWhenAlreadyDelivered) {
+    storage.addExistingFriendship(1001, 1002);
+    storage.addClientPrivateMessage(9001, 1001, 1002, "retry-already-delivered");
+    storage.delivered_messages.insert(9001);
+    auto sender = bindAlice();
+    auto request =
+        requestFor(sender, liteim::MessageType::PrivateMessageRequest,
+                   privateMessageBody(1002, "retry text ignored", "retry-already-delivered"));
+    liteim::Packet response;
+
+    const auto status = service.handlePrivateMessage(request, response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(storage.save_message_calls, 1);
+    EXPECT_EQ(storage.find_client_message_calls, 1);
+    EXPECT_EQ(storage.save_offline_message_calls, 0);
+    EXPECT_EQ(cache.incr_unread_calls, 0);
+    EXPECT_EQ(uint64Field(response, liteim::TlvType::MessageId), 9001U);
+    EXPECT_EQ(stringField(response, liteim::TlvType::ClientMessageId),
+              "retry-already-delivered");
 }
 
 TEST_F(ChatServiceFixture, DeliveryAckMarksPrivateMessageDeliveredForReceiver) {

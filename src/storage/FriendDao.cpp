@@ -361,6 +361,21 @@ Status FriendDao::createFriendRequest(std::uint64_t requester_id, std::uint64_t 
         return existing_status;
     }
 
+    FriendRequestRecord reverse_existing;
+    const auto reverse_status =
+        queryFriendRequest(*guard, target_user_id, requester_id, reverse_existing);
+    if (reverse_status.isOk()) {
+        if (reverse_existing.status == FriendRequestStatus::kPending) {
+            return Status::error(ErrorCode::AlreadyExists,
+                                 "reverse friend request already exists");
+        }
+        if (reverse_existing.status == FriendRequestStatus::kAccepted) {
+            return Status::error(ErrorCode::AlreadyExists, "friend request already accepted");
+        }
+    } else if (reverse_status.code() != ErrorCode::NotFound) {
+        return reverse_status;
+    }
+
     const auto now_ms = Timestamp::now().millisecondsSinceEpoch();
     PreparedStatement statement(*guard);
     const auto prepare_status =

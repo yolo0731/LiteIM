@@ -46,6 +46,13 @@ public:
                                      const std::vector<std::uint64_t>& offline_user_ids,
                                      MessageRecord& saved_message) = 0;
     virtual Status saveOfflineMessage(std::uint64_t user_id, std::uint64_t message_id) = 0;
+    virtual Status findDeliveryStatus(std::uint64_t user_id, std::uint64_t message_id,
+                                      DeliveryStatus& status) {
+        (void)user_id;
+        (void)message_id;
+        status = DeliveryStatus::kPending;
+        return Status::error(ErrorCode::NotFound, "delivery status was not found");
+    }
     virtual Status getOfflineMessages(std::uint64_t user_id, std::uint32_t limit,
                                       std::vector<OfflineMessageRecord>& messages) = 0;
     virtual Status markOfflineDelivered(std::uint64_t user_id,

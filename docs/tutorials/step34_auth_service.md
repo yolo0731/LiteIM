@@ -17,7 +17,7 @@ Step 34 的目标是把注册、登录和登出从“协议占位”推进到真
 前面几步已经准备好了注册登录需要的基础能力：
 
 ```text
-Step 25 UserDao / AuthDao
+Step 25 UserDao
 Step 30 LoginRateLimiter
 Step 31 MySqlStorage / RedisCache
 Step 32 SessionManager / OnlineService

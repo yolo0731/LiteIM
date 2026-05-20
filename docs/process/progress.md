@@ -1,5 +1,36 @@
 # LiteIM Progress
 
+## 2026-05-20 Post-Step58 Reliability And Cleanup Follow-up
+
+用户确认 GPT Pro / Claude Code 审阅中提到的四个较大项也必须修正，本次在第一版审计基础上继续收口。
+
+修复内容：
+
+- `Session::sendPacket()` 对已关闭 session、未启动/不可写 session、单包或 pending 输出超过 high-water mark 的可同步失败返回错误，不再全部静默 OK。
+- `ChatService` 在线私聊 push 遇到同步 `sendPacket()` 失败时，调用 `saveOfflineMessage()` 补 offline fallback row，并只在新 row 成功插入时增加 unread；`AlreadyExists` 作为幂等成功处理。
+- 重复 `(sender_id, client_msg_id)` 不再只是返回已有 `message_id`，还会查询 receiver delivery status：已 delivered/read 不重投，未 delivered 才按当前接收方在线状态重试 push 或补 offline fallback。已有 offline row 不重复加 unread。
+- `MessageDao` 暴露事务内 `insertMessageInTransaction()` / `findByIdInTransaction()`，`MySqlStorage::saveMessageWithOfflineRecipients()` 复用 MessageDao 的消息插入/查回逻辑，避免两处 messages INSERT SQL 分叉。
+- 删除旧 `AuthDao` 头文件、实现、CMake 编译项和测试依赖；当前 users 表访问只保留 `UserDao`。
+- `FriendDao::createFriendRequest()` 拒绝反向 pending 好友申请，避免 Alice->Bob 和 Bob->Alice 同时存在两条 pending。
+- README、Step25、Step34、Step53、Step54、Step58 和 process 文档同步当前行为：`Token` 是预留字段，`pushed` 状态当前不持久化，离线 ACK 是幂等语义，`max_messages_per_pull` 不会丢弃剩余 pending 消息。
+
+当前验证：
+
+- RED：新增 ChatService fallback / duplicate retry 测试后，首次 `ctest -R ChatService` 按预期 3 个用例失败。
+- RED：新增 `DuplicateClientMessageIdSkipsFallbackWhenAlreadyDelivered` 后，重建测试二进制再跑 ChatService，按预期失败于已 delivered 的 duplicate retry 仍补 offline row 和 unread。
+- GREEN：实现 `sendPacket()` 同步失败语义和 ChatService fallback 后，`ctest --test-dir build -R "ChatService|SessionTest.*HighWater|TcpServerTest.*HighWater|TcpServerTest.SlowClient|TcpServerTest.ClosedSlowClient" --output-on-failure` 通过，27/27。
+- RED：新增反向 pending 好友申请集成测试后，首次 targeted storage 测试失败于反向申请仍被接受。
+- GREEN：修正 `FriendDao` 后，`ctest --test-dir build -R "FriendGroupDaoIntegrationTest.ReversePendingFriendRequestIsRejected|MessageDao|MySqlStorage|UserDao" --output-on-failure` 通过，23/23。
+- GREEN：新增 `IStorage::findDeliveryStatus()` 和 `MySqlStorage` 查询实现后，`ctest --test-dir build -R "ChatService|MySqlStorage" --output-on-failure` 通过，28/28。
+- `cmake --build /tmp/liteim-review-build --target liteim_tests liteim_server liteim_bench -j2`：`-Wall -Wextra -Wpedantic` review build 通过，无项目源码 warning。
+- `cmake --build build --target liteim_tests liteim_server liteim_bench -j2`：通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait && ctest --test-dir build --output-on-failure`：MySQL / Redis healthy，默认 CTest 419/419 通过。
+- `cmake --build build-qt --target liteim_qt_client_tests liteim_qt_client -j2 && ctest --test-dir build-qt -R "LiteIMQtClient.Step46|LiteIMQtClient.Step47|LiteIMQtClient.Step48|LiteIMQtClient.Step49|LiteIMQtClient.Step50|LiteIMQtClient.Step51|LiteIMQtClient.Step52|LiteIMCMake.QtClientFoundation" --output-on-failure`：Qt 8/8 通过。
+- `git diff --check`：通过。
+- 教程标题脚本检查：所有 `docs/tutorials/step*.md` 保持 0-10 结构，最后主章节是 `面试常见追问`。
+- 当前-facing `AuthDao` 扫描：只剩 Step25 教程中“已删除 AuthDao”的历史说明；源码、测试、CMake 和 README 不再引用旧 DAO。
+- 旧路线路径和临时文件扫描：没有真实 `server/net`、`server/protocol`、`*SQLite*`、`*InMemory*`、`*BotService*`、`*BotGateway*`、`__pycache__`、`*.pyc`、`*.tmp`、`*.bak`、`*.orig` 或 `.DS_Store` 残留。
+
 ## 2026-05-20 Post-Step58 Final Project Audit
 
 本次在 Step58 完成后审阅项目第一版完成态，范围包括代码、Markdown、协议/handler 对齐、未使用表面、生成物和文件夹清洁度。
@@ -1638,7 +1669,9 @@ feat(storage): implement friend and group dao
 feat(storage): implement message dao and offline messages
 ```
 
-## 2026-05-11 Step 25 UserDao / AuthDao
+## 2026-05-11 Historical Step 25 UserDao / AuthDao
+
+Post-Step58 note: this section records the original Step 25 implementation history. The current first-version code has removed AuthDao and keeps users-table access in UserDao.
 
 本次进入 `Step 25：实现 UserDao 和 AuthDao`，目标是在 Step 23/24 的 MySQL wrapper 和连接池之上提供 users 表 DAO。
 

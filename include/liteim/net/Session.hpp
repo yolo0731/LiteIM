@@ -57,7 +57,7 @@ public:
 
 private:
     void startInLoop();
-    void sendEncodedInLoop(Bytes encoded);
+    Status sendEncodedInLoop(Bytes encoded);
     void handleRead();
     void handleWrite();
     void closeInLoop();

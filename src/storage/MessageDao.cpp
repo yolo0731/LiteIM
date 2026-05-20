@@ -71,9 +71,7 @@ Status parseConversationType(const std::string& text, ConversationType& type) {
     return malformedMessageRowStatus();
 }
 
-Status bindUint64(PreparedStatement& statement, std::size_t index, std::uint64_t value,
-                  const std::string& field_name) {
-    (void)field_name;
+Status bindUint64(PreparedStatement& statement, std::size_t index, std::uint64_t value) {
     return statement.bindUInt64(index, value);
 }
 
@@ -172,27 +170,28 @@ Status validateConversationKey(const ConversationKey& conversation) {
     return Status::ok();
 }
 
+Status messageTypeMismatchStatus() {
+    return Status::error(ErrorCode::InvalidArgument,
+                         "message conversation type does not match DAO method");
+}
+
 // 规范化消息记录以便插入数据库，比如根据 conversation type 确定 receiver_id，设置 created_at_ms 等。
-Status normalizeMessageForInsert(const MessageRecord& input, ConversationType expected_type,
-                                 std::uint64_t& receiver_id, std::int64_t& created_at_ms) {
+Status normalizeMessageForInsert(const MessageRecord& input, std::uint64_t& receiver_id,
+                                 std::int64_t& created_at_ms) {
     const auto conversation_status = validateConversationKey(input.conversation);
     if (!conversation_status.isOk()) {
         return conversation_status;
-    }
-    if (input.conversation.type != expected_type) {
-        return Status::error(ErrorCode::InvalidArgument,
-                             "message conversation type does not match DAO method");
     }
     if (input.sender_id == 0U) {
         return Status::error(ErrorCode::InvalidArgument, "sender id must not be zero");
     }
 
     receiver_id = input.receiver_id;
-    if (expected_type == ConversationType::kPrivate && receiver_id == 0U) {
+    if (input.conversation.type == ConversationType::kPrivate && receiver_id == 0U) {
         return Status::error(ErrorCode::InvalidArgument,
                              "private message receiver id must not be zero");
     }
-    if (expected_type == ConversationType::kGroup && receiver_id == 0U) {
+    if (input.conversation.type == ConversationType::kGroup && receiver_id == 0U) {
         receiver_id = input.conversation.id;
     }
 
@@ -230,22 +229,106 @@ Status queryLastInsertedMessage(MySqlConnection& connection, MessageRecord& mess
     return querySingleMessage(query, message);
 }
 
+Status queryMessageById(MySqlConnection& connection, std::uint64_t message_id,
+                        MessageRecord& message) {
+    if (message_id == 0U) {
+        return Status::error(ErrorCode::InvalidArgument, "message id must not be zero");
+    }
+
+    PreparedStatement query(connection);
+    const auto prepare_status = query.prepare(
+        "SELECT message_id, conversation_type, conversation_id, sender_id, receiver_id, "
+        "message_text, created_at_ms, client_msg_id "
+        "FROM messages WHERE message_id = ? LIMIT 1");
+    if (!prepare_status.isOk()) {
+        return prepare_status;
+    }
+    const auto bind_status = query.bindUInt64(0, message_id);
+    if (!bind_status.isOk()) {
+        return bind_status;
+    }
+    return querySingleMessage(query, message);
+}
+
 // 回滚事务，事务中间失败时，先 ROLLBACK，再返回原来的错误。
 Status rollbackAndReturn(MySqlConnection& connection, const Status& status) {
     (void)connection.executeSimple("ROLLBACK");
     return status;
 }
 
+Status insertMessageRecordInTransaction(MySqlConnection& connection, const MessageRecord& message,
+                                        MessageRecord& saved_message) {
+    saved_message = {};
+    std::uint64_t receiver_id = 0;
+    std::int64_t created_at_ms = 0;
+    const auto normalize_status = normalizeMessageForInsert(message, receiver_id, created_at_ms);
+    if (!normalize_status.isOk()) {
+        return normalize_status;
+    }
+
+    PreparedStatement statement(connection);
+    const auto prepare_status = statement.prepare(
+        "INSERT INTO messages "
+        "(conversation_type, conversation_id, sender_id, receiver_id, message_text, created_at_ms, "
+        "client_msg_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''))");
+    if (!prepare_status.isOk()) {
+        return prepare_status;
+    }
+
+    const auto type_status = bindConversationType(statement, 0, message.conversation.type);
+    if (!type_status.isOk()) {
+        return type_status;
+    }
+    const auto conversation_status = bindUint64(statement, 1, message.conversation.id);
+    if (!conversation_status.isOk()) {
+        return conversation_status;
+    }
+    const auto sender_status = bindUint64(statement, 2, message.sender_id);
+    if (!sender_status.isOk()) {
+        return sender_status;
+    }
+    const auto receiver_status = bindUint64(statement, 3, receiver_id);
+    if (!receiver_status.isOk()) {
+        return receiver_status;
+    }
+    const auto text_status = statement.bindString(4, message.text);
+    if (!text_status.isOk()) {
+        return text_status;
+    }
+    const auto created_status = statement.bindInt64(5, created_at_ms);
+    if (!created_status.isOk()) {
+        return created_status;
+    }
+    const auto client_msg_status = statement.bindString(6, message.client_msg_id);
+    if (!client_msg_status.isOk()) {
+        return client_msg_status;
+    }
+
+    std::uint64_t affected_rows = 0;
+    // 执行 INSERT 语句，affected_rows 应该是 1，如果不是，说明插入失败，回滚事务并返回错误。
+    const auto insert_status = statement.executeUpdate(affected_rows);
+    if (!insert_status.isOk()) {
+        if (!message.client_msg_id.empty() && statement.lastErrorNumber() == kMysqlDuplicateEntry) {
+            return Status::error(ErrorCode::AlreadyExists, "client message id already exists");
+        }
+        return insert_status;
+    }
+    if (affected_rows != 1U) {
+        return Status::error(ErrorCode::InternalError,
+                             "save message affected unexpected row count");
+    }
+    // 查询刚插入的消息记录，MySQL 提供了 LAST_INSERT_ID() 函数可以获取当前连接最后一次插入的 AUTO_INCREMENT 主键值，这里利用它来查询刚插入的消息。
+    return queryLastInsertedMessage(connection, saved_message);
+}
+
 // 整个保存消息的流程：先验证和规范化输入，开始事务，执行 INSERT，查询刚插入的消息记录，最后提交事务。如果中间任何一步失败，都回滚事务并返回错误。
 Status saveMessageWithType(MySqlPool& pool, std::chrono::milliseconds acquire_timeout,
                            const MessageRecord& message, ConversationType expected_type,
                            MessageRecord& saved_message) {
-    std::uint64_t receiver_id = 0;
-    std::int64_t created_at_ms = 0;
-    const auto normalize_status =
-        normalizeMessageForInsert(message, expected_type, receiver_id, created_at_ms);
-    if (!normalize_status.isOk()) {
-        return normalize_status;
+    saved_message = {};
+    if (message.conversation.type != expected_type) {
+        return messageTypeMismatchStatus();
     }
 
     ConnectionGuard guard;
@@ -259,64 +342,7 @@ Status saveMessageWithType(MySqlPool& pool, std::chrono::milliseconds acquire_ti
         return begin_status;
     }
 
-    PreparedStatement statement(*guard);
-    const auto prepare_status = statement.prepare(
-        "INSERT INTO messages "
-        "(conversation_type, conversation_id, sender_id, receiver_id, message_text, created_at_ms, "
-        "client_msg_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''))");
-    if (!prepare_status.isOk()) {
-        return rollbackAndReturn(*guard, prepare_status);
-    }
-
-    const auto type_status = bindConversationType(statement, 0, expected_type);
-    if (!type_status.isOk()) {
-        return rollbackAndReturn(*guard, type_status);
-    }
-    const auto conversation_status =
-        bindUint64(statement, 1, message.conversation.id, "conversation_id");
-    if (!conversation_status.isOk()) {
-        return rollbackAndReturn(*guard, conversation_status);
-    }
-    const auto sender_status = bindUint64(statement, 2, message.sender_id, "sender_id");
-    if (!sender_status.isOk()) {
-        return rollbackAndReturn(*guard, sender_status);
-    }
-    const auto receiver_status = bindUint64(statement, 3, receiver_id, "receiver_id");
-    if (!receiver_status.isOk()) {
-        return rollbackAndReturn(*guard, receiver_status);
-    }
-    const auto text_status = statement.bindString(4, message.text);
-    if (!text_status.isOk()) {
-        return rollbackAndReturn(*guard, text_status);
-    }
-    const auto created_status = statement.bindInt64(5, created_at_ms);
-    if (!created_status.isOk()) {
-        return rollbackAndReturn(*guard, created_status);
-    }
-    const auto client_msg_status = statement.bindString(6, message.client_msg_id);
-    if (!client_msg_status.isOk()) {
-        return rollbackAndReturn(*guard, client_msg_status);
-    }
-
-    std::uint64_t affected_rows = 0;
-    // 执行 INSERT 语句，affected_rows 应该是 1，如果不是，说明插入失败，回滚事务并返回错误。
-    const auto insert_status = statement.executeUpdate(affected_rows);
-    if (!insert_status.isOk()) {
-        if (!message.client_msg_id.empty() && statement.lastErrorNumber() == kMysqlDuplicateEntry) {
-            return rollbackAndReturn(
-                *guard,
-                Status::error(ErrorCode::AlreadyExists, "client message id already exists"));
-        }
-        return rollbackAndReturn(*guard, insert_status);
-    }
-    if (affected_rows != 1U) {
-        return rollbackAndReturn(
-            *guard,
-            Status::error(ErrorCode::InternalError, "save message affected unexpected row count"));
-    }
-    // 查询刚插入的消息记录，MySQL 提供了 LAST_INSERT_ID() 函数可以获取当前连接最后一次插入的 AUTO_INCREMENT 主键值，这里利用它来查询刚插入的消息。
-    const auto query_status = queryLastInsertedMessage(*guard, saved_message);
+    const auto query_status = insertMessageRecordInTransaction(*guard, message, saved_message);
     if (!query_status.isOk()) {
         return rollbackAndReturn(*guard, query_status);
     }
@@ -377,6 +403,18 @@ Status MessageDao::saveGroupMessage(const MessageRecord& message, MessageRecord&
                                saved_message);
 }
 
+Status MessageDao::insertMessageInTransaction(MySqlConnection& connection,
+                                              const MessageRecord& message,
+                                              MessageRecord& saved_message) {
+    return insertMessageRecordInTransaction(connection, message, saved_message);
+}
+
+Status MessageDao::findByIdInTransaction(MySqlConnection& connection, std::uint64_t message_id,
+                                         MessageRecord& message) {
+    message = {};
+    return queryMessageById(connection, message_id, message);
+}
+
 Status MessageDao::findByClientMessageId(std::uint64_t sender_id, const std::string& client_msg_id,
                                          MessageRecord& message) {
     return findMessageByClientMessageId(*pool_, acquire_timeout_, sender_id, client_msg_id,
@@ -424,16 +462,14 @@ Status MessageDao::getHistoryByConversation(const HistoryQuery& query,
     if (!type_status.isOk()) {
         return type_status;
     }
-    const auto conversation_bind_status =
-        bindUint64(statement, 1, query.conversation.id, "conversation_id");
+    const auto conversation_bind_status = bindUint64(statement, 1, query.conversation.id);
     if (!conversation_bind_status.isOk()) {
         return conversation_bind_status;
     }
 
     std::size_t limit_index = 2;
     if (query.before_message_id != 0U) {
-        const auto before_status =
-            bindUint64(statement, 2, query.before_message_id, "before_message_id");
+        const auto before_status = bindUint64(statement, 2, query.before_message_id);
         if (!before_status.isOk()) {
             return before_status;
         }

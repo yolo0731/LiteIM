@@ -42,7 +42,7 @@ OfflineMessagesRequest
 - 新增 `OfflineMessagesAckRequest = 504`。
 - 新增 `OfflineMessagesAckResponse = 505`。
 - 新增 `TlvType::DeliveryStatus`，ACK 成功时返回 `2`，表示 delivered。
-- 新增 `storage::DeliveryStatus` 枚举，当前使用 pending / pushed / delivered / read-reserved。
+- 新增 `storage::DeliveryStatus` 枚举，当前实现写入 pending / delivered；pushed / read-reserved 是后续更细 delivery tracking 的预留状态。
 - 新增 MySQL `message_deliveries` 表，记录按用户维度的消息投递状态。
 - `OfflineMessagesRequest` 只拉 pending，不再标记 delivered，不清 unread。
 - `OfflineMessagesAckRequest` 批量 ACK `MessageId`，服务端才标记 delivered，并按会话清 unread。

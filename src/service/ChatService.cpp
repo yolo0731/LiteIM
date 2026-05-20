@@ -41,6 +41,74 @@ Status notAcceptedFriendStatus() {
     return Status::error(ErrorCode::InvalidArgument, "receiver is not an accepted friend");
 }
 
+void logUnreadFailure(std::uint64_t receiver_id, const MessageRecord& message,
+                      const Status& unread_status) {
+    Logger::get()->warn(
+        "Failed to increment unread for user {} conversation {} after message {} was saved: {}",
+        receiver_id, message.conversation.id, message.message_id, unread_status.message());
+}
+
+Status incrementUnreadForMessage(ICache& cache, std::uint64_t receiver_id,
+                                 const MessageRecord& message) {
+    std::uint64_t unread_count = 0;
+    const auto unread_status =
+        cache.incrUnread(UnreadKey{receiver_id, message.conversation}, 1, unread_count);
+    if (!unread_status.isOk()) {
+        logUnreadFailure(receiver_id, message, unread_status);
+    }
+    return Status::ok();
+}
+
+Status ensureOfflineFallback(IStorage& storage, ICache& cache, std::uint64_t receiver_id,
+                             const MessageRecord& message) {
+    const auto offline_status = storage.saveOfflineMessage(receiver_id, message.message_id);
+    if (offline_status.isOk()) {
+        return incrementUnreadForMessage(cache, receiver_id, message);
+    }
+    if (offline_status.code() == ErrorCode::AlreadyExists) {
+        return Status::ok();
+    }
+    return offline_status;
+}
+
+bool isTerminalDeliveryStatus(DeliveryStatus status) {
+    return status == DeliveryStatus::kDelivered || status == DeliveryStatus::kReadReserved;
+}
+
+Status isMessageAlreadyDelivered(IStorage& storage, std::uint64_t receiver_id,
+                                 std::uint64_t message_id, bool& delivered) {
+    delivered = false;
+    DeliveryStatus delivery_status = DeliveryStatus::kPending;
+    const auto status = storage.findDeliveryStatus(receiver_id, message_id, delivery_status);
+    if (status.isOk()) {
+        delivered = isTerminalDeliveryStatus(delivery_status);
+        return Status::ok();
+    }
+    if (status.code() == ErrorCode::NotFound) {
+        return Status::ok();
+    }
+    return status;
+}
+
+Status pushPrivateOrFallback(IStorage& storage, ICache& cache, const Session::Ptr& receiver_session,
+                             std::uint64_t receiver_id, const MessageRecord& message) {
+    if (receiver_session == nullptr || receiver_session->closed()) {
+        return ensureOfflineFallback(storage, cache, receiver_id, message);
+    }
+
+    Packet push;
+    push.header.msg_type = MessageType::PrivateMessagePush;
+    const auto append_status = appendMessageFields(message, push);
+    if (!append_status.isOk()) {
+        return append_status;
+    }
+    const auto send_status = receiver_session->sendPacket(push);
+    if (!send_status.isOk()) {
+        return ensureOfflineFallback(storage, cache, receiver_id, message);
+    }
+    return Status::ok();
+}
+
 // 用两个用户 ID 生成一个私聊会话 ID
 Status privateConversationId(std::uint64_t sender_id, std::uint64_t receiver_id,
                              std::uint64_t& conversation_id) {
@@ -197,33 +265,55 @@ Status ChatService::handlePrivateMessage(const MessageRouter::RouterRequest& req
         if (!find_status.isOk()) {
             return find_status;
         }
+        bool already_delivered = false;
+        const auto delivery_lookup_status =
+            isMessageAlreadyDelivered(storage_, saved_message.receiver_id,
+                                      saved_message.message_id, already_delivered);
+        if (!delivery_lookup_status.isOk()) {
+            return delivery_lookup_status;
+        }
+        if (already_delivered) {
+            response.header.msg_type = MessageType::PrivateMessageResponse;
+            response.header.seq_id = request.packet.header.seq_id;
+            return appendMessageFields(saved_message, response);
+        }
+
+        Session::Ptr retry_receiver_session;
+        bool retry_receiver_online = false;
+        const auto retry_session_status =
+            online_service_.getSessionByUser(saved_message.receiver_id, retry_receiver_session);
+        retry_receiver_online = retry_session_status.isOk();
+        if (!retry_session_status.isOk() && retry_session_status.code() != ErrorCode::NotFound) {
+            return retry_session_status;
+        }
+
+        Status delivery_status;
+        if (retry_receiver_online) {
+            delivery_status = pushPrivateOrFallback(storage_, cache_, retry_receiver_session,
+                                                    saved_message.receiver_id, saved_message);
+        } else {
+            delivery_status =
+                ensureOfflineFallback(storage_, cache_, saved_message.receiver_id, saved_message);
+        }
+        if (!delivery_status.isOk()) {
+            return delivery_status;
+        }
         response.header.msg_type = MessageType::PrivateMessageResponse;
         response.header.seq_id = request.packet.header.seq_id;
         return appendMessageFields(saved_message, response);
     }
 
     if (receiver_online) {
-        // 在线：直接把消息推送给接收用户
-        Packet push;
-        push.header.msg_type = MessageType::PrivateMessagePush;
-        const auto append_status = appendMessageFields(saved_message, push);
-        if (!append_status.isOk()) {
-            return append_status;
-        }
-        const auto send_status = receiver_session->sendPacket(push);  //push是非相应包不带 seq_id
-        if (!send_status.isOk()) {
-            return send_status;
+        // 在线：先尝试 push；如果同步判定无法排队，补离线记录供接收方下次拉取。
+        const auto delivery_status =
+            pushPrivateOrFallback(storage_, cache_, receiver_session, receiver_id, saved_message);
+        if (!delivery_status.isOk()) {
+            return delivery_status;
         }
     } else {  // 离线：把未读计数加一
-        std::uint64_t unread_count = 0;
-        const auto unread_status =
-            cache_.incrUnread(UnreadKey{receiver_id, saved_message.conversation}, 1, unread_count);
+        const auto unread_status = incrementUnreadForMessage(cache_, receiver_id, saved_message);
         if (!unread_status.isOk()) {
-            Logger::get()->warn(
-                "Failed to increment unread for user {} conversation {} after message {} was "
-                "saved: {}",
-                receiver_id, saved_message.conversation.id, saved_message.message_id,
-                unread_status.message());
+            return unread_status;
         }
     }
 

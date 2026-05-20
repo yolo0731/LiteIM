@@ -8,6 +8,24 @@
 - `LiteIM/docs/process/task_plan.md`、`LiteIM/docs/process/findings.md` 和 `LiteIM/docs/process/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-20 Post-Step58 Reliability And Cleanup Follow-up Findings
+
+当前采用的边界：
+
+- 本次按用户确认修正四个较大审阅项：在线 push fallback、重复 `client_msg_id` 再投递、删除旧 AuthDao、收敛 MessageDao / MySqlStorage 保存路径。
+- 不新增协议号、不新增 MySQL migration、不把第一版升级成完整多设备 delivery state machine。
+- `sendPacket()` 只能同步报告编码、closed/not-writable、单包超过 high-water mark、同线程 pending high-water 等可立即判断的失败；跨线程排队成功后再写失败，仍需要 receiver ACK / sender retry / future delivery repair 才能完全闭环。
+- ChatService 的 fallback 语义是：同步 push 失败补 `offline_messages`；重复 `client_msg_id` 查回已有消息后先查询 receiver delivery status，已 delivered/read 则不重投，未 delivered 才重新走 receiver-side delivery path；`saveOfflineMessage()` 返回 AlreadyExists 视为幂等成功且不重复加 unread。
+- 删除 AuthDao 后，当前认证业务直接通过 `UserDao::findUserByUsername()` 查完整用户记录；`AuthService` 保持密码、限流和 session 绑定的业务责任。
+- `MySqlStorage::saveMessageWithOfflineRecipients()` 继续保持 message + offline rows + pending delivery rows 单事务，但 message insert / find-by-id 逻辑复用 `MessageDao`，减少 SQL 分叉。
+
+验证关注：
+
+- ChatService 需要同时覆盖新消息在线 push 同步失败 fallback、重复 client id 缺失 offline row 时补齐、重复 client id 已有 offline row 时不重复 unread、重复 client id 已 delivered 时不重新生成 offline fallback。
+- Session / TcpServer 旧高水位测试要更新成新的失败返回语义：`ResourceExhausted` 是可观察 backpressure，不再假装发送 OK。
+- FriendDao 需要拒绝反向 pending request，避免双向 pending 状态。
+- 当前-facing Markdown 不能继续把 AuthDao 写成当前代码组成部分；历史 process 段落如保留旧步骤，只能作为历史记录理解。
+
 ## 2026-05-20 Post-Step58 Final Project Audit Findings
 
 当前审阅边界：
@@ -821,7 +839,9 @@ GitHub CI 对 LiteIM 有价值，但不需要拆成单独 Step。它的职责是
 - 不实现 Redis 未读计数、在线状态或登录失败限制。
 - 不修改 MySQL schema、seed 数据或 Step 21 `IStorage` 接口。
 
-## 2026-05-11 Step 25 UserDao / AuthDao Findings
+## 2026-05-11 Historical Step 25 UserDao / AuthDao Findings
+
+Post-Step58 note: this section records the original Step 25 implementation history. The current first-version code has removed AuthDao and keeps users-table access in UserDao.
 
 本次进入 `Step 25：实现 UserDao 和 AuthDao`，只实现 users 表 DAO，不实现 MessageDao、业务服务、Redis client 或运行时 server 集成。
 

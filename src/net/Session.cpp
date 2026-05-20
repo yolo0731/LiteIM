@@ -90,20 +90,29 @@ void Session::start() {
 }
 
 Status Session::sendPacket(const Packet& packet) {
+    if (closed_.load()) {
+        return Status::error(ErrorCode::NotFound, "session is closed");
+    }
+
     Bytes encoded;
     const auto status = encodePacket(packet, encoded);
     if (!status.isOk()) {
         return status;
     }
+    if (encoded.size() > output_high_water_mark_) {
+        auto self = shared_from_this();
+        loop_->runInLoop([self]() { self->closeInLoop(); });
+        return Status::error(ErrorCode::ResourceExhausted,
+                             "session output high water mark would be exceeded");
+    }
 
     auto self = shared_from_this();
     if (loop_->isInLoopThread()) {  // loop_是Session所在的EventLoop的指针
-        self->sendEncodedInLoop(std::move(encoded));
-        return Status::ok();
+        return self->sendEncodedInLoop(std::move(encoded));
     }
 
     loop_->queueInLoop([self, encoded = std::move(encoded)]() mutable {
-        self->sendEncodedInLoop(std::move(encoded));
+        (void)self->sendEncodedInLoop(std::move(encoded));
     });
     return Status::ok();
 }
@@ -148,11 +157,11 @@ void Session::startInLoop() {
     state_ = SessionState::kStarted;
 }
 
-void Session::sendEncodedInLoop(Bytes encoded) {
+Status Session::sendEncodedInLoop(Bytes encoded) {
     loop_->assertInLoopThread();
-    // TcpServer 会在通过回调暴露 Session 前先启动它；kStarted 前发送属于契约违背，直接忽略。
+    // TcpServer 会在通过回调暴露 Session 前先启动它；kStarted 前发送属于契约违背。
     if (state_ != SessionState::kStarted || closed_.load() || encoded.empty()) {
-        return;
+        return Status::error(ErrorCode::InvalidArgument, "session is not writable");
     }
 
     const auto pending_bytes = output_buffer_.readableBytes();
@@ -162,18 +171,20 @@ void Session::sendEncodedInLoop(Bytes encoded) {
             "Session {} output buffer high water mark exceeded: pending={}, incoming={}, limit={}",
             id_, pending_bytes, encoded.size(), output_high_water_mark_);
         closeInLoop();
-        return;
+        return Status::error(ErrorCode::ResourceExhausted,
+                             "session output high water mark exceeded");
     }
 
     const auto status = output_buffer_.append(encoded);
     if (!status.isOk()) {
         closeInLoop();
-        return;
+        return status;
     }
 
     if (state_ == SessionState::kStarted && channel_ != nullptr && !channel_->isWriting()) {
         channel_->enableWriting();
     }
+    return Status::ok();
 }
 
 void Session::handleRead() {

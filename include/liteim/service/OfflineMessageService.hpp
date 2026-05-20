@@ -13,7 +13,8 @@
 namespace liteim {
 
 struct OfflineMessageServiceOptions {
-    std::uint32_t max_messages_per_pull{100};  // 每次拉取的最大消息数量，超过这个数量的消息会被丢弃
+    // 每次最多返回的离线消息数量；超过该数量的 pending 消息保留到下次拉取。
+    std::uint32_t max_messages_per_pull{100};
 };
 
 // 负责把“待投递记录”变成客户端能消费的 OfflineMessagesResponse

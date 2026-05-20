@@ -1,5 +1,4 @@
 #include "liteim/base/Config.hpp"
-#include "liteim/storage/AuthDao.hpp"
 #include "liteim/storage/MySqlConnection.hpp"
 #include "liteim/storage/MySqlPool.hpp"
 #include "liteim/storage/UserDao.hpp"
@@ -69,12 +68,10 @@ protected:
         pool = std::make_unique<liteim::MySqlPool>(config);
         ASSERT_TRUE(pool->start().isOk());
         user_dao = std::make_unique<liteim::UserDao>(*pool);
-        auth_dao = std::make_unique<liteim::AuthDao>(*pool);
     }
 
     void TearDown() override {
         user_dao.reset();
-        auth_dao.reset();
         if (pool) {
             pool->close();
             pool.reset();
@@ -85,7 +82,6 @@ protected:
     liteim::MySqlConfig config;
     std::unique_ptr<liteim::MySqlPool> pool;
     std::unique_ptr<liteim::UserDao> user_dao;
-    std::unique_ptr<liteim::AuthDao> auth_dao;
 };
 
 }  // namespace
@@ -93,7 +89,6 @@ protected:
 TEST(UserDaoTest, HeadersAreSelfContained) {
     liteim::MySqlPool pool(testMySqlConfig());
     liteim::UserDao user_dao(pool);
-    liteim::AuthDao auth_dao(pool);
 }
 
 TEST_F(UserDaoIntegrationTest, CreateUserPersistsAndReturnsCreatedRecord) {
@@ -174,18 +169,4 @@ TEST_F(UserDaoIntegrationTest, FindMissingUserReturnsNotFound) {
     EXPECT_FALSE(status.isOk());
     EXPECT_EQ(status.code(), liteim::ErrorCode::NotFound);
     EXPECT_EQ(found.user_id, 0U);
-}
-
-TEST_F(UserDaoIntegrationTest, UsernameExistsReportsExistingAndMissingUsers) {
-    const auto request = makeCreateUserRequest();
-    liteim::UserRecord created;
-    ASSERT_TRUE(user_dao->createUser(request, created).isOk());
-
-    bool exists = false;
-    ASSERT_TRUE(auth_dao->usernameExists(request.username, exists).isOk());
-    EXPECT_TRUE(exists);
-
-    exists = true;
-    ASSERT_TRUE(auth_dao->usernameExists(uniqueUsername(), exists).isOk());
-    EXPECT_FALSE(exists);
 }

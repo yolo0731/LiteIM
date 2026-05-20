@@ -221,6 +221,20 @@ TEST_F(FriendGroupDaoIntegrationTest, FriendRequestRequiresAcceptanceBeforeFrien
     EXPECT_EQ(alice_friends.front().user_id, bob.user_id);
 }
 
+TEST_F(FriendGroupDaoIntegrationTest, ReversePendingFriendRequestIsRejected) {
+    const auto alice = createUser();
+    const auto bob = createUser();
+
+    liteim::FriendRequestRecord request;
+    ASSERT_TRUE(friend_dao->createFriendRequest(alice.user_id, bob.user_id, request).isOk());
+
+    const auto reverse_status =
+        friend_dao->createFriendRequest(bob.user_id, alice.user_id, request);
+
+    EXPECT_FALSE(reverse_status.isOk());
+    EXPECT_EQ(reverse_status.code(), liteim::ErrorCode::AlreadyExists);
+}
+
 TEST_F(FriendGroupDaoIntegrationTest, RejectFriendRequestDoesNotCreateFriendship) {
     const auto alice = createUser();
     const auto bob = createUser();

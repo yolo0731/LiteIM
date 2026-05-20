@@ -31,7 +31,7 @@ PrivateMessageRequest
     MessageText = "hello bob"
 ```
 
-服务端把它写入 `messages.client_msg_id`，并用 `(sender_id, client_msg_id)` 唯一约束兜住并发和重试。第二次同 sender 同 client id 到来时，服务端不再插入、不再投递，只查出原来的消息并返回同一个 `message_id`。
+服务端把它写入 `messages.client_msg_id`，并用 `(sender_id, client_msg_id)` 唯一约束兜住并发和重试。第二次同 sender 同 client id 到来时，服务端不再插入重复消息，只查出原来的消息并返回同一个 `message_id`。第一版收口后，重复请求还会重新检查接收方投递侧：如果已经 delivered/read 就只返回发送方响应；如果还没有 delivered，则按当前在线状态重试 push 或补 offline fallback；如果 fallback row 已经存在，则幂等接受且不重复加 unread。
 
 ## 2. 本 Step 边界
 
@@ -43,7 +43,7 @@ PrivateMessageRequest
 - `messages` 表增加 `client_msg_id VARCHAR(64) NULL`。
 - `messages` 表增加唯一索引 `uk_messages_sender_client_msg(sender_id, client_msg_id)`。
 - `IStorage` 增加 `findMessageByClientMessageId()`。
-- `ChatService` 遇到重复 `(sender_id, client_msg_id)` 时返回已存在消息，不重复 side effect。
+- `ChatService` 遇到重复 `(sender_id, client_msg_id)` 时返回已存在消息；已经 delivered/read 的消息不重投，未 delivered 的消息会修复缺失的 receiver-side fallback，已有 row 不重复加 unread。
 - `PrivateMessageResponse`、push、history、offline response 在消息存在 `client_msg_id` 时带回该字段。
 - CLI 新增 `private-id <receiver_id> <client_msg_id> <text...>`。
 - Python E2E 覆盖重复发送只产生一条离线消息。
@@ -64,12 +64,12 @@ PrivateMessageRequest
 | `include/liteim/protocol/Tlv.hpp` / `src/protocol/Tlv.cpp` | 修改 | 新增 `ClientMessageId` 字段和可读名 |
 | `include/liteim/service/Validation.hpp` | 修改 | 新增 64 字节 client message id 长度上限 |
 | `include/liteim/storage/StorageTypes.hpp` | 修改 | `MessageRecord` 增加 `client_msg_id` |
-| `include/liteim/storage/IStorage.hpp` | 修改 | 增加按 `(sender_id, client_msg_id)` 查询消息的接口 |
+| `include/liteim/storage/IStorage.hpp` | 修改 | 增加按 `(sender_id, client_msg_id)` 查询消息的接口；第一版收口后补 delivery status 查询用于重复请求投递修复 |
 | `include/liteim/storage/MessageDao.hpp` / `src/storage/MessageDao.cpp` | 修改 | messages insert / history / idempotent find 支持 `client_msg_id` |
 | `include/liteim/storage/MySqlStorage.hpp` / `src/storage/MySqlStorage.cpp` | 修改 | storage adapter 暴露幂等查询，事务 insert 识别唯一冲突 |
 | `src/storage/OfflineMessageDao.cpp` | 修改 | 离线消息查询和 ACK 查询带回 `client_msg_id` |
 | `src/service/MessagePacketBuilder.cpp` | 修改 | response / push / history / offline 消息字段可带回 `ClientMessageId` |
-| `src/service/ChatService.cpp` | 修改 | 解析可选 id，重复保存时查回已存在消息并直接响应 |
+| `src/service/ChatService.cpp` | 修改 | 解析可选 id，重复保存时查回已存在消息，并按 delivery 状态决定是否修复接收方投递入口 |
 | `client_cli/ClientCli.cpp` | 修改 | 新增 `private-id` 命令和 `client_msg_id` 输出 |
 | `scripts/init_mysql.sql` | 修改 | `messages` 表新增列和唯一索引 |
 | `scripts/migrations/055_client_msg_id.sql` | 新增 | 给已有本地数据库补 schema |
@@ -151,10 +151,13 @@ Client timeout 后重试同一 client_msg_id
     -> IStorage::saveMessageWithOfflineRecipients()
     -> MySQL unique key 返回 duplicate
     -> IStorage::findMessageByClientMessageId(sender_id, client_msg_id)
+    -> IStorage::findDeliveryStatus(receiver_id, message_id)
+    -> 若已 delivered/read：不重投
+    -> 若未 delivered：按在线状态重试 push 或补 offline fallback
     -> PrivateMessageResponse(message_id=5001, client_msg_id="cli-msg-1")
 ```
 
-关键点是重复路径在查回已有消息后直接响应，不进入 push / offline / unread 逻辑。因此 Bob 不会重复收到同一条私聊，离线未读也不会重复增加。
+关键点是重复路径不再重复插入消息，并且会先看接收方 delivery 状态。已经 delivered/read 的消息不会重新 push 或重新生成离线消息；尚未 delivered 的消息才会修复缺失的接收方投递入口。
 
 ## 6. 关键实现点
 
@@ -205,7 +208,7 @@ git diff --check
 
 可以这样讲：
 
-> 我给私聊发送加了 `client_msg_id` 幂等键。客户端每条待发送消息生成一个稳定 id，服务端把它和 sender id 一起写进 MySQL 唯一约束。第一次请求正常插入并投递；如果客户端因为超时或断线重试同一个 id，MySQL 会拒绝重复插入，业务层查回已有消息并返回同一个 `message_id`，不会重复 push、不会重复写离线消息，也不会重复加 unread。
+> 我给私聊发送加了 `client_msg_id` 幂等键。客户端每条待发送消息生成一个稳定 id，服务端把它和 sender id 一起写进 MySQL 唯一约束。第一次请求正常插入；如果客户端因为超时或断线重试同一个 id，MySQL 会拒绝重复插入，业务层查回已有消息并返回同一个 `message_id`。第一版收口后，重复请求还会查询接收方 delivery 状态：已经 delivered/read 就不重投；尚未 delivered 才修复在线 push 或离线 fallback，已有 fallback 不会重复加 unread。
 
 更短版本：
 
@@ -231,4 +234,4 @@ git diff --check
 
 ### 现在是否已经保证 Bob 一定收到在线 push？
 
-还没有。Step54 只保证服务端不重复存储和不重复投递同一个重试请求。Bob 是否实际收到在线 `PrivateMessagePush`，需要 Step55 的接收方 delivery ACK。
+还没有。Step54 只保证服务端不重复存储；第一版收口后，重复请求会用 delivery 状态避免已 delivered 的消息被重投，并修复尚未 delivered 的接收方入口。Bob 是否实际收到在线 `PrivateMessagePush`，仍需要 Step55 的接收方 delivery ACK。
