@@ -160,6 +160,17 @@ TEST(ClientCliCommandTest, LoginCommandBuildsLoginPacket) {
     EXPECT_EQ(stringField(packet, liteim::TlvType::Password), "secret");
 }
 
+TEST(ClientCliCommandTest, LogoutCommandBuildsLogoutPacket) {
+    liteim::Packet packet;
+
+    const auto status = liteim::cli::buildPacketFromLine("logout", 51, packet);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(packet.header.msg_type, liteim::MessageType::LogoutRequest);
+    EXPECT_EQ(packet.header.seq_id, 51U);
+    EXPECT_TRUE(packet.body.empty());
+}
+
 TEST(ClientCliCommandTest, PrivateCommandKeepsMessageTextWithSpaces) {
     liteim::Packet packet;
 

@@ -25,12 +25,14 @@ class AuthService {
 public:
     AuthService(IStorage& storage, ICache& cache, OnlineService& online_service,
                 AuthServiceOptions options = AuthServiceOptions{});
-    // 把注册和登录 handler 注册到 MessageRouter,丢到业务线程池
+    // 把注册、登录和登出 handler 注册到 MessageRouter,丢到业务线程池
     Status registerHandlers(MessageRouter& router);
     // 处理注册请求
     Status handleRegister(const MessageRouter::RouterRequest& request, Packet& response);
     // 处理登录请求
     Status handleLogin(const MessageRouter::RouterRequest& request, Packet& response);
+    // 处理登出请求
+    Status handleLogout(const MessageRouter::RouterRequest& request, Packet& response);
     // 返回当前配置
     const AuthServiceOptions& options() const noexcept;
 

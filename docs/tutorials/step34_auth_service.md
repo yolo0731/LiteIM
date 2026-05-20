@@ -1,16 +1,16 @@
-# Step 34：AuthService 注册登录
+# Step 34：AuthService 注册登录登出
 
 ## 0. 本 Step 结论
 
-- 目标：Step 34 的目标是把注册和登录从“协议占位”推进到真实业务入口：RegisterRequest / LoginRequest 经 MessageRouter 投递到业务线程池，然后由 AuthService 访问 MySQL / Redis，并在登录成功后绑定在线 session。
+- 目标：Step 34 的目标是把注册、登录和登出从“协议占位”推进到真实业务入口：RegisterRequest / LoginRequest / LogoutRequest 经 MessageRouter 投递到业务线程池，然后由 AuthService 访问 MySQL / Redis / OnlineService，并在登录成功后绑定在线 session、登出时解除当前 session 绑定。
 - 前置依赖：依赖 Step 0-33 已建立的工程、协议或运行时基础。
-- 主要交付：`AuthService 注册登录` 的文件变化、接口契约、运行流程、测试和面试表达。
+- 主要交付：`AuthService 注册登录登出` 的文件变化、接口契约、运行流程、测试和面试表达。
 - 线程/生命周期边界：沿用 LiteIM 当前 owner-loop、RAII、业务线程隔离和抽象依赖规则。
 - 范围控制：本 Step 不实现好友、私聊、群聊、离线消息、历史消息、JWT、OAuth、短信或邮箱验证码。
 
 ## 1. 为什么需要这个 Step
 
-Step 34 的目标是把注册和登录从“协议占位”推进到真实业务入口：`RegisterRequest` / `LoginRequest` 经 `MessageRouter` 投递到业务线程池，然后由 `AuthService` 访问 MySQL / Redis，并在登录成功后绑定在线 session。
+Step 34 的目标是把注册、登录和登出从“协议占位”推进到真实业务入口：`RegisterRequest` / `LoginRequest` / `LogoutRequest` 经 `MessageRouter` 投递到业务线程池，然后由 `AuthService` 访问 MySQL / Redis / OnlineService，并在登录成功后绑定在线 session、登出时解除当前 session 绑定。
 
 ### 概念
 
@@ -42,6 +42,10 @@ LoginRequest
     -> ICache::clearLoginFailure()
     -> OnlineService::bindUser()
     -> LoginResponse
+
+LogoutRequest
+    -> OnlineService::unbindSession()
+    -> LogoutResponse
 ```
 
 关键边界：
@@ -56,7 +60,7 @@ LoginRequest
 
 ### 本 Step 做
 
-- 聚焦 `AuthService 注册登录` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
+- 聚焦 `AuthService 注册登录登出` 这一层的当前交付，把前置能力接成可编译、可测试的模块。
 - 明确新增/修改文件、核心接口、运行流程、边界条件和验证方式。
 - 保持当前 Step 的实现范围，不把后续路线混入本 Step。
 
@@ -109,6 +113,7 @@ public:
     Status registerHandlers(MessageRouter& router);
     Status handleRegister(const MessageRouter::RouterRequest& request, Packet& response);
     Status handleLogin(const MessageRouter::RouterRequest& request, Packet& response);
+    Status handleLogout(const MessageRouter::RouterRequest& request, Packet& response);
 
     const AuthServiceOptions& options() const noexcept;
 };
@@ -122,14 +127,15 @@ public:
 Status registerHandlers(MessageRouter& router);
 ```
 
-注册两个 handler：
+注册三个 handler：
 
 ```text
 RegisterRequest -> AuthService::handleRegister(), BusinessThread
 LoginRequest    -> AuthService::handleLogin(), BusinessThread
+LogoutRequest   -> AuthService::handleLogout(), BusinessThread
 ```
 
-这保证注册、登录里的 MySQL / Redis / 密码哈希不会在 Reactor I/O 线程执行。
+这保证注册、登录、登出里的 MySQL / Redis / 密码哈希 / 在线状态变更不会在 Reactor I/O 线程执行。
 
 ### `handleRegister()`
 
@@ -199,6 +205,17 @@ Password
 
 后续 FriendService / ChatService 会依赖 `SessionManager` 判断当前连接是否已登录。
 
+客户端登出：
+
+```text
+客户端发送 LogoutRequest
+服务端调用 OnlineService::unbindSession(session_id)
+服务端返回 LogoutResponse
+    TLV: SessionId=7
+```
+
+登出后同一连接继续发送需要登录态的请求，会由对应业务 service 返回 `ErrorResponse`。
+
 ### 2. 上下层调用连接
 
 完整 runtime 链路：
@@ -209,7 +226,7 @@ Session::handleRead()
     -> TcpServer::handleMessage()
     -> MessageRouter::route()
     -> business ThreadPool
-    -> AuthService::handleRegister() / handleLogin()
+    -> AuthService::handleRegister() / handleLogin() / handleLogout()
     -> MySqlStorage / RedisCache / OnlineService
     -> Session::sendPacket()
     -> EventLoop::queueInLoop()
@@ -343,7 +360,7 @@ SessionId=7
 
 | 风险 | 测试如何覆盖 |
 | --- | --- |
-| `AuthService 注册登录` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
+| `AuthService 注册登录登出` 的核心契约只停留在接口说明里 | 用单元测试或集成测试固定 public API、正常路径和错误路径 |
 | 边界条件回归后影响后续 Step | 用异常输入、重复调用、关闭/超时/缺失依赖等用例覆盖边界 |
 | 上下游调用关系被后续重构改坏 | 保留跨模块测试、smoke 验证或协议字段测试 |
 
@@ -359,9 +376,12 @@ tests/service/auth_service_test.cpp
 - 注册成功会生成 salt/hash，且 hash 不等于明文密码。
 - 重复用户名注册返回 `AlreadyExists`。
 - 正确密码登录成功会返回 `LoginResponse`，清除失败计数，写在线状态，绑定 session。
+- 登出成功会返回 `LogoutResponse`，解除 session 绑定并清理在线状态。
+- 未携带 session 的登出请求返回 `InvalidArgument`。
 - 错误密码登录失败会记录 Redis 登录失败次数，且不绑定 session。
 - 连续错误密码达到阈值后，正确密码也会被短时间拒绝。
 - MySQL + Redis 集成路径：真实 `MySqlStorage` / `RedisCache` 下注册、登录、在线状态和 session 绑定可用；本地依赖不可用时按现有规则 skip。
+- logout 单元路径：当前 session 解绑、Redis 在线态清理和无 session 错误语义可验证。
 
 关键验证命令：
 
@@ -396,11 +416,11 @@ timeout 1s ./build/server/liteim_server || test $? -eq 124
 
 ### 一句话
 
-本 Step 的核心是把 `AuthService 注册登录` 做成边界清楚、可测试、可继续扩展的一层。
+本 Step 的核心是把 `AuthService 注册登录登出` 做成边界清楚、可测试、可继续扩展的一层。
 
 ### 展开说
 
-围绕为什么需要 `AuthService 注册登录`、它依赖哪些前置 Step、它暴露什么接口、失败时怎么返回、线程和生命周期边界在哪里展开。
+围绕为什么需要 `AuthService 注册登录登出`、它依赖哪些前置 Step、它暴露什么接口、失败时怎么返回、线程和生命周期边界在哪里展开。
 
 ### 容易被追问
 

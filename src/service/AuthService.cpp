@@ -172,7 +172,7 @@ AuthService::AuthService(IStorage& storage, ICache& cache, OnlineService& online
     }
 }
 
-// 注册 登录/注册handler
+// 注册、登录和登出 handler
 Status AuthService::registerHandlers(MessageRouter& router) {
     const auto register_status = router.registerHandler(
         MessageType::RegisterRequest,
@@ -184,10 +184,20 @@ Status AuthService::registerHandlers(MessageRouter& router) {
         return register_status;
     }
 
-    return router.registerHandler(
+    const auto login_status = router.registerHandler(
         MessageType::LoginRequest,
         [this](const MessageRouter::RouterRequest& request, Packet& response) {
             return handleLogin(request, response);
+        },
+        MessageRouter::DispatchMode::BusinessThread);
+    if (!login_status.isOk()) {
+        return login_status;
+    }
+
+    return router.registerHandler(
+        MessageType::LogoutRequest,
+        [this](const MessageRouter::RouterRequest& request, Packet& response) {
+            return handleLogout(request, response);
         },
         MessageRouter::DispatchMode::BusinessThread);
 }
@@ -328,6 +338,21 @@ Status AuthService::handleLogin(const MessageRouter::RouterRequest& request, Pac
     response.header.msg_type = MessageType::LoginResponse;
     response.header.seq_id = request.packet.header.seq_id;
     return appendLoginFields(user, request.session->id(), response);
+}
+
+Status AuthService::handleLogout(const MessageRouter::RouterRequest& request, Packet& response) {
+    if (request.session == nullptr) {
+        return Status::error(ErrorCode::InvalidArgument, "session must not be null");
+    }
+
+    const auto unbind_status = online_service_.unbindSession(request.session->id());
+    if (!unbind_status.isOk()) {
+        return unbind_status;
+    }
+
+    response.header.msg_type = MessageType::LogoutResponse;
+    response.header.seq_id = request.packet.header.seq_id;
+    return appendUint64(TlvType::SessionId, request.session->id(), response.body);
 }
 
 const AuthServiceOptions& AuthService::options() const noexcept {

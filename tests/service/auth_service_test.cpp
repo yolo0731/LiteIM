@@ -460,6 +460,10 @@ TEST(AuthServiceTest, HeaderIsSelfContained) {
                                  liteim::Status (Service::*)(
                                      const liteim::MessageRouter::RouterRequest&,
                                      liteim::Packet&)>);
+    static_assert(std::is_same_v<decltype(&Service::handleLogout),
+                                 liteim::Status (Service::*)(
+                                     const liteim::MessageRouter::RouterRequest&,
+                                     liteim::Packet&)>);
 }
 
 TEST_F(AuthServiceFixture, RegisterCreatesSaltedHashAndReturnsUserFields) {
@@ -565,6 +569,42 @@ TEST_F(AuthServiceFixture, LoginWithCorrectPasswordBindsSessionWritesOnlineAndCl
     EXPECT_EQ(bound_user_id, storage.users_by_name["alice"].user_id);
     ASSERT_EQ(cache.online_sessions.count(bound_user_id), 1U);
     EXPECT_EQ(cache.online_sessions[bound_user_id].session_id, session->id());
+}
+
+TEST_F(AuthServiceFixture, LogoutUnbindsSessionClearsOnlineAndReturnsResponse) {
+    auto session = makeSession(loop, 5001);
+    ASSERT_TRUE(registerUser(session, "alice", "secret").isOk());
+
+    auto login_request =
+        requestFor(session, liteim::MessageType::LoginRequest, authBody("alice", "secret"));
+    liteim::Packet login_response;
+    ASSERT_TRUE(service.handleLogin(login_request, login_response).isOk());
+    const auto user_id = storage.users_by_name["alice"].user_id;
+    ASSERT_EQ(cache.online_sessions.count(user_id), 1U);
+
+    auto logout_request =
+        requestFor(session, liteim::MessageType::LogoutRequest, liteim::Bytes{});
+    liteim::Packet logout_response;
+    const auto status = service.handleLogout(logout_request, logout_response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(logout_response.header.msg_type, liteim::MessageType::LogoutResponse);
+    EXPECT_EQ(logout_response.header.seq_id, 7U);
+    EXPECT_EQ(uint64Field(logout_response, liteim::TlvType::SessionId), session->id());
+    std::uint64_t bound_user_id = 0;
+    EXPECT_EQ(sessions.getUserBySession(session->id(), bound_user_id).code(),
+              liteim::ErrorCode::NotFound);
+    EXPECT_EQ(cache.online_sessions.count(user_id), 0U);
+}
+
+TEST_F(AuthServiceFixture, LogoutWithoutSessionReturnsInvalidArgument) {
+    auto request = requestFor(nullptr, liteim::MessageType::LogoutRequest, liteim::Bytes{});
+    liteim::Packet response;
+
+    const auto status = service.handleLogout(request, response);
+
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
 }
 
 TEST_F(AuthServiceFixture, WrongPasswordRecordsFailureAndDoesNotBindSession) {

@@ -8,6 +8,23 @@
 - `LiteIM/docs/process/task_plan.md`、`LiteIM/docs/process/findings.md` 和 `LiteIM/docs/process/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
+## 2026-05-20 Post-Step58 Final Project Audit Findings
+
+当前审阅边界：
+
+- 本次是 Step58 完成后的第一版项目总审阅，目标是检查代码错误、Markdown 与代码不一致、未使用变量/函数、无用文件和生成物污染。
+- 审阅时不能把未来 PersonaAgent / BotClient 写成已实现；当前 LiteIM 只有 C++ server、CLI、Qt demo、benchmark 和 Python E2E helper。
+- 发现一个真实协议/代码不一致：`MessageType` 已定义并分类 `LogoutRequest = 104` / `LogoutResponse = 105`，但 `AuthService::registerHandlers()` 没有注册 logout handler，CLI 和 E2E 也不能发送 logout。
+- 采用最小修复：不新增协议号、不改数据库 schema，直接让 `LogoutRequest` 走 `AuthService::handleLogout()`，调用 `OnlineService::unbindSession(session_id)`，返回带 `SessionId` 的 `LogoutResponse`。
+- 退出语义保持第一版简单模型：logout 是当前 TCP session 的应用层解绑，不签发 token，不做跨设备登出，也不关闭 socket。
+- CLI 增加 `logout` 命令；Python E2E 增加 `logout()` helper，并验证 logout 后需要登录态的好友列表请求返回 `ErrorResponse`。
+
+验证关注：
+
+- `AuthService` 单测必须覆盖 logout 解绑、Redis 在线态清理和无 session 错误。
+- E2E 必须走真实 `liteim_server`，防止只测到 direct service API 而遗漏 `registerHandlers()`。
+- README、Step34、Step41 和 process 文件必须同步当前 auth/CLI 行为，避免继续写“只支持 register/login”。
+
 ## 2026-05-20 Step 58 Final README Showcase Findings
 
 当前采用的边界：
@@ -562,7 +579,7 @@ GitHub CI 对 LiteIM 有价值，但不需要拆成单独 Step。它的职责是
 已经确认并采用的设计：
 
 - `AuthService` 位于 `liteim_service`，依赖 `IStorage`、`ICache` 和 `OnlineService`，不直接依赖具体 DAO/cache 组件。
-- `RegisterRequest` / `LoginRequest` 通过 `AuthService::registerHandlers()` 注册到 `MessageRouter`，dispatch mode 固定为 `BusinessThread`。
+- `RegisterRequest` / `LoginRequest` 通过 `AuthService::registerHandlers()` 注册到 `MessageRouter`，dispatch mode 固定为 `BusinessThread`。Post-Step58 final audit 已把协议里早已定义的 `LogoutRequest` / `LogoutResponse` 也接入 `AuthService` 和 CLI。
 - 密码哈希使用 OpenSSL `PBKDF2-HMAC-SHA256`，注册时生成 16 字节随机 salt，MySQL 保存 hex salt 和 hex hash。
 - 注册请求读取 `Username`、`Password`，`Nickname` 可选；缺失 nickname 时默认使用 username。
 - 注册成功返回 `RegisterResponse`，body 写入 `UserId`、`Username`、`Nickname`。
@@ -1985,7 +2002,7 @@ Step 13 只实现 `Acceptor` 非阻塞监听器。
 - 从交互 stdin 或管道 stdin 读取命令，构造普通 TLV `Packet` 后发送。
 - 后台接收线程持续读取服务器 response / push 并打印解码后的字段。
 - 后台心跳线程每 30 秒发送 `HeartbeatRequest`；手动 `heartbeat` 命令也可直接发一次。
-- 命令覆盖 register/login/add-friend/friends/private/create-group/join-group/groups/group/history/offline/heartbeat/help/quit。
+- 命令覆盖 register/login/logout/add-friend/accept-friend/reject-friend/friends/private/private-id/create-group/join-group/groups/group/history/offline/offline-ack/delivery-ack/heartbeat/help/quit。Step41 第一版命令集在后续可靠性和 Post-Step58 audit 中持续补齐，但仍保持普通 TLV 调试客户端边界。
 
 TDD RED：
 

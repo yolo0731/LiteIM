@@ -35,6 +35,8 @@ class MessageType(enum.IntEnum):
     REGISTER_RESPONSE = 101
     LOGIN_REQUEST = 102
     LOGIN_RESPONSE = 103
+    LOGOUT_REQUEST = 104
+    LOGOUT_RESPONSE = 105
     ADD_FRIEND_REQUEST = 200
     ADD_FRIEND_RESPONSE = 201
     LIST_FRIENDS_REQUEST = 202
@@ -372,6 +374,9 @@ class LiteIMClient:
         self.register(username, password, username)
         login = self.login(username, password)
         return login.uint64(TlvType.USER_ID)
+
+    def logout(self) -> Packet:
+        return self.request(MessageType.LOGOUT_REQUEST, expected=MessageType.LOGOUT_RESPONSE)
 
     def heartbeat(self) -> Packet:
         return self.request(MessageType.HEARTBEAT_REQUEST, expected=MessageType.HEARTBEAT_RESPONSE)

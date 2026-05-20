@@ -28,7 +28,7 @@ Step 41 的作用是：
 - 新增 `describePacket()`，把 response / push TLV 字段打印成人可读文本。
 - 新增 `ProtocolClient`，提供阻塞 TCP `connectTo()`、`sendPacket()`、`readPacket()` 和 `close()`。
 - 新增 `liteim_cli` 入口，支持 `--host` / `--port`。
-- 支持 register、login、add-friend、accept-friend、reject-friend、friends、private、private-id、create-group、join-group、groups、group、history、offline、offline-ack、delivery-ack、heartbeat、help、quit。
+- 支持 register、login、logout、add-friend、accept-friend、reject-friend、friends、private、private-id、create-group、join-group、groups、group、history、offline、offline-ack、delivery-ack、heartbeat、help、quit。
 - 新增 CLI 单元测试和本地 loopback TCP 发送测试。
 
 ### 本 Step 不做
@@ -136,6 +136,7 @@ public:
 ```text
 register cli_alice secret CLI Alice
 login cli_alice secret
+logout
 private 1002 hello bob
 ```
 
@@ -144,7 +145,7 @@ private 1002 hello bob
 ```text
 stdin line
     -> buildPacketFromLine()
-    -> Packet(LoginRequest / PrivateMessageRequest)
+    -> Packet(LoginRequest / LogoutRequest / PrivateMessageRequest)
     -> ProtocolClient::sendPacket()
     -> liteim_server MessageRouter
     -> AuthService / ChatService business handler
@@ -187,6 +188,7 @@ CLI 不新增协议。比如：
 
 ```text
 friends       -> ListFriendsRequest
+logout        -> LogoutRequest
 accept-friend 1001
               -> AcceptFriendRequest + TargetUserId(requester_id)
 reject-friend 1001
@@ -228,6 +230,7 @@ delivery-ack 5001
 | 风险 | 测试覆盖 |
 | --- | --- |
 | login 命令 TLV 错误 | 断言 `LoginRequest` 包含 `Username` / `Password` |
+| logout 命令误注册但 CLI 不能构造 | 断言 `logout` 生成空 body 的 `LogoutRequest` |
 | 私聊正文丢失空格 | 断言 `private 1002 hello bob from cli` 的 `MessageText` 保留完整文本 |
 | 私聊幂等字段漏带 | 断言 `private-id 1002 cli-msg-1 hello bob` 生成 `ClientMessageId` 和 `MessageText` |
 | history 游标字段错配 | 断言 group history 生成 `ConversationType` / `ConversationId` / `Limit` / `MessageId` |

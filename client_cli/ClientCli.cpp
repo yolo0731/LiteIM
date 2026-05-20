@@ -507,6 +507,10 @@ Status buildPacketFromLine(const std::string& line, std::uint64_t seq_id, Packet
     if (command == "login") {
         return buildLogin(stream, seq_id, packet);
     }
+    if (command == "logout") {
+        resetPacket(MessageType::LogoutRequest, seq_id, packet);
+        return Status::ok();
+    }
     if (command == "add-friend") {
         return buildOneIdCommand(stream, seq_id, MessageType::AddFriendRequest,
                                  TlvType::TargetUserId, "target_user_id", packet);
@@ -609,6 +613,7 @@ std::string helpText() {
     return R"(commands:
   register <username> <password> [nickname...]
   login <username> <password>
+  logout
   add-friend <user_id>
   accept-friend <requester_id>
   reject-friend <requester_id>

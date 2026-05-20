@@ -22,6 +22,15 @@ class AuthE2ETest(E2ETestCase):
             friends = client.list_friends()
             self.assertEqual(friends.msg_type, MessageType.LIST_FRIENDS_RESPONSE)
 
+            logout = client.logout()
+            self.assertEqual(logout.msg_type, MessageType.LOGOUT_RESPONSE)
+            self.assertEqual(logout.uint64(TlvType.SESSION_ID), login.uint64(TlvType.SESSION_ID))
+
+            after_logout = client.request(
+                MessageType.LIST_FRIENDS_REQUEST, expected=MessageType.ERROR_RESPONSE
+            )
+            self.assertEqual(after_logout.msg_type, MessageType.ERROR_RESPONSE)
+
     def test_wrong_password_and_login_limiter_return_errors(self):
         username = unique_name("limited")
         password = "secret"

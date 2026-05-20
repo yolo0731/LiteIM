@@ -1,5 +1,35 @@
 # LiteIM Progress
 
+## 2026-05-20 Post-Step58 Final Project Audit
+
+本次在 Step58 完成后审阅项目第一版完成态，范围包括代码、Markdown、协议/handler 对齐、未使用表面、生成物和文件夹清洁度。
+
+当前发现和修复：
+
+- 发现 `MessageType::LogoutRequest` / `LogoutResponse` 已在协议层定义、字符串化和 request/response 分类中存在，但服务端没有注册 logout handler，导致真实 E2E 会返回 `ErrorResponse(no message handler registered)`。
+- 采用最小修复：新增 `AuthService::handleLogout()`，通过 `OnlineService::unbindSession(session_id)` 解除当前 session 绑定并清理 Redis 在线态，返回带 `SessionId` 的 `LogoutResponse`。
+- `AuthService::registerHandlers()` 现在注册 Register / Login / Logout 三个 business-thread handler。
+- CLI 新增 `logout` 命令，Python E2E helper 新增 `logout()`，`test_auth` 验证 logout 后需要登录态的请求会失败。
+- README、Step34、Step41、process 文件已同步当前 auth/CLI 行为。
+
+当前验证：
+
+- RED：`cmake --build build --target liteim_tests -j2` 先按预期失败于缺少 `AuthService::handleLogout()`。
+- GREEN：`cmake --build build --target liteim_tests -j2` 已通过。
+- `ctest --test-dir build -R "AuthService|ClientCliCommandTest|LiteIME2E.test_auth|MessageType" --output-on-failure` 首次失败于旧 `liteim_server` 二进制未重建，E2E 返回 `no message handler registered`。
+- 重建 `liteim_server` 后 `ctest --test-dir build -R "LiteIME2E.test_auth" --output-on-failure` 已通过。
+- `cmake -S . -B /tmp/liteim-review-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS='-Wall -Wextra -Wpedantic' && cmake --build /tmp/liteim-review-build --target liteim_tests liteim_server liteim_bench -j2`：通过，无项目源码 warning。
+- `cmake --build build --target liteim_tests liteim_server liteim_bench -j2`：通过。
+- `docker compose -f docker/docker-compose.yml up -d --wait`：MySQL / Redis healthy。
+- `ctest --test-dir build --output-on-failure`：通过，414/414。
+- `cmake --build build-qt --target liteim_qt_client_tests liteim_qt_client -j2`：通过。
+- `ctest --test-dir build-qt -R "LiteIMQtClient.Step46|LiteIMQtClient.Step47|LiteIMQtClient.Step48|LiteIMQtClient.Step49|LiteIMQtClient.Step50|LiteIMQtClient.Step51|LiteIMQtClient.Step52|LiteIMCMake.QtClientFoundation" --output-on-failure`：通过，8/8。
+- `python3 -m compileall -q tests/e2e`：通过；随后删除生成的 `tests/e2e/__pycache__/`。
+- 教程标题脚本检查：所有 `docs/tutorials/step*.md` 维持 0-10 结构，最后主章节是 `面试常见追问`。
+- 旧路线路径和临时文件扫描：没有真实 `server/net`、`server/protocol`、`*SQLite*`、`*InMemory*`、`*step15_sqlite*`、`*.tmp`、`*.bak`、`*.orig`、`.DS_Store` 或 editor swap 文件。
+- `git diff --check`：通过。
+- `git status --ignored --short`：只剩本次修改文件和已忽略的 `build/`、`build-qt/`、`build-asan/` 构建目录。
+
 ## 2026-05-20 Step 58 Final README Showcase Materials
 
 本次完成 `Step 58：最终 README、架构图、Qt 截图、面试说明和压测报告`。
@@ -1135,10 +1165,10 @@ TDD 过程：
 已完成代码：
 
 - `AuthServiceOptions` 提供登录失败阈值、失败窗口 TTL 和当前默认 remote_ip。
-- `AuthService::registerHandlers()` 将 `RegisterRequest` / `LoginRequest` 注册为 `BusinessThread` handler。
+- `AuthService::registerHandlers()` 最初将 `RegisterRequest` / `LoginRequest` 注册为 `BusinessThread` handler；Post-Step58 audit 已把协议里已定义的 `LogoutRequest` 也接入同一 business-thread auth handler。
 - 注册流程解析 `Username` / `Password` / 可选 `Nickname`，生成 salt，使用 `PBKDF2-HMAC-SHA256` 生成密码 hash，调用 `IStorage::createUser()`，返回 `RegisterResponse`。
 - 登录流程先检查 Redis 登录失败限制，再查 MySQL 用户、验证密码、失败时记录失败次数、成功时清除失败计数并调用 `OnlineService::bindUser()`。
-- `server/main.cpp` 现在启动 `MySqlPool`、`RedisPool`、`MySqlStorage`、`RedisCache`、`SessionManager`、`OnlineService` 和 `AuthService`，并把注册/登录 handler 接到 `MessageRouter`。
+- `server/main.cpp` 现在启动 `MySqlPool`、`RedisPool`、`MySqlStorage`、`RedisCache`、`SessionManager`、`OnlineService` 和 `AuthService`，并把注册/登录/登出 handler 接到 `MessageRouter`。
 
 当前验证：
 
@@ -3768,7 +3798,7 @@ TDD RED：
 代码完成：
 
 - 新增 `client_cli/CMakeLists.txt`，生成 `liteim_client_cli` 静态库和 `liteim_cli` 可执行文件。
-- 新增 `buildPacketFromLine()`，支持 register/login/add-friend/friends/private/create-group/join-group/groups/group/history/offline/heartbeat 命令构造普通 TLV `Packet`。
+- 新增 `buildPacketFromLine()`，Step41 第一版支持 register/login/add-friend/friends/private/create-group/join-group/groups/group/history/offline/heartbeat 命令；后续可靠性和 Post-Step58 audit 已补 register/login/logout/add-friend/accept-friend/reject-friend/friends/private/private-id/create-group/join-group/groups/group/history/offline/offline-ack/delivery-ack/heartbeat 命令构造普通 TLV `Packet`。
 - 新增 `describePacket()`，把 response / push 中常见 TLV 字段打印成人可读调试文本。
 - 新增 `ProtocolClient`，提供阻塞 TCP connect/send/read/close，`close()` 使用 `shutdown()` 方便退出时打断接收线程。
 - 新增 `client_cli/main.cpp`，支持 `--host` / `--port`、交互/stdin 命令、后台接收线程和 30 秒心跳线程。
