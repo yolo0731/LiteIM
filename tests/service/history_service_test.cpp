@@ -356,6 +356,12 @@ public:
         return liteim::Status::ok();
     }
 
+    liteim::Status ackPrivateMessageDelivery(std::uint64_t, std::uint64_t,
+                                             liteim::MessageRecord&) override {
+        return liteim::Status::error(liteim::ErrorCode::NotFound,
+                                     "private message delivery target was not found");
+    }
+
     liteim::Status getHistory(const liteim::HistoryQuery& query,
                               std::vector<liteim::MessageRecord>& messages) override {
         ++get_history_calls;

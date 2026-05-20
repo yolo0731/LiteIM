@@ -53,6 +53,8 @@ public:
     Status ackOfflineMessages(std::uint64_t user_id,
                               const std::vector<std::uint64_t>& message_ids,
                               std::vector<OfflineMessageRecord>& acked_messages) override;
+    Status ackPrivateMessageDelivery(std::uint64_t user_id, std::uint64_t message_id,
+                                     MessageRecord& message) override;
     Status getHistory(const HistoryQuery& query, std::vector<MessageRecord>& messages) override;
 
 private:

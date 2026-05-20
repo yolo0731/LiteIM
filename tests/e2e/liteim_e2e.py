@@ -57,6 +57,8 @@ class MessageType(enum.IntEnum):
     HISTORY_RESPONSE = 503
     OFFLINE_MESSAGES_ACK_REQUEST = 504
     OFFLINE_MESSAGES_ACK_RESPONSE = 505
+    DELIVERY_ACK_REQUEST = 506
+    DELIVERY_ACK_RESPONSE = 507
     ERROR_RESPONSE = 900
 
 
@@ -449,6 +451,17 @@ class LiteIMClient:
             MessageType.OFFLINE_MESSAGES_ACK_REQUEST,
             [_uint64_field(TlvType.MESSAGE_ID, message_id) for message_id in message_ids],
             MessageType.OFFLINE_MESSAGES_ACK_RESPONSE,
+        )
+
+    def delivery_ack(
+        self,
+        message_id: int,
+        expected: MessageType = MessageType.DELIVERY_ACK_RESPONSE,
+    ) -> Packet:
+        return self.request(
+            MessageType.DELIVERY_ACK_REQUEST,
+            [_uint64_field(TlvType.MESSAGE_ID, message_id)],
+            expected,
         )
 
     def closed_by_peer(self, timeout: float) -> bool:

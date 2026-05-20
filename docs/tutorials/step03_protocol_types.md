@@ -171,6 +171,8 @@ push 分组：PrivateMessagePush / GroupMessagePush
 
 Alice (`user_id=1001`) 给 Bob (`user_id=1002`) 发私聊时，客户端会使用 `MessageType::PrivateMessageRequest`；服务端确认后返回 `MessageType::PrivateMessageResponse`；如果 Bob 在线，还会给 Bob 推送 `MessageType::PrivateMessagePush`。同一个请求可以带 `seq_id=7`，让客户端把响应和发送中的消息气泡对应起来。新客户端还可以在 body 里带 `TlvType::ClientMessageId = "cli-msg-1"`，用于网络重试时让服务端识别同一条业务消息。
 
+Step55 之后，Bob 客户端收到 `PrivateMessagePush(message_id=5001)` 后，可以再发送 `MessageType::DeliveryAckRequest`，请求体携带 `TlvType::MessageId = 5001`。服务端验证 Bob 是这条私聊消息的 receiver 后，返回 `DeliveryAckResponse`，并在 body 中带 `DeliveryStatus = 2` 表示 delivered。
+
 ## 6. 关键实现点
 
 ### MessageType 设计
@@ -216,6 +218,8 @@ enum class MessageType : std::uint16_t {
     HistoryResponse = 503,
     OfflineMessagesAckRequest = 504,
     OfflineMessagesAckResponse = 505,
+    DeliveryAckRequest = 506,
+    DeliveryAckResponse = 507,
 
     ErrorResponse = 900,
 };

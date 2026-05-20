@@ -90,6 +90,44 @@ void cleanupPre31Rows(const liteim::MySqlConfig& config) {
     executeCleanupSql(connection, "DELETE FROM users WHERE username LIKE 'pre31\\_%'");
 }
 
+liteim::Status findDeliveryStatus(const liteim::MySqlConfig& config, std::uint64_t message_id,
+                                  std::uint64_t user_id, std::uint64_t& status) {
+    status = 0;
+    liteim::MySqlConnection connection;
+    const auto connect_status = connection.connect(config);
+    if (!connect_status.isOk()) {
+        return connect_status;
+    }
+
+    liteim::PreparedStatement statement(connection);
+    const auto prepare_status =
+        statement.prepare("SELECT status FROM message_deliveries "
+                          "WHERE message_id = ? AND user_id = ? LIMIT 1");
+    if (!prepare_status.isOk()) {
+        return prepare_status;
+    }
+    const auto message_status = statement.bindUInt64(0, message_id);
+    if (!message_status.isOk()) {
+        return message_status;
+    }
+    const auto user_status = statement.bindUInt64(1, user_id);
+    if (!user_status.isOk()) {
+        return user_status;
+    }
+
+    liteim::MySqlQueryResult result;
+    const auto query_status = statement.executeQuery(result);
+    if (!query_status.isOk()) {
+        return query_status;
+    }
+    if (result.rows().empty()) {
+        return liteim::Status::error(liteim::ErrorCode::NotFound,
+                                     "delivery state was not found");
+    }
+    status = static_cast<std::uint64_t>(std::stoull(*result.rows().front().values.front()));
+    return liteim::Status::ok();
+}
+
 class MySqlStorageIntegrationTest : public ::testing::Test {
 protected:
     void SetUp() override {
@@ -263,6 +301,51 @@ TEST_F(MySqlStorageIntegrationTest, ClientMessageIdCanFindExistingSenderMessage)
     EXPECT_EQ(existing.message_id, saved.message_id);
     EXPECT_EQ(existing.client_msg_id, message.client_msg_id);
     EXPECT_EQ(existing.text, message.text);
+
+    std::vector<liteim::MessageRecord> history;
+    liteim::HistoryQuery query;
+    query.conversation = message.conversation;
+    query.limit = 10;
+    ASSERT_TRUE(storage->getHistory(query, history).isOk());
+    ASSERT_EQ(history.size(), 1U);
+    EXPECT_EQ(history.front().message_id, saved.message_id);
+}
+
+TEST_F(MySqlStorageIntegrationTest, PrivateDeliveryAckMarksDeliveredAndRejectsNonReceiver) {
+    const auto sender = createUser();
+    const auto receiver = createUser();
+    const auto intruder = createUser();
+    const auto message = makePrivateMessage(sender, receiver, uniqueConversationId(),
+                                            uniqueMessageText("delivery_ack"));
+
+    liteim::MessageRecord saved;
+    const auto save_status = storage->saveMessageWithOfflineRecipients(message, {}, saved);
+    ASSERT_TRUE(save_status.isOk()) << save_status.message();
+
+    liteim::MessageRecord acked;
+    const auto ack_status =
+        storage->ackPrivateMessageDelivery(receiver.user_id, saved.message_id, acked);
+    ASSERT_TRUE(ack_status.isOk()) << ack_status.message();
+    EXPECT_EQ(acked.message_id, saved.message_id);
+    EXPECT_EQ(acked.receiver_id, receiver.user_id);
+
+    std::uint64_t status = 0;
+    const auto status_query =
+        findDeliveryStatus(config, saved.message_id, receiver.user_id, status);
+    ASSERT_TRUE(status_query.isOk()) << status_query.message();
+    EXPECT_EQ(status, static_cast<std::uint64_t>(liteim::DeliveryStatus::kDelivered));
+
+    liteim::MessageRecord duplicate;
+    const auto duplicate_status =
+        storage->ackPrivateMessageDelivery(receiver.user_id, saved.message_id, duplicate);
+    ASSERT_TRUE(duplicate_status.isOk()) << duplicate_status.message();
+    EXPECT_EQ(duplicate.message_id, saved.message_id);
+
+    liteim::MessageRecord rejected;
+    const auto rejected_status =
+        storage->ackPrivateMessageDelivery(intruder.user_id, saved.message_id, rejected);
+    ASSERT_FALSE(rejected_status.isOk());
+    EXPECT_EQ(rejected_status.code(), liteim::ErrorCode::NotFound);
 
     std::vector<liteim::MessageRecord> history;
     liteim::HistoryQuery query;

@@ -28,14 +28,14 @@ Step 41 的作用是：
 - 新增 `describePacket()`，把 response / push TLV 字段打印成人可读文本。
 - 新增 `ProtocolClient`，提供阻塞 TCP `connectTo()`、`sendPacket()`、`readPacket()` 和 `close()`。
 - 新增 `liteim_cli` 入口，支持 `--host` / `--port`。
-- 支持 register、login、add-friend、friends、private、private-id、create-group、join-group、groups、group、history、offline、offline-ack、heartbeat、help、quit。
+- 支持 register、login、add-friend、friends、private、private-id、create-group、join-group、groups、group、history、offline、offline-ack、delivery-ack、heartbeat、help、quit。
 - 新增 CLI 单元测试和本地 loopback TCP 发送测试。
 
 ### 本 Step 不做
 
 - 不做 curses/TUI 图形化终端界面。
 - 不做本地联系人缓存、会话列表持久化或消息数据库。
-- 不做自动重连、断点续传或私聊在线 delivery ACK。Step 53 之后 CLI 已支持离线消息 `offline-ack`；Step 54 之后 CLI 已支持带 `client_msg_id` 的 `private-id` 调试命令。
+- 不做自动重连、断点续传或 read receipt。Step 53 之后 CLI 已支持离线消息 `offline-ack`；Step 54 之后 CLI 已支持带 `client_msg_id` 的 `private-id` 调试命令；Step 55 之后 CLI 已支持私聊接收方 `delivery-ack`。
 - 不做 PersonaAgent BotClient、Qt 客户端 或 benchmark。
 - 不改变服务端协议类型、TLV 字段或业务 handler。
 
@@ -195,6 +195,8 @@ offline-ack 5001 5002
               -> OfflineMessagesAckRequest + repeated MessageId
 private-id 1002 cli-msg-1 hello
               -> PrivateMessageRequest + ReceiverId + ClientMessageId + MessageText
+delivery-ack 5001
+              -> DeliveryAckRequest + MessageId
 ```
 
 这样 CLI 先固定一套普通账号协议；后续 Qt Client 和 PersonaAgent BotClient 必须复用这套协议，而不是让服务端为外部 Agent 增加专用分支。
@@ -226,6 +228,7 @@ private-id 1002 cli-msg-1 hello
 | 私聊幂等字段漏带 | 断言 `private-id 1002 cli-msg-1 hello bob` 生成 `ClientMessageId` 和 `MessageText` |
 | history 游标字段错配 | 断言 group history 生成 `ConversationType` / `ConversationId` / `Limit` / `MessageId` |
 | offline ACK 字段错配 | 断言 `offline-ack 5001 5002` 生成 `OfflineMessagesAckRequest` 和重复 `MessageId` |
+| private delivery ACK 字段错配 | 断言 `delivery-ack 5001` 生成 `DeliveryAckRequest` 和 `MessageId` |
 | push 打印看不出关键字段 | 断言 `describePacket()` 包含 message id、sender、receiver、client message id 和 text |
 | TCP 编码发送失败 | loopback fake server 接收 CLI 发出的 `HeartbeatRequest` |
 

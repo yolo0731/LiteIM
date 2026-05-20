@@ -42,6 +42,8 @@ enum class MessageType : std::uint16_t {
     HistoryResponse = 503,
     OfflineMessagesAckRequest = 504,
     OfflineMessagesAckResponse = 505,
+    DeliveryAckRequest = 506,
+    DeliveryAckResponse = 507,
 
     ErrorResponse = 900,
 };

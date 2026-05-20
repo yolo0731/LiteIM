@@ -384,6 +384,22 @@ Status buildOfflineAck(std::istringstream& stream, std::uint64_t seq_id, Packet&
     return Status::ok();
 }
 
+Status buildDeliveryAck(std::istringstream& stream, std::uint64_t seq_id, Packet& packet) {
+    std::string token;
+    auto status = requireToken(stream, "message_id", token);
+    if (!status.isOk()) {
+        return status;
+    }
+    std::uint64_t message_id = 0;
+    status = parseUint64(token, "message_id", message_id);
+    if (!status.isOk()) {
+        return status;
+    }
+
+    resetPacket(MessageType::DeliveryAckRequest, seq_id, packet);
+    return appendUint64Field(TlvType::MessageId, message_id, packet);
+}
+
 // 这个函数负责从socket里解析出一个PacketHeader，保存在header参数里
 Status parseHeaderFromSocket(int fd, PacketHeader& header) {
     Bytes header_bytes(kPacketHeaderSize);
@@ -528,6 +544,9 @@ Status buildPacketFromLine(const std::string& line, std::uint64_t seq_id, Packet
     if (command == "offline-ack") {
         return buildOfflineAck(stream, seq_id, packet);
     }
+    if (command == "delivery-ack") {
+        return buildDeliveryAck(stream, seq_id, packet);
+    }
 
     return invalidCommand("unknown command: " + command);
 }
@@ -591,6 +610,7 @@ std::string helpText() {
   history private|group <conversation_id> [limit] [before_message_id]
   offline [limit]
   offline-ack <message_id> [message_id...]
+  delivery-ack <message_id>
   heartbeat
   help
   quit)";

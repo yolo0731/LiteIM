@@ -19,6 +19,7 @@ public:
     Status registerHandlers(MessageRouter& router);
     // 真正处理私聊消息
     Status handlePrivateMessage(const MessageRouter::RouterRequest& request, Packet& response);
+    Status handleDeliveryAck(const MessageRouter::RouterRequest& request, Packet& response);
 
 private:
     // 从 session 获取当前登录的 user_id

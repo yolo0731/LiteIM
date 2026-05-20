@@ -28,6 +28,7 @@
 #include <thread>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -71,6 +72,12 @@ liteim::Bytes privateMessageBody(std::uint64_t receiver_id, const std::string& t
         EXPECT_TRUE(liteim::appendString(liteim::TlvType::ClientMessageId, client_message_id, body)
                         .isOk());
     }
+    return body;
+}
+
+liteim::Bytes deliveryAckBody(std::uint64_t message_id) {
+    liteim::Bytes body;
+    EXPECT_TRUE(liteim::appendUint64(liteim::TlvType::MessageId, message_id, body).isOk());
     return body;
 }
 
@@ -269,6 +276,22 @@ public:
         return liteim::Status::ok();
     }
 
+    liteim::Status ackPrivateMessageDelivery(std::uint64_t user_id, std::uint64_t message_id,
+                                             liteim::MessageRecord& message) override {
+        ++ack_private_delivery_calls;
+        last_ack_user_id = user_id;
+        last_ack_message_id = message_id;
+        const auto it = messages_by_id.find(message_id);
+        if (it == messages_by_id.end() || it->second.receiver_id != user_id ||
+            it->second.conversation.type != liteim::ConversationType::kPrivate) {
+            return liteim::Status::error(liteim::ErrorCode::NotFound,
+                                         "private message delivery target was not found");
+        }
+        delivered_messages.insert(message_id);
+        message = it->second;
+        return liteim::Status::ok();
+    }
+
     liteim::Status addFriendship(std::uint64_t, std::uint64_t) override {
         return liteim::Status::ok();
     }
@@ -331,6 +354,7 @@ public:
         saved_message.message_id = next_message_id++;
         saved_message.created_at_ms = next_created_at_ms++;
         saved_messages.push_back(saved_message);
+        messages_by_id[saved_message.message_id] = saved_message;
         if (!saved_message.client_msg_id.empty()) {
             client_messages[clientKey(saved_message.sender_id, saved_message.client_msg_id)] =
                 saved_message;
@@ -376,22 +400,39 @@ public:
         users[user_id] = user;
     }
 
+    void addPrivateMessage(std::uint64_t message_id, std::uint64_t sender_id,
+                           std::uint64_t receiver_id) {
+        liteim::MessageRecord message;
+        message.message_id = message_id;
+        message.conversation = {liteim::ConversationType::kPrivate, 10011002};
+        message.sender_id = sender_id;
+        message.receiver_id = receiver_id;
+        message.text = "ack target";
+        message.created_at_ms = 1700000000999LL;
+        messages_by_id[message_id] = message;
+    }
+
     static std::string clientKey(std::uint64_t sender_id, const std::string& client_message_id) {
         return std::to_string(sender_id) + ":" + client_message_id;
     }
 
     std::unordered_map<std::uint64_t, liteim::UserRecord> users;
+    std::unordered_map<std::uint64_t, liteim::MessageRecord> messages_by_id;
     std::unordered_map<std::string, liteim::MessageRecord> client_messages;
+    std::unordered_set<std::uint64_t> delivered_messages;
     liteim::MessageRecord last_message;
     std::vector<std::uint64_t> last_offline_user_ids;
     std::vector<std::vector<std::uint64_t>> saved_offline_user_ids;
     std::vector<liteim::MessageRecord> saved_messages;
     std::string last_find_client_message_id;
     std::uint64_t last_find_sender_id{0};
+    std::uint64_t last_ack_user_id{0};
+    std::uint64_t last_ack_message_id{0};
     std::uint64_t next_message_id{5001};
     std::int64_t next_created_at_ms{1700000000000LL};
     int save_message_calls{0};
     int find_client_message_calls{0};
+    int ack_private_delivery_calls{0};
 };
 
 class FakeCache final : public liteim::ICache {
@@ -497,6 +538,12 @@ protected:
         return session;
     }
 
+    liteim::Session::Ptr bindBob(std::uint64_t session_id = 7002) {
+        auto session = makeSession(loop, session_id);
+        EXPECT_TRUE(online.bindUser(1002, session).isOk());
+        return session;
+    }
+
     liteim::EventLoop loop;
     FakeStorage storage;
     FakeCache cache;
@@ -516,6 +563,10 @@ TEST(ChatServiceTest, HeaderIsSelfContained) {
         std::is_same_v<decltype(&Service::registerHandlers),
                        liteim::Status (Service::*)(liteim::MessageRouter&)>);
     static_assert(std::is_same_v<decltype(&Service::handlePrivateMessage),
+                                 liteim::Status (Service::*)(
+                                     const liteim::MessageRouter::RouterRequest&,
+                                     liteim::Packet&)>);
+    static_assert(std::is_same_v<decltype(&Service::handleDeliveryAck),
                                  liteim::Status (Service::*)(
                                      const liteim::MessageRouter::RouterRequest&,
                                      liteim::Packet&)>);
@@ -694,6 +745,61 @@ TEST_F(ChatServiceFixture, OnlineReceiverGetsPushWithoutOfflineUnread) {
     EXPECT_EQ(uint64Field(*push, liteim::TlvType::ReceiverId), 1002U);
     EXPECT_EQ(stringField(*push, liteim::TlvType::MessageText), "online hello");
     EXPECT_EQ(uint64Field(*push, liteim::TlvType::TimestampMs), 1700000000000ULL);
+}
+
+TEST_F(ChatServiceFixture, DeliveryAckMarksPrivateMessageDeliveredForReceiver) {
+    storage.addPrivateMessage(5001, 1001, 1002);
+    auto bob = bindBob();
+    auto request = requestFor(bob, liteim::MessageType::DeliveryAckRequest, deliveryAckBody(5001));
+    liteim::Packet response;
+
+    const auto status = service.handleDeliveryAck(request, response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(storage.ack_private_delivery_calls, 1);
+    EXPECT_EQ(storage.last_ack_user_id, 1002U);
+    EXPECT_EQ(storage.last_ack_message_id, 5001U);
+    EXPECT_EQ(storage.delivered_messages.count(5001), 1U);
+    EXPECT_EQ(response.header.msg_type, liteim::MessageType::DeliveryAckResponse);
+    EXPECT_EQ(uint64Field(response, liteim::TlvType::MessageId), 5001U);
+    EXPECT_EQ(uint64Field(response, liteim::TlvType::DeliveryStatus),
+              static_cast<std::uint64_t>(liteim::DeliveryStatus::kDelivered));
+}
+
+TEST_F(ChatServiceFixture, DeliveryAckRejectsNonReceiver) {
+    storage.addPrivateMessage(5001, 1001, 1002);
+    auto alice = bindAlice();
+    auto request =
+        requestFor(alice, liteim::MessageType::DeliveryAckRequest, deliveryAckBody(5001));
+    liteim::Packet response;
+
+    const auto status = service.handleDeliveryAck(request, response);
+
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::NotFound);
+    EXPECT_EQ(storage.ack_private_delivery_calls, 1);
+    EXPECT_TRUE(storage.delivered_messages.empty());
+}
+
+TEST_F(ChatServiceFixture, DeliveryAckIsIdempotentForReceiver) {
+    storage.addPrivateMessage(5001, 1001, 1002);
+    auto bob = bindBob();
+    auto first_request =
+        requestFor(bob, liteim::MessageType::DeliveryAckRequest, deliveryAckBody(5001));
+    liteim::Packet first_response;
+    ASSERT_TRUE(service.handleDeliveryAck(first_request, first_response).isOk());
+
+    auto duplicate_request =
+        requestFor(bob, liteim::MessageType::DeliveryAckRequest, deliveryAckBody(5001));
+    liteim::Packet duplicate_response;
+    const auto duplicate_status = service.handleDeliveryAck(duplicate_request, duplicate_response);
+
+    ASSERT_TRUE(duplicate_status.isOk()) << duplicate_status.message();
+    EXPECT_EQ(storage.ack_private_delivery_calls, 2);
+    EXPECT_EQ(storage.delivered_messages.count(5001), 1U);
+    EXPECT_EQ(uint64Field(duplicate_response, liteim::TlvType::MessageId), 5001U);
+    EXPECT_EQ(uint64Field(duplicate_response, liteim::TlvType::DeliveryStatus),
+              static_cast<std::uint64_t>(liteim::DeliveryStatus::kDelivered));
 }
 
 TEST_F(ChatServiceFixture, RegisteredHandlerSendsSenderResponseThroughRouter) {

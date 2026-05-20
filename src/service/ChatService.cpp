@@ -33,6 +33,10 @@ Status emptyClientMessageIdStatus() {
     return Status::error(ErrorCode::InvalidArgument, "client message id must not be empty");
 }
 
+Status invalidMessageIdStatus() {
+    return Status::error(ErrorCode::InvalidArgument, "message id is invalid");
+}
+
 // 用两个用户 ID 生成一个私聊会话 ID
 Status privateConversationId(std::uint64_t sender_id, std::uint64_t receiver_id,
                              std::uint64_t& conversation_id) {
@@ -64,10 +68,20 @@ ChatService::ChatService(IStorage& storage, ICache& cache, OnlineService& online
       online_service_(online_service) {}
 
 Status ChatService::registerHandlers(MessageRouter& router) {
-    return router.registerHandler(
+    const auto private_status = router.registerHandler(
         MessageType::PrivateMessageRequest,
         [this](const MessageRouter::RouterRequest& request, Packet& response) {
             return handlePrivateMessage(request, response);
+        },
+        MessageRouter::DispatchMode::BusinessThread);
+    if (!private_status.isOk()) {
+        return private_status;
+    }
+
+    return router.registerHandler(
+        MessageType::DeliveryAckRequest,
+        [this](const MessageRouter::RouterRequest& request, Packet& response) {
+            return handleDeliveryAck(request, response);
         },
         MessageRouter::DispatchMode::BusinessThread);
 }
@@ -204,6 +218,39 @@ Status ChatService::handlePrivateMessage(const MessageRouter::RouterRequest& req
     response.header.msg_type = MessageType::PrivateMessageResponse;
     response.header.seq_id = request.packet.header.seq_id;
     return appendMessageFields(saved_message, response);
+}
+
+Status ChatService::handleDeliveryAck(const MessageRouter::RouterRequest& request,
+                                      Packet& response) {
+    std::uint64_t user_id = 0;
+    const auto user_status = currentUserId(request, user_id);
+    if (!user_status.isOk()) {
+        return user_status;
+    }
+
+    std::uint64_t message_id = 0;
+    const auto message_status = getUint64(request.fields, TlvType::MessageId, message_id);
+    if (!message_status.isOk()) {
+        return message_status;
+    }
+    if (message_id == 0U) {
+        return invalidMessageIdStatus();
+    }
+
+    MessageRecord message;
+    const auto ack_status = storage_.ackPrivateMessageDelivery(user_id, message_id, message);
+    if (!ack_status.isOk()) {
+        return ack_status;
+    }
+
+    response.header.msg_type = MessageType::DeliveryAckResponse;
+    response.header.seq_id = request.packet.header.seq_id;
+    const auto id_status = appendUint64(TlvType::MessageId, message.message_id, response.body);
+    if (!id_status.isOk()) {
+        return id_status;
+    }
+    return appendUint64(TlvType::DeliveryStatus,
+                        static_cast<std::uint64_t>(DeliveryStatus::kDelivered), response.body);
 }
 
 Status ChatService::currentUserId(const MessageRouter::RouterRequest& request,

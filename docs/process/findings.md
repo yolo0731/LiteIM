@@ -1978,3 +1978,11 @@ TDD RED：
 - `client_msg_id` 允许 `NULL`，旧客户端不传该字段时保持原行为；`ChatService` 只在请求显式携带 `ClientMessageId` 时校验非空和 64 字节上限。
 - `MessageRecord::client_msg_id` 放在结构体末尾，避免破坏现有 C++17 aggregate 初始化中第 6 个参数表示 `created_at_ms` 的代码。
 - 重复私聊请求在 `saveMessageWithOfflineRecipients()` 返回 `AlreadyExists` 后，只查回已有消息并返回响应，不再进入在线 push、离线 row 或 Redis unread 逻辑。
+
+## 2026-05-20 Step 55 Private Delivery ACK Findings
+
+- `DeliveryAckRequest` 属于私聊接收方确认语义，应由 `ChatService` 处理；离线 ACK 仍属于 `OfflineMessageService`，因为它还要更新 `offline_messages` 和 Redis unread。
+- `PrivateMessageResponse` 仍只表示发送方请求被服务端保存或幂等复用，不能被描述成接收方 delivered。
+- ACK 权限必须由存储层查消息事实兜底：只允许 `conversation.type == private` 且 `message.receiver_id == 当前登录 user_id`。
+- `message_deliveries` 可以在在线 ACK 时直接 upsert delivered row；不需要先把 `sendPacket()` 成功记录成 pushed，否则容易把“入输出缓冲”误说成业务送达。
+- 重复 delivery ACK 应当幂等，保持 delivered 状态并保留第一次 delivered 时间，避免客户端因响应丢失重试时被错误拒绝。

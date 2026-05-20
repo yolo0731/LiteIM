@@ -3853,3 +3853,40 @@ TDD GREEN：
 - 收紧 `OfflineMessageDao::markOfflineDelivered()`：每个 message id 必须更新 1 行，否则事务回滚并返回 `NotFound`。
 - 给 `server/main.cpp` 的 `server.start()` / `loop.loop()` 外层增加异常保护，启动或事件循环异常时统一 stop server、业务线程池、Redis/MySQL pool 和 signal watcher。
 - 当前验证已通过：`cmake --build build --target liteim_tests -j2`、`ctest --test-dir build -R "ChannelTest|AuthService|OfflineMessageService|MessageDao" --output-on-failure`、`cmake --build build --target liteim_server -j2`、`cmake --build build-qt --target liteim_qt_client_tests -j2`、`ctest --test-dir build-qt -R "LiteIMQtClient.Step47" --output-on-failure`、新增 `TcpServerTest.AcceptedLoopbackSessionStoresPeerIp` 和 `AuthServiceFixture.LoginFailureUsesSessionPeerIpWhenAvailable` targeted test、`ctest --test-dir build -R "LiteIME2E.test_backpressure" --output-on-failure`、顺序重跑 `ctest --test-dir build --output-on-failure` 384/384、重建 Qt build 的默认测试后 `ctest --test-dir build-qt --output-on-failure` 391/391、`git diff --check`、关键 Qt 目录和 peer-IP 过期措辞扫描。
+
+## 2026-05-20 Step 55 Private Delivery ACK
+
+本次进入 `Step 55：私聊 delivery ACK`。
+
+开始状态：
+
+- Step 53 离线 ACK 和 Step 54 `client_msg_id` 幂等已经提交。
+- 当前 Step 只补私聊接收方 delivery ACK，不做 read receipt、群聊全员 ACK 或跨节点确认。
+- Step55 复用 Step53 的 `message_deliveries` 表，不新增 schema migration。
+
+TDD RED：
+
+- 更新 `tests/protocol/message_type_test.cpp`，要求 `DeliveryAckRequest` / `DeliveryAckResponse` 有可读名和请求/响应分类。
+- 更新 `tests/service/chat_service_test.cpp`，新增 `handleDeliveryAck` 签名检查、receiver ACK 成功、非 receiver 拒绝、重复 ACK 幂等测试。
+- 更新 `tests/storage/mysql_storage_test.cpp`，新增 MySQL delivery 状态写入和非 receiver 拒绝集成测试。
+- 更新 CLI 和 Python E2E 测试，覆盖 `delivery-ack <message_id>` 构包和 Bob 收到 `PrivateMessagePush` 后 ACK。
+- `cmake --build build --target liteim_tests -j2` 按预期失败于缺少 `DeliveryAckRequest` / `DeliveryAckResponse`、`ChatService::handleDeliveryAck()` 和 `IStorage::ackPrivateMessageDelivery()`。
+
+代码完成：
+
+- 协议层新增 `DeliveryAckRequest = 506` 和 `DeliveryAckResponse = 507`，并补齐 `toString()`、request/response/push 分类。
+- `IStorage` / `MySqlStorage` 新增 `ackPrivateMessageDelivery(user_id, message_id, message)`；实现中查消息、校验私聊 receiver、upsert `message_deliveries.status = delivered`。
+- `ChatService` 注册 `DeliveryAckRequest` 到 business dispatch，并在 `handleDeliveryAck()` 中从 session 取当前用户、解析 `MessageId`、调用 storage、返回 `DeliveryAckResponse` 和 `DeliveryStatus=2`。
+- `client_cli` 新增 `delivery-ack <message_id>` 命令。
+- `tests/mocks/MockStorage.hpp` 和所有 `IStorage` fake 同步新接口。
+
+验证：
+
+- `cmake --build build --target liteim_tests liteim_server -j2`：通过。
+- `ctest --test-dir build -R "MessageType|ClientCliCommandTest|ChatService|MySqlStorageIntegrationTest|LiteIME2E.test_private_chat" --output-on-failure`：通过，35/35 tests passed。
+- `ctest --test-dir build --output-on-failure`：通过，395/395 tests passed。
+- `python3 -m py_compile tests/e2e/liteim_e2e.py tests/e2e/test_private_chat.py`：通过。
+- `ctest --test-dir build -R "LiteIME2E.test_private_chat" --output-on-failure`：通过，1/1 tests passed。
+- `git diff --check`：通过。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" README.md docs/tutorials/step55_private_delivery_ack.md docs/tutorials/step03_protocol_types.md docs/tutorials/step41_cli_client.md`：无输出。
+- `rg -n "^## " docs/tutorials/step55_private_delivery_ack.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。

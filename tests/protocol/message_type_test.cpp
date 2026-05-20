@@ -15,6 +15,10 @@ TEST(MessageTypeTest, CoreTypesReturnReadableNames) {
                  "OFFLINE_MESSAGES_ACK_REQUEST");
     EXPECT_STREQ(liteim::toString(liteim::MessageType::OfflineMessagesAckResponse),
                  "OFFLINE_MESSAGES_ACK_RESPONSE");
+    EXPECT_STREQ(liteim::toString(liteim::MessageType::DeliveryAckRequest),
+                 "DELIVERY_ACK_REQUEST");
+    EXPECT_STREQ(liteim::toString(liteim::MessageType::DeliveryAckResponse),
+                 "DELIVERY_ACK_RESPONSE");
     EXPECT_STREQ(liteim::toString(liteim::MessageType::ErrorResponse), "ERROR_RESPONSE");
 }
 
@@ -31,7 +35,8 @@ TEST(MessageTypeTest, RequestTypesAreClassified) {
         liteim::MessageType::PrivateMessageRequest, liteim::MessageType::CreateGroupRequest,
         liteim::MessageType::JoinGroupRequest,      liteim::MessageType::ListGroupsRequest,
         liteim::MessageType::GroupMessageRequest,   liteim::MessageType::OfflineMessagesRequest,
-        liteim::MessageType::OfflineMessagesAckRequest, liteim::MessageType::HistoryRequest,
+        liteim::MessageType::OfflineMessagesAckRequest, liteim::MessageType::DeliveryAckRequest,
+        liteim::MessageType::HistoryRequest,
     };
 
     for (const auto type : request_types) {
@@ -49,8 +54,8 @@ TEST(MessageTypeTest, ResponseTypesAreClassified) {
         liteim::MessageType::PrivateMessageResponse, liteim::MessageType::CreateGroupResponse,
         liteim::MessageType::JoinGroupResponse,      liteim::MessageType::ListGroupsResponse,
         liteim::MessageType::GroupMessageResponse,   liteim::MessageType::OfflineMessagesResponse,
-        liteim::MessageType::OfflineMessagesAckResponse, liteim::MessageType::HistoryResponse,
-        liteim::MessageType::ErrorResponse,
+        liteim::MessageType::OfflineMessagesAckResponse, liteim::MessageType::DeliveryAckResponse,
+        liteim::MessageType::HistoryResponse, liteim::MessageType::ErrorResponse,
     };
 
     for (const auto type : response_types) {

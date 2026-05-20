@@ -22,6 +22,16 @@ class PrivateChatE2ETest(E2ETestCase):
             self.assertEqual(push.uint64(TlvType.SENDER_ID), alice_id)
             self.assertEqual(push.uint64(TlvType.RECEIVER_ID), bob_id)
             self.assertEqual(push.string(TlvType.MESSAGE_TEXT), "hello bob from python e2e")
+            ack = bob.delivery_ack(push.uint64(TlvType.MESSAGE_ID))
+            self.assertEqual(ack.msg_type, MessageType.DELIVERY_ACK_RESPONSE)
+            self.assertEqual(ack.uint64(TlvType.MESSAGE_ID), push.uint64(TlvType.MESSAGE_ID))
+            self.assertEqual(ack.uint64(TlvType.DELIVERY_STATUS), 2)
+
+            duplicate_ack = bob.delivery_ack(push.uint64(TlvType.MESSAGE_ID))
+            self.assertEqual(duplicate_ack.msg_type, MessageType.DELIVERY_ACK_RESPONSE)
+            self.assertEqual(
+                duplicate_ack.uint64(TlvType.MESSAGE_ID), push.uint64(TlvType.MESSAGE_ID)
+            )
 
             history = alice.history_private(private_conversation_id(alice_id, bob_id), limit=10)
             texts = [record.text for record in history.message_records()]

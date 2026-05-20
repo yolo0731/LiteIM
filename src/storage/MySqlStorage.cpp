@@ -214,6 +214,23 @@ Status queryLastInsertedMessage(MySqlConnection& connection, MessageRecord& mess
     return querySingleMessage(query, message);
 }
 
+Status queryMessageById(MySqlConnection& connection, std::uint64_t message_id,
+                        MessageRecord& message) {
+    PreparedStatement query(connection);
+    const auto prepare_status = query.prepare(
+        "SELECT message_id, conversation_type, conversation_id, sender_id, receiver_id, "
+        "message_text, created_at_ms, client_msg_id "
+        "FROM messages WHERE message_id = ? LIMIT 1");
+    if (!prepare_status.isOk()) {
+        return prepare_status;
+    }
+    const auto bind_status = query.bindUInt64(0, message_id);
+    if (!bind_status.isOk()) {
+        return bind_status;
+    }
+    return querySingleMessage(query, message);
+}
+
 void rollbackSilently(MySqlConnection& connection) noexcept {
     (void)connection.executeSimple("ROLLBACK");
 }
@@ -311,6 +328,44 @@ Status upsertDeliveryPending(MySqlConnection& connection, std::uint64_t user_id,
     if (affected_rows > 2U) {
         return Status::error(ErrorCode::InternalError,
                              "save delivery state affected unexpected row count");
+    }
+    return Status::ok();
+}
+
+Status upsertDeliveryDelivered(MySqlConnection& connection, std::uint64_t user_id,
+                               std::uint64_t message_id, std::int64_t delivered_at_ms) {
+    PreparedStatement statement(connection);
+    const auto prepare_status = statement.prepare(
+        "INSERT INTO message_deliveries "
+        "(message_id, user_id, status, pushed_at_ms, delivered_at_ms, read_at_ms) "
+        "VALUES (?, ?, 2, NULL, ?, NULL) "
+        "ON DUPLICATE KEY UPDATE "
+        "status = IF(status > VALUES(status), status, VALUES(status)), "
+        "delivered_at_ms = COALESCE(delivered_at_ms, VALUES(delivered_at_ms))");
+    if (!prepare_status.isOk()) {
+        return prepare_status;
+    }
+    const auto message_status = statement.bindUInt64(0, message_id);
+    if (!message_status.isOk()) {
+        return message_status;
+    }
+    const auto user_status = statement.bindUInt64(1, user_id);
+    if (!user_status.isOk()) {
+        return user_status;
+    }
+    const auto delivered_status = statement.bindInt64(2, delivered_at_ms);
+    if (!delivered_status.isOk()) {
+        return delivered_status;
+    }
+
+    std::uint64_t affected_rows = 0;
+    const auto update_status = statement.executeUpdate(affected_rows);
+    if (!update_status.isOk()) {
+        return update_status;
+    }
+    if (affected_rows > 2U) {
+        return Status::error(ErrorCode::InternalError,
+                             "ack delivery state affected unexpected row count");
     }
     return Status::ok();
 }
@@ -517,6 +572,55 @@ Status MySqlStorage::ackOfflineMessages(std::uint64_t user_id,
                                         const std::vector<std::uint64_t>& message_ids,
                                         std::vector<OfflineMessageRecord>& acked_messages) {
     return offline_message_dao_.ackOfflineMessages(user_id, message_ids, acked_messages);
+}
+
+Status MySqlStorage::ackPrivateMessageDelivery(std::uint64_t user_id, std::uint64_t message_id,
+                                               MessageRecord& message) {
+    message = {};
+    if (user_id == 0U) {
+        return Status::error(ErrorCode::InvalidArgument, "user id must not be zero");
+    }
+    if (message_id == 0U) {
+        return Status::error(ErrorCode::InvalidArgument, "message id must not be zero");
+    }
+
+    ConnectionGuard guard;
+    const auto acquire_status = pool_.acquire(acquire_timeout_, guard);
+    if (!acquire_status.isOk()) {
+        return acquire_status;
+    }
+
+    const auto begin_status = guard->executeSimple("START TRANSACTION");
+    if (!begin_status.isOk()) {
+        return begin_status;
+    }
+
+    MessageRecord found;
+    const auto find_status = queryMessageById(*guard, message_id, found);
+    if (!find_status.isOk()) {
+        return rollbackClearAndReturn(*guard, message, find_status);
+    }
+    if (found.conversation.type != ConversationType::kPrivate || found.receiver_id != user_id) {
+        return rollbackClearAndReturn(
+            *guard, message,
+            Status::error(ErrorCode::NotFound,
+                          "private message delivery target was not found"));
+    }
+
+    const auto delivered_at_ms = Timestamp::now().millisecondsSinceEpoch();
+    const auto delivery_status =
+        upsertDeliveryDelivered(*guard, user_id, message_id, delivered_at_ms);
+    if (!delivery_status.isOk()) {
+        return rollbackClearAndReturn(*guard, message, delivery_status);
+    }
+
+    const auto commit_status = guard->executeSimple("COMMIT");
+    if (!commit_status.isOk()) {
+        message = {};
+        return commit_status;
+    }
+    message = std::move(found);
+    return Status::ok();
 }
 
 Status MySqlStorage::getHistory(const HistoryQuery& query, std::vector<MessageRecord>& messages) {

@@ -216,6 +216,17 @@ TEST(ClientCliCommandTest, OfflineAckCommandBuildsBatchAckRequest) {
     EXPECT_EQ(ids, (std::vector<std::uint64_t>{5001, 5002}));
 }
 
+TEST(ClientCliCommandTest, DeliveryAckCommandBuildsRequest) {
+    liteim::Packet packet;
+
+    const auto status = liteim::cli::buildPacketFromLine("delivery-ack 5001", 48, packet);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(packet.header.msg_type, liteim::MessageType::DeliveryAckRequest);
+    EXPECT_EQ(packet.header.seq_id, 48U);
+    EXPECT_EQ(uint64Field(packet, liteim::TlvType::MessageId), 5001U);
+}
+
 TEST(ClientCliCommandTest, DescribePacketIncludesMessageFields) {
     liteim::Packet packet;
     packet.header.msg_type = liteim::MessageType::PrivateMessagePush;

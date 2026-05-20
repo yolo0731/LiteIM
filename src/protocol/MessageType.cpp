@@ -64,6 +64,10 @@ const char* toString(MessageType type) noexcept {
         return "OFFLINE_MESSAGES_ACK_REQUEST";
     case MessageType::OfflineMessagesAckResponse:
         return "OFFLINE_MESSAGES_ACK_RESPONSE";
+    case MessageType::DeliveryAckRequest:
+        return "DELIVERY_ACK_REQUEST";
+    case MessageType::DeliveryAckResponse:
+        return "DELIVERY_ACK_RESPONSE";
     case MessageType::ErrorResponse:
         return "ERROR_RESPONSE";
     case MessageType::Unknown:
@@ -89,6 +93,7 @@ bool isRequestType(MessageType type) noexcept {
     case MessageType::OfflineMessagesRequest:
     case MessageType::HistoryRequest:
     case MessageType::OfflineMessagesAckRequest:
+    case MessageType::DeliveryAckRequest:
         return true;
     case MessageType::Unknown:
     case MessageType::HeartbeatResponse:
@@ -107,6 +112,7 @@ bool isRequestType(MessageType type) noexcept {
     case MessageType::OfflineMessagesResponse:
     case MessageType::HistoryResponse:
     case MessageType::OfflineMessagesAckResponse:
+    case MessageType::DeliveryAckResponse:
     case MessageType::ErrorResponse:
         return false;
     }
@@ -130,6 +136,7 @@ bool isResponseType(MessageType type) noexcept {
     case MessageType::OfflineMessagesResponse:
     case MessageType::HistoryResponse:
     case MessageType::OfflineMessagesAckResponse:
+    case MessageType::DeliveryAckResponse:
     case MessageType::ErrorResponse:
         return true;
     case MessageType::Unknown:
@@ -149,6 +156,7 @@ bool isResponseType(MessageType type) noexcept {
     case MessageType::OfflineMessagesRequest:
     case MessageType::HistoryRequest:
     case MessageType::OfflineMessagesAckRequest:
+    case MessageType::DeliveryAckRequest:
         return false;
     }
 
@@ -189,6 +197,8 @@ bool isPushType(MessageType type) noexcept {
     case MessageType::HistoryResponse:
     case MessageType::OfflineMessagesAckRequest:
     case MessageType::OfflineMessagesAckResponse:
+    case MessageType::DeliveryAckRequest:
+    case MessageType::DeliveryAckResponse:
     case MessageType::ErrorResponse:
         return false;
     }
