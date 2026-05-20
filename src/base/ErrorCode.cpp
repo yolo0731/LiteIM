@@ -20,6 +20,8 @@ const char* toString(ErrorCode code) noexcept {
         return "ConfigError";
     case ErrorCode::InternalError:
         return "InternalError";
+    case ErrorCode::ResourceExhausted:
+        return "ResourceExhausted";
     }
 
     return "Unknown";

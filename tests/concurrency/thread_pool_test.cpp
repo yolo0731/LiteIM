@@ -292,3 +292,80 @@ TEST(ThreadPoolTest, PendingTaskCountTracksQueuedTasks) {
 
     pool.stop();
 }
+
+TEST(ThreadPoolTest, BoundedQueueRejectsWhenPendingTaskLimitIsReached) {
+    liteim::ThreadPool pool(1, 1);
+    const auto start_status = pool.start();
+    ASSERT_TRUE(start_status.isOk()) << start_status.message();
+
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool first_task_started = false;
+    bool release_first_task = false;
+
+    const auto first_status = pool.submit([&]() {
+        std::unique_lock<std::mutex> lock(mutex);
+        first_task_started = true;
+        condition.notify_all();
+        condition.wait(lock, [&]() { return release_first_task; });
+    });
+    ASSERT_TRUE(first_status.isOk()) << first_status.message();
+
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        ASSERT_TRUE(condition.wait_for(lock, 1s, [&]() { return first_task_started; }));
+    }
+
+    const auto queued_status = pool.submit([]() {});
+    ASSERT_TRUE(queued_status.isOk()) << queued_status.message();
+    EXPECT_EQ(pool.pendingTaskCount(), 1U);
+
+    const auto full_status = pool.submit([]() {});
+    EXPECT_FALSE(full_status.isOk());
+    EXPECT_EQ(full_status.code(), liteim::ErrorCode::ResourceExhausted);
+    EXPECT_EQ(pool.pendingTaskCount(), 1U);
+
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        release_first_task = true;
+    }
+    condition.notify_all();
+    pool.stop();
+}
+
+TEST(ThreadPoolTest, ZeroPendingTaskLimitKeepsQueueUnbounded) {
+    liteim::ThreadPool pool(1, 0);
+    const auto start_status = pool.start();
+    ASSERT_TRUE(start_status.isOk()) << start_status.message();
+
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool first_task_started = false;
+    bool release_first_task = false;
+
+    ASSERT_TRUE(pool
+                    .submit([&]() {
+                        std::unique_lock<std::mutex> lock(mutex);
+                        first_task_started = true;
+                        condition.notify_all();
+                        condition.wait(lock, [&]() { return release_first_task; });
+                    })
+                    .isOk());
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        ASSERT_TRUE(condition.wait_for(lock, 1s, [&]() { return first_task_started; }));
+    }
+
+    for (int i = 0; i < 4; ++i) {
+        const auto status = pool.submit([]() {});
+        EXPECT_TRUE(status.isOk()) << status.message();
+    }
+    EXPECT_EQ(pool.pendingTaskCount(), 4U);
+
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        release_first_task = true;
+    }
+    condition.notify_all();
+    pool.stop();
+}

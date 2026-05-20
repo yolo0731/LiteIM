@@ -118,6 +118,12 @@ Status Config::loadFromFile(const std::filesystem::path& path) {
             status = parseUint32(value, io_threads);
         } else if (key == "server.business_threads") {
             status = parseUint32(value, business_threads);
+        } else if (key == "server.business_queue_capacity") {
+            status = parseUint32(value, business_queue_capacity);
+            if (status.isOk() && business_queue_capacity == 0) {
+                return Status::error(ErrorCode::InvalidArgument,
+                                     "business queue capacity must be positive");
+            }
         } else if (key == "server.output_high_water_mark_bytes") {
             std::uint32_t high_water_mark = 0;
             status = parseUint32(value, high_water_mark);

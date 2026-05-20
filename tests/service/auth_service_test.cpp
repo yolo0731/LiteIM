@@ -639,3 +639,38 @@ TEST_F(AuthServiceIntegrationTest, RegisterAndLoginWithMySqlStorageAndRedisCache
     ASSERT_TRUE(sessions.getUserBySession(session->id(), bound_user_id).isOk());
     EXPECT_EQ(bound_user_id, user_id);
 }
+
+TEST_F(AuthServiceIntegrationTest, LoginRateLimiterSeparatesRealPeerIpWithRedisCache) {
+    ASSERT_NE(service, nullptr);
+    auto register_session = makeSession(loop, 6002, "198.51.100.10");
+    const auto username = uniqueUsername("peer_ip");
+
+    auto register_request = requestFor(register_session, liteim::MessageType::RegisterRequest,
+                                       authBody(username, "secret", username + "_nick"));
+    liteim::Packet register_response;
+    ASSERT_TRUE(service->handleRegister(register_request, register_response).isOk());
+    online_user_ids.push_back(uint64Field(register_response, liteim::TlvType::UserId));
+
+    auto first_ip_session = makeSession(loop, 6003, "198.51.100.10");
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        auto request = requestFor(first_ip_session, liteim::MessageType::LoginRequest,
+                                  authBody(username, "wrong"));
+        liteim::Packet response;
+        EXPECT_EQ(service->handleLogin(request, response).code(),
+                  liteim::ErrorCode::InvalidArgument);
+    }
+
+    auto limited_request = requestFor(first_ip_session, liteim::MessageType::LoginRequest,
+                                      authBody(username, "secret"));
+    liteim::Packet limited_response;
+    const auto limited_status = service->handleLogin(limited_request, limited_response);
+    EXPECT_FALSE(limited_status.isOk());
+    EXPECT_EQ(limited_status.code(), liteim::ErrorCode::InvalidArgument);
+
+    auto second_ip_session = makeSession(loop, 6004, "198.51.100.11");
+    auto allowed_request = requestFor(second_ip_session, liteim::MessageType::LoginRequest,
+                                      authBody(username, "secret"));
+    liteim::Packet allowed_response;
+    const auto allowed_status = service->handleLogin(allowed_request, allowed_response);
+    ASSERT_TRUE(allowed_status.isOk()) << allowed_status.message();
+}

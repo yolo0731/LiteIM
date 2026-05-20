@@ -11,6 +11,7 @@ enum class ErrorCode {
     ParseError,
     ConfigError,
     InternalError,
+    ResourceExhausted,
 };
 
 const char* toString(ErrorCode code) noexcept;

@@ -32,7 +32,8 @@ private:
 
 }  // namespace
 
-ThreadPool::ThreadPool(std::size_t worker_count) : worker_count_(worker_count) {}
+ThreadPool::ThreadPool(std::size_t worker_count, std::size_t max_pending_tasks)
+    : worker_count_(worker_count), max_pending_tasks_(max_pending_tasks) {}
 
 ThreadPool::~ThreadPool() {
     stop();
@@ -89,6 +90,10 @@ Status ThreadPool::submit(Task task) {
             return Status::error(ErrorCode::InvalidArgument,
                                  "thread pool is not accepting new tasks");
         }
+        if (max_pending_tasks_ > 0U && tasks_.size() >= max_pending_tasks_) {
+            return Status::error(ErrorCode::ResourceExhausted,
+                                 "thread pool pending task queue is full");
+        }
         tasks_.push_back(std::move(task));
     }
 
@@ -135,6 +140,10 @@ void ThreadPool::stop() noexcept {
 
 std::size_t ThreadPool::workerCount() const noexcept {
     return worker_count_;
+}
+
+std::size_t ThreadPool::maxPendingTaskCount() const noexcept {
+    return max_pending_tasks_;
 }
 
 std::size_t ThreadPool::pendingTaskCount() const {

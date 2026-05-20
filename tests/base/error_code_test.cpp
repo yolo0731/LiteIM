@@ -12,6 +12,7 @@ TEST(ErrorCodeTest, ToStringReturnsReadableNames) {
     EXPECT_STREQ(liteim::toString(liteim::ErrorCode::ParseError), "ParseError");
     EXPECT_STREQ(liteim::toString(liteim::ErrorCode::ConfigError), "ConfigError");
     EXPECT_STREQ(liteim::toString(liteim::ErrorCode::InternalError), "InternalError");
+    EXPECT_STREQ(liteim::toString(liteim::ErrorCode::ResourceExhausted), "ResourceExhausted");
 }
 
 TEST(StatusTest, OkStatusHasOkCode) {

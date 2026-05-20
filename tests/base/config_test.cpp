@@ -25,6 +25,7 @@ TEST(ConfigTest, DefaultsContainExpectedValues) {
     EXPECT_EQ(config.server_port, 9000);
     EXPECT_EQ(config.io_threads, 4U);
     EXPECT_EQ(config.business_threads, 4U);
+    EXPECT_EQ(config.business_queue_capacity, 1024U);
     EXPECT_EQ(config.session_output_high_water_mark, 4U * 1024U * 1024U);
     EXPECT_EQ(config.mysql.host, "127.0.0.1");
     EXPECT_EQ(config.mysql.port, 33060);
@@ -42,6 +43,7 @@ TEST(ConfigTest, LoadFromFileOverridesConfiguredValues) {
         server.port = 10086
         server.io_threads = 2
         server.business_threads = 8
+        server.business_queue_capacity = 64
         server.output_high_water_mark_bytes = 65536
         log.level = debug
         mysql.host = mysql.local
@@ -66,6 +68,7 @@ TEST(ConfigTest, LoadFromFileOverridesConfiguredValues) {
     EXPECT_EQ(config.server_port, 10086);
     EXPECT_EQ(config.io_threads, 2U);
     EXPECT_EQ(config.business_threads, 8U);
+    EXPECT_EQ(config.business_queue_capacity, 64U);
     EXPECT_EQ(config.session_output_high_water_mark, 65536U);
     EXPECT_EQ(config.log_level, "debug");
     EXPECT_EQ(config.mysql.host, "mysql.local");
@@ -139,6 +142,18 @@ TEST(ConfigTest, InvalidPortFails) {
 TEST(ConfigTest, ZeroHighWaterMarkFails) {
     auto config = liteim::Config::defaults();
     const auto path = writeTempConfig("server.output_high_water_mark_bytes = 0\n");
+
+    const auto status = config.loadFromFile(path);
+
+    EXPECT_FALSE(status.isOk());
+    EXPECT_EQ(status.code(), liteim::ErrorCode::InvalidArgument);
+
+    std::filesystem::remove(path);
+}
+
+TEST(ConfigTest, ZeroBusinessQueueCapacityFails) {
+    auto config = liteim::Config::defaults();
+    const auto path = writeTempConfig("server.business_queue_capacity = 0\n");
 
     const auto status = config.loadFromFile(path);
 

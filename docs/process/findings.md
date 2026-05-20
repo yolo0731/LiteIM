@@ -1986,3 +1986,11 @@ TDD RED：
 - ACK 权限必须由存储层查消息事实兜底：只允许 `conversation.type == private` 且 `message.receiver_id == 当前登录 user_id`。
 - `message_deliveries` 可以在在线 ACK 时直接 upsert delivered row；不需要先把 `sendPacket()` 成功记录成 pushed，否则容易把“入输出缓冲”误说成业务送达。
 - 重复 delivery ACK 应当幂等，保持 delivered 状态并保留第一次 delivered 时间，避免客户端因响应丢失重试时被错误拒绝。
+
+## 2026-05-20 Step 56 Bounded ThreadPool Findings
+
+- 业务线程池背压应限制 pending queue，而不是限制正在执行的 worker；`worker_count` 表示并发执行数，`business_queue_capacity` 表示最多等待数。
+- 队列满不能退回 I/O 线程执行业务 handler，否则 MySQL / Redis 阻塞会重新污染 Reactor 线程。
+- 满队列是运行时资源不足，使用 `ResourceExhausted` 比 `InvalidArgument` 更准确，也方便客户端和日志区分参数错误与过载拒绝。
+- `ThreadPool(max_pending_tasks=0)` 保留无界语义用于历史构造和局部测试；server config 默认 1024，并拒绝配置为 0。
+- post-review peer-IP 修复已经把 `Session::peerIp()` 接进 AuthService；Step56 的真实 Redis integration 测试验证不同 peer IP 的登录失败窗口相互隔离。

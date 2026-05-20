@@ -3890,3 +3890,35 @@ TDD RED：
 - `git diff --check`：通过。
 - `rg -n "提交信息|commit message|## 11|Current Status|当前状态" README.md docs/tutorials/step55_private_delivery_ack.md docs/tutorials/step03_protocol_types.md docs/tutorials/step41_cli_client.md`：无输出。
 - `rg -n "^## " docs/tutorials/step55_private_delivery_ack.md`：标题顺序为 0-10，最后一节是 `面试常见追问`。
+
+## 2026-05-20 Step 56 Bounded ThreadPool And Limiter Verification
+
+本次进入 `Step 56：ThreadPool 队列上限和限流验证`。
+
+开始状态：
+
+- Step55 已提交为 `300441a feat(chat): add private delivery ack`。
+- post-review hardening 已把真实 peer IP 接入 `AuthService`，本 Step 只补真实 Redis integration 验证，不重写限流逻辑。
+- 当前 Step 不做复杂熔断、令牌桶、全局 QPS 限流或网络 output high-water mark 改动。
+
+TDD RED：
+
+- `tests/concurrency/thread_pool_test.cpp` 新增满队列拒绝和 0 上限无界兼容测试。
+- `tests/service/message_router_test.cpp` 新增业务队列满时 Router 返回 `ErrorResponse` 的测试。
+- `tests/base/config_test.cpp` 新增 `server.business_queue_capacity` 默认值、覆盖和 0 值拒绝测试。
+- `tests/service/auth_service_test.cpp` 新增真实 Redis + peer IP 登录失败窗口隔离测试。
+- `cmake --build build --target liteim_tests -j2` 按预期失败于缺少 `ThreadPool(worker_count, limit)`、`ResourceExhausted` 和 `Config::business_queue_capacity`。
+
+代码完成：
+
+- `ErrorCode` 新增 `ResourceExhausted`。
+- `ThreadPool` 新增 `max_pending_tasks_`、二参构造和 `maxPendingTaskCount()`；pending 队列达到上限时 `submit()` 返回 `ResourceExhausted`。
+- `Config` 新增 `business_queue_capacity{1024}`，配置 key 为 `server.business_queue_capacity`，服务端配置拒绝 0。
+- `server/main.cpp` 使用 `ThreadPool(config.business_threads, config.business_queue_capacity)`。
+- `MessageRouter` 复用已有 submit 失败路径，把 `ResourceExhausted` 编码成 `ErrorResponse`。
+
+验证：
+
+- `cmake --build build --target liteim_tests liteim_server -j2`：通过。
+- `ctest --test-dir build -R "ErrorCodeTest|ThreadPool|MessageRouter|ConfigTest|AuthService" --output-on-failure`：通过，51/51 tests passed。
+- `ctest --test-dir build --output-on-failure`：通过，400/400 tests passed。

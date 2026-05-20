@@ -96,7 +96,7 @@ struct AuthServiceOptions {
 
 `login_failure_ttl` 是失败窗口 TTL。每次失败都会刷新 Redis key 的过期时间。
 
-`default_remote_ip` 是兜底来源标识。真实运行时 `TcpServer` 会从 accept 得到的 peer address 写入 `Session::peerIp()`，`AuthService` 按 username + peer IP 做登录失败窗口；只有测试 session 或缺失 peer IP 的路径才使用这个默认值。
+`default_remote_ip` 是兜底来源标识。真实运行时 `TcpServer` 会从 accept 得到的 peer address 写入 `Session::peerIp()`，`AuthService` 按 username + peer IP 做登录失败窗口；只有测试 session 或缺失 peer IP 的路径才使用这个默认值。Step56 已增加 Redis integration 测试，验证同一 username 在不同真实 peer IP 下使用独立登录失败窗口。
 
 ### AuthService
 

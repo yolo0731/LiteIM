@@ -244,7 +244,7 @@ void route(Session::Ptr session, Packet packet);
 3. TLV body parse 失败：发送 `ErrorResponse`。
 4. 查找 handler；未注册：发送 `ErrorResponse`。
 5. Inline：当前线程直接执行 handler。
-6. BusinessThread：把任务投递到 `ThreadPool`。
+6. BusinessThread：把任务投递到 `ThreadPool`。Step56 之后，如果业务 pending 队列已满，`ThreadPool::submit()` 会返回 `ResourceExhausted`，Router 立即回 `ErrorResponse`，不会在 I/O 线程里执行阻塞 handler。
 7. handler 成功：发送 handler 填好的 response，并强制 response `seq_id` 等于请求 `seq_id`。
 8. handler 失败：发送 `ErrorResponse`。
 
@@ -354,6 +354,7 @@ lookup handler
 dispatch
     Inline -> execute now
     BusinessThread -> ThreadPool::submit()
+        submit failed -> ErrorResponse(ResourceExhausted)
 handler result
     ok -> response
     error -> ErrorResponse

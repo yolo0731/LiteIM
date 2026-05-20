@@ -115,10 +115,11 @@ using Task = std::function<void()>;
 ### 构造函数
 
 ```cpp
-explicit ThreadPool(std::size_t worker_count);
+explicit ThreadPool(std::size_t worker_count,
+                    std::size_t max_pending_tasks = 0);
 ```
 
-`worker_count` 是固定 worker 数。
+`worker_count` 是固定 worker 数。Step56 之后，`max_pending_tasks` 表示 pending 队列最多允许多少个等待任务；0 表示无界队列，主要用于单元测试和历史构造兼容。服务端 runtime 通过 `server.business_queue_capacity` 使用正数上限。
 
 本 Step 不做动态扩缩容，也不做 work stealing。固定大小更容易理解，也更符合当前 IM 服务端第一版需求。
 
@@ -151,6 +152,7 @@ Status submit(Task task);
 - 空任务返回 `InvalidArgument`。
 - 线程池未启动返回 `InvalidArgument`。
 - `stop()` 之后不再接收新任务，返回 `InvalidArgument`。
+- Step56 之后，pending 队列达到上限时返回 `ResourceExhausted`。
 
 ### `stop()`
 
@@ -186,11 +188,13 @@ void stop() noexcept;
 
 ```cpp
 std::size_t workerCount() const noexcept;
+std::size_t maxPendingTaskCount() const noexcept;
 std::size_t pendingTaskCount() const;
 bool started() const noexcept;
 ```
 
 - `workerCount()` 返回固定 worker 数。
+- `maxPendingTaskCount()` 返回 pending 队列上限；0 表示无界。
 - `pendingTaskCount()` 返回还在队列里等待执行的任务数，不包含正在执行的任务。
 - `started()` 表示线程池当前是否处于启动状态。
 
@@ -199,6 +203,7 @@ bool started() const noexcept;
 `ThreadPool` 的关键成员包括：
 
 - `worker_count_`：固定 worker 数，构造后不变化。
+- `max_pending_tasks_`：pending 队列容量上限，Step56 后用于业务背压。
 - `mutex_`：保护任务队列和 workers 容器相关状态。
 - `stop_mutex_`：串行化外部 stop/join 清理。
 - `condition_`：worker 等待新任务或停止信号。
@@ -238,7 +243,8 @@ Session MessageCallback / TcpServer business callback
 5. worker 在 [workerLoop()](../src/concurrency/ThreadPool.cpp) 中等待 condition variable。
 6. worker 取出任务，在锁外执行阻塞业务逻辑。
 7. 任务完成后通过 `Session::sendPacket()` 把响应安全投递回 owner loop。
-8. 停止时，[stop()](../src/concurrency/ThreadPool.cpp) 停止接收新任务，唤醒 worker，等待队列排空并 join。
+8. Step56 之后，如果 pending 队列达到 `max_pending_tasks_`，`submit()` 返回 `ResourceExhausted`，调用方应给客户端回错误或降级。
+9. 停止时，[stop()](../src/concurrency/ThreadPool.cpp) 停止接收新任务，唤醒 worker，等待队列排空并 join。
 
 ### 4. 自身内部运行流程
 
@@ -365,6 +371,8 @@ TEST(ThreadPoolTest, StopCalledFromWorkerRequiresOwnerCleanupBeforeRestart)
 TEST(ThreadPoolTest, ConcurrentStopCallsAreSerialized)
 TEST(ThreadPoolTest, DestructorWaitsForQueuedTasks)
 TEST(ThreadPoolTest, PendingTaskCountTracksQueuedTasks)
+TEST(ThreadPoolTest, BoundedQueueRejectsWhenPendingTaskLimitIsReached)
+TEST(ThreadPoolTest, ZeroPendingTaskLimitKeepsQueueUnbounded)
 ```
 
 这些测试覆盖：

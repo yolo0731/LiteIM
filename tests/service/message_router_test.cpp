@@ -339,6 +339,61 @@ TEST(MessageRouterTest, BusinessThreadHandlerRunsOnWorkerAndSendsResponse) {
     pool.stop();
 }
 
+TEST(MessageRouterTest, BusinessThreadSubmitFailureReturnsErrorResponse) {
+    liteim::ThreadPool pool(1, 1);
+    ASSERT_TRUE(pool.start().isOk());
+    liteim::MessageRouter router(pool);
+    RunningSession running;
+
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool blocking_task_started = false;
+    bool release_blocking_task = false;
+    bool handler_called = false;
+
+    ASSERT_TRUE(pool
+                    .submit([&]() {
+                        std::unique_lock<std::mutex> lock(mutex);
+                        blocking_task_started = true;
+                        condition.notify_all();
+                        condition.wait(lock, [&]() { return release_blocking_task; });
+                    })
+                    .isOk());
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        ASSERT_TRUE(condition.wait_for(lock, 1s, [&]() { return blocking_task_started; }));
+    }
+    ASSERT_TRUE(pool.submit([]() {}).isOk());
+    ASSERT_EQ(pool.pendingTaskCount(), 1U);
+
+    ASSERT_TRUE(router
+                    .registerHandler(
+                        liteim::MessageType::LoginRequest,
+                        [&](const liteim::MessageRouter::RouterRequest&, liteim::Packet&) {
+                            handler_called = true;
+                            return liteim::Status::ok();
+                        },
+                        liteim::MessageRouter::DispatchMode::BusinessThread)
+                    .isOk());
+
+    router.route(running.session(), makeRequest(liteim::MessageType::LoginRequest, 78));
+
+    const auto response = readPacket(running.peerFd(), 2s);
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->header.msg_type, liteim::MessageType::ErrorResponse);
+    EXPECT_EQ(response->header.seq_id, 78U);
+    EXPECT_EQ(errorCodeField(*response),
+              static_cast<std::uint64_t>(liteim::ErrorCode::ResourceExhausted));
+    EXPECT_FALSE(handler_called);
+
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        release_blocking_task = true;
+    }
+    condition.notify_all();
+    pool.stop();
+}
+
 TEST(MessageRouterTest, UnknownMessageTypeReturnsErrorResponse) {
     liteim::ThreadPool pool(1);
     liteim::MessageRouter router(pool);

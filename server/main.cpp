@@ -67,7 +67,7 @@ int main(int argc, char* argv[]) {
     liteim::RedisCache cache(redis_pool);
     liteim::SessionManager sessions;
     liteim::OnlineService online_service(sessions, cache, "liteim-server", std::chrono::seconds{60});
-    liteim::ThreadPool business_pool(config.business_threads);
+    liteim::ThreadPool business_pool(config.business_threads, config.business_queue_capacity);
     liteim::MessageRouter router(business_pool);
     liteim::HeartbeatService heartbeat_service(online_service);
     liteim::AuthService auth_service(storage, cache, online_service);
