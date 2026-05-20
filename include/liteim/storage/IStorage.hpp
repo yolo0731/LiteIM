@@ -38,6 +38,9 @@ public:
                                       std::vector<OfflineMessageRecord>& messages) = 0;
     virtual Status markOfflineDelivered(std::uint64_t user_id,
                                         const std::vector<std::uint64_t>& message_ids) = 0;
+    virtual Status ackOfflineMessages(std::uint64_t user_id,
+                                      const std::vector<std::uint64_t>& message_ids,
+                                      std::vector<OfflineMessageRecord>& acked_messages) = 0;
     virtual Status getHistory(const HistoryQuery& query, std::vector<MessageRecord>& messages) = 0;
 };
 

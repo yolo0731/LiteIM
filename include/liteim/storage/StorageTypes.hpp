@@ -10,6 +10,13 @@ enum class ConversationType : std::uint8_t {
     kGroup = 2,
 };
 
+enum class DeliveryStatus : std::uint8_t {
+    kPending = 0,
+    kPushed = 1,
+    kDelivered = 2,
+    kReadReserved = 3,
+};
+
 struct ConversationKey {
     ConversationType type{ConversationType::kPrivate};
     std::uint64_t id{0};

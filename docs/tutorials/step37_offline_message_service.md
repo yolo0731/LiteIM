@@ -7,6 +7,7 @@
 - 主要交付：新增 `OfflineMessageService`、离线消息 service 测试、server runtime handler 注册和本文档。
 - 线程边界：`OfflineMessagesRequest` 通过 business `ThreadPool` 执行，MySQL / Redis 阻塞调用不进入 Reactor I/O 线程。
 - 范围控制：采用方案一，登录成功后客户端主动发送 `OfflineMessagesRequest`；服务端登录 handler 仍只返回 `LoginResponse`。
+- 当前实现提示：Step 53 已把“拉取后标记 delivered”升级为“客户端发送 `OfflineMessagesAckRequest` 后才 delivered”；本文件保留 Step 37 原始教学背景，并在关键位置标出当前语义。
 
 ## 1. 为什么需要这个 Step
 
@@ -26,8 +27,7 @@ PrivateMessageRequest
 - 确认当前 session 已登录。
 - 查询当前用户未 delivered 的离线消息。
 - 按最多 100 条的上限构造响应。
-- 清理本批涉及会话的 Redis 未读计数。
-- 把本批 message_id 标记为 delivered，避免下次重复返回。
+- Step 37 原始版本在拉取后清理 unread 并标记 delivered；当前 Step 53 之后，拉取只返回 pending，ACK 后才清 unread 并标记 delivered。
 
 这里没有把离线消息直接塞进 `LoginResponse`，也没有让登录 handler 额外发送一个 follow-up response。原因是当前 `MessageRouter` 的模型是一请求一响应，主动拉取能保持 service 边界简单，后续 Qt / Python 客户端只需要在登录成功后再发一个 `OfflineMessagesRequest`。
 
@@ -41,13 +41,13 @@ PrivateMessageRequest
 - 调用 `IStorage::getOfflineMessages()` 查询 pending offline rows。
 - 支持可选 `TlvType::Limit`，但最多返回 100 条。
 - 返回 `OfflineMessagesResponse`，消息字段使用重复 TLV 表达。
-- 对返回批次清理 unread 计数并标记 delivered。
+- 返回 pending 离线消息。Step 53 之后，清理 unread 和标记 delivered 已移动到 `OfflineMessagesAckRequest`。
 
 ### 本 Step 不做
 
 - 不修改 `AuthService` 登录响应。
 - 不修改 `MessageRouter` 支持多 response。
-- 不实现可靠 ACK 和重试。
+- Step 37 原始版本不实现可靠 ACK 和重试；当前 Step 53 已补离线消息 ACK，私聊在线 push ACK 仍不在本 Step。
 - 不删除 `offline_messages` 历史记录，只标记 delivered。
 - 不实现群聊、历史分页或跨节点路由。
 
@@ -56,10 +56,10 @@ PrivateMessageRequest
 | 文件 | 变化 | 作用 |
 | --- | --- | --- |
 | `include/liteim/service/OfflineMessageService.hpp` | 新增 | 声明离线消息 service、选项、handler 和内部 helper 边界 |
-| `src/service/OfflineMessageService.cpp` | 新增 | 实现离线消息拉取、响应构造、未读清理和 delivered 标记 |
+| `src/service/OfflineMessageService.cpp` | 新增 | 实现离线消息拉取和响应构造；Step 53 后同一 service 也负责离线 ACK |
 | `src/service/CMakeLists.txt` | 修改 | 把 `OfflineMessageService.cpp` 编入 `liteim_service` |
 | `server/main.cpp` | 修改 | 创建 `OfflineMessageService` 并注册 `OfflineMessagesRequest` handler |
-| `tests/service/offline_message_service_test.cpp` | 新增 | 覆盖登录态、拉取响应、limit 截断、delivered 标记、未读清理和真实依赖集成 |
+| `tests/service/offline_message_service_test.cpp` | 新增 | 覆盖登录态、拉取响应、limit 截断、ACK 后 delivered、未读清理和真实依赖集成 |
 | `tests/CMakeLists.txt` | 修改 | 接入 Step 37 service 测试 |
 | `README.md` | 更新 | 记录 Step 37 runtime 和验证命令 |
 | `docs/tutorials/step37_offline_message_service.md` | 新增 | 讲解离线消息拉取流程 |
@@ -97,7 +97,7 @@ public:
 
 它只依赖三个抽象/上层服务：
 
-- `IStorage`：查询 pending offline rows，并标记 delivered。
+- `IStorage`：查询 pending offline rows；Step 53 之后通过 `ackOfflineMessages()` 标记 delivered。
 - `ICache`：清理本批消息涉及会话的 unread key。
 - `OnlineService`：根据当前 `session_id` 查询登录 user id。
 
@@ -132,8 +132,12 @@ Bob 客户端
     -> business ThreadPool 执行 OfflineMessageService::handleOfflineMessages()
     -> OnlineService::getUserBySession()
     -> IStorage::getOfflineMessages()
+    -> OfflineMessagesResponse
+
+Client 收到并处理后
+    -> OfflineMessagesAckRequest
+    -> IStorage::ackOfflineMessages()
     -> ICache::clearUnread()
-    -> IStorage::markOfflineDelivered()
     -> MessageRouter 发回 OfflineMessagesResponse
 ```
 
@@ -148,9 +152,9 @@ Bob 客户端
 5. handler 调用 `IStorage::getOfflineMessages(user_id)` 查询未 delivered 的记录。
 6. handler 根据 `Limit` 和 100 条上限截断本批结果。
 7. handler 把消息字段写入 `OfflineMessagesResponse`。
-8. handler 清理本批涉及会话的 Redis unread key。
-9. handler 调用 `IStorage::markOfflineDelivered(user_id, message_ids)`。
-10. `MessageRouter` 把 response 发回当前 session。
+8. `MessageRouter` 把 response 发回当前 session。
+9. Step 53 之后，客户端收到消息后再发送 `OfflineMessagesAckRequest`。
+10. ACK handler 调用 `IStorage::ackOfflineMessages()` 并清理本批涉及会话的 Redis unread key。
 
 ### 4. 自身内部运行流程
 
@@ -162,11 +166,10 @@ currentUserId()
     -> storage_.getOfflineMessages()
     -> resize 到本次 limit
     -> appendMessages()
-    -> clearUnreadForMessages()
-    -> storage_.markOfflineDelivered()
+    -> appendMessages()
 ```
 
-`clearUnreadForMessages()` 会先按 `(ConversationType, ConversationId)` 去重。同一个会话里有多条离线消息时，只清一次 unread key。
+Step 53 之后，`handleOfflineMessagesAck()` 才会调用 `clearUnreadForMessages()`。它会先按 `(ConversationType, ConversationId)` 去重。同一个会话里有多条 ACK 消息时，只清一次 unread key。
 
 ### 5. 该项目代码在实际应用中的具体数据例子
 
@@ -213,7 +216,7 @@ MessageText      = "hello bob"
 TimestampMs      = 1700000000000
 ```
 
-之后 MySQL `offline_messages.delivered` 变成 `1`，Redis 未读 key 被清理。
+如果 Bob 此时还没 ACK，MySQL `offline_messages.delivered` 仍是 `0`，下次拉取还能返回同一条消息。Bob 发送 `OfflineMessagesAckRequest(MessageId=5001)` 后，MySQL `offline_messages.delivered` 变成 `1`，Redis 未读 key 被清理。
 
 ## 6. 关键实现点
 
@@ -246,23 +249,28 @@ MessageText: "two"
 
 客户端按相同顺序取 repeated fields，即可把第 0 个 `MessageId`、第 0 个 `MessageText` 等字段组合成第一条消息。
 
-### delivered 标记顺序
+### delivered 标记时机
 
-handler 先构造响应并清理 unread，再把本批 message_id 标记 delivered。这样不会出现 delivered 已成功、后面又因为响应构造失败而只给客户端返回错误的路径。
+Step 37 原始版本是在拉取 handler 内部标记 delivered。Step 53 之后，delivered 标记移动到客户端 ACK handler：
 
-第一版没有 ACK，所以这里的 delivered 表示“服务端已经准备把本批响应交给当前 session 发送”。更严格的“客户端已确认收到”留给后续可靠投递设计。
+```text
+pull 只读 pending
+ACK 才 mark delivered
+```
+
+所以当前 delivered 表示“客户端已经显式确认收到这条离线消息”，不再只是“服务端准备把 response 交给当前 session 发送”。
 
 ## 7. 测试设计
 
 | 风险 | 测试 |
 | --- | --- |
 | 未登录用户能拉取离线消息 | `OfflineMessagesRequireLoggedInSession` 校验未绑定 session 直接失败 |
-| pending rows 没有进入响应 | `OfflineMessagesReturnPendingRowsMarkDeliveredAndClearUnread` 校验 repeated TLV 字段 |
-| delivered 没有更新 | 同一测试校验 `markOfflineDelivered()` 收到本批 message_id |
-| 未读数没有清理 | 同一测试校验每个涉及会话调用 `clearUnread()` |
+| pending rows 没有进入响应 | `OfflineMessagesReturnPendingRowsWithoutMarkingDelivered` 校验 repeated TLV 字段，并确认拉取不 ACK |
+| delivered 没有更新 | `OfflineAckMarksDeliveredAndClearsUnread` 校验 ACK 后 delivered |
+| 未读数没有清理 | 同一 ACK 测试校验每个涉及会话调用 `clearUnread()` |
 | 拉取数量超过上限 | `OfflineMessagesLimitIsCappedByServiceOption` 校验只返回和标记前 N 条 |
 | 非法 limit | `OfflineMessagesRejectZeroLimit` 校验 `Limit=0` 不访问 storage/cache |
-| 真实 MySQL / Redis 适配漂移 | `PullMarksDeliveredAndClearsRedisUnread` 使用 `MySqlStorage` / `RedisCache` 做集成验证；依赖不可用时跳过 |
+| 真实 MySQL / Redis 适配漂移 | `PullKeepsPendingUntilClientAck` 使用 `MySqlStorage` / `RedisCache` 做集成验证；依赖不可用时跳过 |
 
 ## 8. 验证命令
 
@@ -283,12 +291,12 @@ ctest --test-dir build -R "OfflineMessageService" --output-on-failure
 
 ## 9. 面试表达
 
-> Step 37 实现了离线消息主动拉取：客户端登录成功后发送 `OfflineMessagesRequest`，服务端在 business 线程根据当前 session 查 user id，从 MySQL 查询 pending offline rows，按最多 100 条构造 `OfflineMessagesResponse`，清理 Redis 未读计数，并把本批 message_id 标记 delivered。这个 Step 不改登录响应模型，也不做可靠 ACK，先保持一请求一响应的 service 边界。
+> Step 37 实现了离线消息主动拉取：客户端登录成功后发送 `OfflineMessagesRequest`，服务端在 business 线程根据当前 session 查 user id，从 MySQL 查询 pending offline rows，按最多 100 条构造 `OfflineMessagesResponse`。后续 Step 53 把 delivered 标记移动到 `OfflineMessagesAckRequest`，因此当前拉取不会提前确认，客户端 ACK 后才清 unread 并标记 delivered。
 
 可以重点强调三点：
 
 - MySQL 是消息和 offline delivery 的事实来源。
-- Redis unread 只是快速状态，拉取成功后按会话清理。
+- Redis unread 只是快速状态，当前实现是在 ACK 成功后按会话清理。
 - I/O 线程不做 MySQL / Redis 阻塞调用，所有业务 handler 走 business thread pool。
 
 ## 10. 面试常见追问
@@ -299,7 +307,7 @@ ctest --test-dir build -R "OfflineMessageService" --output-on-failure
 
 ### delivered 是不是表示客户端一定收到了？
 
-不是。第一版没有可靠 ACK，delivered 表示服务端已经把本批消息加入响应并准备发送。客户端确认收到、失败重试和幂等 ACK 属于后续可靠投递设计。
+当前 Step 53 之后，离线消息的 delivered 表示客户端已经发送 ACK；它仍不等于用户已读。已读回执属于后续设计。
 
 ### 为什么清理 unread 要按 conversation 去重？
 
@@ -307,8 +315,8 @@ ctest --test-dir build -R "OfflineMessageService" --output-on-failure
 
 ### 如果 Redis 清理失败怎么办？
 
-当前实现会在标记 delivered 前返回错误，避免消息被标记 delivered 但客户端只收到错误响应。Redis 是缓存状态，后续可以通过 MySQL offline/history 数据修复或重算 unread。
+当前实现会先完成 MySQL ACK，再把 Redis unread 清理作为 best-effort 副作用。Redis 是缓存状态，清理失败会记录 warning，但不会撤销已经确认的 MySQL delivered。
 
 ### 为什么最多 100 条？
 
-离线消息响应可能很大，第一版先用固定上限保护单次响应大小和业务线程处理时间。更完整的分页、游标和可靠 ACK 可以在 HistoryService 或后续可靠投递设计中继续扩展。
+离线消息响应可能很大，第一版先用固定上限保护单次响应大小和业务线程处理时间。更完整的分页、游标、私聊在线 delivery ACK 和 read receipt 可以在后续可靠投递设计中继续扩展。

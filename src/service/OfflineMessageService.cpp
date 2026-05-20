@@ -22,6 +22,11 @@ Status notLoggedInStatus() {
 Status invalidLimitStatus() {
     return Status::error(ErrorCode::InvalidArgument, "offline message limit must be positive");
 }
+
+Status invalidAckStatus() {
+    return Status::error(ErrorCode::InvalidArgument, "offline ack message ids must not be empty");
+}
+
 bool sameConversation(const ConversationKey& lhs, const ConversationKey& rhs) {
     return lhs.type == rhs.type && lhs.id == rhs.id;
 }
@@ -47,10 +52,19 @@ OfflineMessageService::OfflineMessageService(IStorage& storage, ICache& cache,
 }
 
 Status OfflineMessageService::registerHandlers(MessageRouter& router) {
-    return router.registerHandler(
+    const auto pull_status = router.registerHandler(
         MessageType::OfflineMessagesRequest,
         [this](const MessageRouter::RouterRequest& request, Packet& response) {
             return handleOfflineMessages(request, response);
+        },
+        MessageRouter::DispatchMode::BusinessThread);
+    if (!pull_status.isOk()) {
+        return pull_status;
+    }
+    return router.registerHandler(
+        MessageType::OfflineMessagesAckRequest,
+        [this](const MessageRouter::RouterRequest& request, Packet& response) {
+            return handleOfflineMessagesAck(request, response);
         },
         MessageRouter::DispatchMode::BusinessThread);
 }
@@ -81,21 +95,43 @@ Status OfflineMessageService::handleOfflineMessages(const MessageRouter::RouterR
     if (!append_status.isOk()) {
         return append_status;
     }
-    // 将这些消息标记为已投递
-    std::vector<std::uint64_t> message_ids;
-    message_ids.reserve(messages.size());
-    for (const auto& message : messages) {
-        message_ids.push_back(message.message.message_id);
-    }
-    const auto mark_status = storage_.markOfflineDelivered(user_id, message_ids);
-    if (!mark_status.isOk()) {
-        return mark_status;
+    return Status::ok();
+}
+
+Status OfflineMessageService::handleOfflineMessagesAck(const MessageRouter::RouterRequest& request,
+                                                       Packet& response) {
+    std::uint64_t user_id = 0;
+    const auto user_status = currentUserId(request, user_id);
+    if (!user_status.isOk()) {
+        return user_status;
     }
 
-    // Redis 未读数是派生计数。MySQL delivered 成功后再清，失败只告警，避免回滚已构造响应。
-    const auto clear_status = clearUnreadForMessages(user_id, messages);
+    std::vector<std::uint64_t> message_ids;
+    const auto ids_status = getRepeatedUint64(request.fields, TlvType::MessageId, message_ids);
+    if (!ids_status.isOk()) {
+        return ids_status;
+    }
+    if (message_ids.empty()) {
+        return invalidAckStatus();
+    }
+
+    std::vector<OfflineMessageRecord> acked_messages;
+    const auto ack_status = storage_.ackOfflineMessages(user_id, message_ids, acked_messages);
+    if (!ack_status.isOk()) {
+        return ack_status;
+    }
+
+    response.header.msg_type = MessageType::OfflineMessagesAckResponse;
+    response.header.seq_id = request.packet.header.seq_id;
+    const auto append_status = appendAckedMessageIds(acked_messages, response);
+    if (!append_status.isOk()) {
+        return append_status;
+    }
+
+    // Redis 未读数是派生计数。MySQL ACK 成功后再清，失败只告警，不回滚持久送达状态。
+    const auto clear_status = clearUnreadForMessages(user_id, acked_messages);
     if (!clear_status.isOk()) {
-        Logger::get()->warn("Failed to clear unread counters for user {} after offline pull: {}",
+        Logger::get()->warn("Failed to clear unread counters for user {} after offline ack: {}",
                             user_id, clear_status.message());
     }
     return Status::ok();
@@ -143,6 +179,25 @@ Status OfflineMessageService::appendMessages(const std::vector<OfflineMessageRec
                                              Packet& response) {
     for (const auto& offline_message : messages) {
         const auto status = appendMessageFields(offline_message.message, response);
+        if (!status.isOk()) {
+            return status;
+        }
+    }
+    return Status::ok();
+}
+
+Status
+OfflineMessageService::appendAckedMessageIds(const std::vector<OfflineMessageRecord>& messages,
+                                             Packet& response) {
+    for (const auto& offline_message : messages) {
+        const auto message_status =
+            appendUint64(TlvType::MessageId, offline_message.message.message_id, response.body);
+        if (!message_status.isOk()) {
+            return message_status;
+        }
+        const auto status = appendUint64(
+            TlvType::DeliveryStatus, static_cast<std::uint64_t>(DeliveryStatus::kDelivered),
+            response.body);
         if (!status.isOk()) {
             return status;
         }

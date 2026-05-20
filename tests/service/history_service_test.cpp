@@ -344,6 +344,13 @@ public:
         return liteim::Status::ok();
     }
 
+    liteim::Status
+    ackOfflineMessages(std::uint64_t, const std::vector<std::uint64_t>&,
+                       std::vector<liteim::OfflineMessageRecord>& acked_messages) override {
+        acked_messages.clear();
+        return liteim::Status::ok();
+    }
+
     liteim::Status getHistory(const liteim::HistoryQuery& query,
                               std::vector<liteim::MessageRecord>& messages) override {
         ++get_history_calls;

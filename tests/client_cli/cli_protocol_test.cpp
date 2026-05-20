@@ -187,6 +187,21 @@ TEST(ClientCliCommandTest, HistoryCommandBuildsCursorRequest) {
     EXPECT_EQ(uint64Field(packet, liteim::TlvType::MessageId), 5003U);
 }
 
+TEST(ClientCliCommandTest, OfflineAckCommandBuildsBatchAckRequest) {
+    liteim::Packet packet;
+
+    const auto status = liteim::cli::buildPacketFromLine("offline-ack 5001 5002", 46, packet);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(packet.header.msg_type, liteim::MessageType::OfflineMessagesAckRequest);
+    EXPECT_EQ(packet.header.seq_id, 46U);
+    liteim::TlvMap fields;
+    ASSERT_TRUE(liteim::parseTlvMap(packet.body, fields).isOk());
+    std::vector<std::uint64_t> ids;
+    ASSERT_TRUE(liteim::getRepeatedUint64(fields, liteim::TlvType::MessageId, ids).isOk());
+    EXPECT_EQ(ids, (std::vector<std::uint64_t>{5001, 5002}));
+}
+
 TEST(ClientCliCommandTest, DescribePacketIncludesMessageFields) {
     liteim::Packet packet;
     packet.header.msg_type = liteim::MessageType::PrivateMessagePush;
@@ -203,6 +218,20 @@ TEST(ClientCliCommandTest, DescribePacketIncludesMessageFields) {
     EXPECT_NE(description.find("sender_id=1001"), std::string::npos);
     EXPECT_NE(description.find("receiver_id=1002"), std::string::npos);
     EXPECT_NE(description.find("text=\"hello\""), std::string::npos);
+}
+
+TEST(ClientCliCommandTest, DescribePacketIncludesDeliveryStatus) {
+    liteim::Packet packet;
+    packet.header.msg_type = liteim::MessageType::OfflineMessagesAckResponse;
+    packet.header.seq_id = 46;
+    ASSERT_TRUE(liteim::appendUint64(liteim::TlvType::MessageId, 5001, packet.body).isOk());
+    ASSERT_TRUE(liteim::appendUint64(liteim::TlvType::DeliveryStatus, 2, packet.body).isOk());
+
+    const auto description = liteim::cli::describePacket(packet);
+
+    EXPECT_NE(description.find("OFFLINE_MESSAGES_ACK_RESPONSE"), std::string::npos);
+    EXPECT_NE(description.find("message_id=5001"), std::string::npos);
+    EXPECT_NE(description.find("delivery_status=2"), std::string::npos);
 }
 
 TEST(ClientCliProtocolClientTest, ConnectsAndSendsPacketToLoopbackServer) {

@@ -8,11 +8,29 @@
 - `LiteIM/docs/process/task_plan.md`、`LiteIM/docs/process/findings.md` 和 `LiteIM/docs/process/progress.md` 记录进度、发现、验证结果和过程记忆。
 - 如果文档或源码与 `PROJECT_MEMORY.md` 的总路线冲突，按总路线修正；如果冲突点是完成状态或活动任务，按 planning files 的过程记录修正。
 
-## 2026-05-19 Step 53 Final README Showcase Findings
+## 2026-05-20 Step 53 Offline Delivery ACK Findings
 
 当前采用的边界：
 
-- Step 53 是文档和展示材料收口，不修改 C++ 服务端代码、TLV 协议、MySQL schema、Redis key、Qt 功能逻辑或 PersonaAgent 实现。
+- 用户要求把原 Step 53 最终 README/showcase 收口删除并移到最后的 Step 58；当前 Step 53 改为离线消息 ACK。
+- Step 53 只处理离线消息可靠确认：`OfflineMessagesRequest` 返回 pending rows，`OfflineMessagesAckRequest` 才把 message ids 标记 delivered。
+- `PrivateMessageResponse` 仍只表示服务端保存/处理发送方请求，不表示接收方已收到；私聊在线 delivery ACK 留给 Step 55。
+- 群聊不做每成员逐条 ACK，避免一开始引入写放大和协议复杂度。
+- 新增 `message_deliveries` 表作为投递状态扩展点，第一版按 `(message_id, user_id)` 记录，不引入多设备。
+- Redis unread 只作为缓存状态；ACK 成功后清 unread，清理失败记录 warning，不撤回 MySQL delivered。
+- CLI 和 Python E2E 必须走真实 TLV 协议，而不是直接改数据库验证。
+
+TDD 记录：
+
+- RED 先增加 `OfflineMessagesAckRequest` / `OfflineMessagesAckResponse` / `DeliveryStatus` 的协议测试，首次构建按预期失败于缺少枚举和 service/storage 接口。
+- GREEN 增加 ACK handler、DAO 事务、`message_deliveries` 表、migration、CLI `offline-ack` 和 Python E2E ACK 语义。
+- 本地已有数据库需要执行 `scripts/migrations/054_delivery_ack.sql`，否则集成测试会在缺少 `message_deliveries` 表时报错。
+
+## 2026-05-19 Former Final README Showcase Findings (moved to Step 58)
+
+当前采用的边界：
+
+- 这批文档和展示材料原本作为 Step 53 完成；用户后来要求删除原 Step 53，并把最终 README、架构图、Qt 截图、面试说明和压测报告重新作为 Step 58 最后收口。
 - README 作为公开展示入口，补齐技术栈、服务端架构图、线程模型图、TLV 协议摘要、MySQL 表结构摘要、Redis Key 摘要、Qt 截图、编译/运行/测试方式、压测结果、PersonaAgent 接入边界和面试说明。
 - `docs/reports/qt_client_showcase.png` 由当前 Qt `MainWindow` / `ChatPage` / `MessageBubble` 代码路径渲染生成，不使用第三方 IM 产品品牌、logo、截图或素材。
 - 第一轮截图生成暴露出临时截图工具误链旧位置 `build-qt/client_qt/libliteim_qt_client_core.a`，画面仍有旧 Agent sidebar；改为链接当前 `build-qt/client_qt/src/libliteim_qt_client_core.a` 后重新生成，截图显示 Step49-52 当前三栏 UI、会话列表、气泡、Offline/Reconnect 状态。
@@ -202,7 +220,7 @@ TDD 记录：
 - 历史 process 记录可以保留 Step 时间线，但不能继续展开已经移除的 C++ 内置 assistant 方案细节；这些细节会让后续恢复上下文时误判当前路线。
 - `BotClient` 是 Python 客户端组件名，允许保留；其他旧 assistant 叙述、旧固定账号、旧专用协议名、旧 C++ gateway/service 名都不再保留。
 - 旧 assistant 教程已经删除，不再用新教程替代。
-- 用户后续要求 Step 40 之后直接重排，因此当前路线改为：Step 41 CLI、Step 42 Python E2E、Step 43 benchmark、Step 44 gMock/ASan/UBSan、Step 45-52 Qt、Step 53 final docs。
+- 用户后续要求 Step 40 之后直接重排，因此当时路线改为：Step 41 CLI、Step 42 Python E2E、Step 43 benchmark、Step 44 gMock/ASan/UBSan、Step 45-52 Qt、Step 53 final docs。用户后来又把最终展示材料移动到 Step58。
 - 当前 LiteIM 没有 Python BotClient 功能；`tests/e2e/liteim_e2e.py` 只是 Step 42 的黑盒测试 helper。PersonaAgent BotClient 属于后续项目二。
 
 ## 2026-05-17 C++ Assistant Route Retirement Findings
@@ -245,7 +263,7 @@ TDD 记录：
 
 ## 2026-05-16 Documentation Layout Cleanup Findings
 
-用户确认采用方案 A：删除原 GitHub Actions CI Step，把 Qt 客户端阶段前移，并把 LiteIM 的过程文件和教程统一收到 `docs/` 内。当前后续重排后的路线是 Step 45-52 Qt、Step 53 final docs。
+用户确认采用方案 A：删除原 GitHub Actions CI Step，把 Qt 客户端阶段前移，并把 LiteIM 的过程文件和教程统一收到 `docs/` 内。当时后续重排后的路线是 Step 45-52 Qt、Step 53 final docs；用户后来又把最终展示材料移动到 Step58。
 
 当前采用的边界：
 

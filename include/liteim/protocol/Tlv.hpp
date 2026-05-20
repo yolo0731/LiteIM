@@ -31,6 +31,7 @@ enum class TlvType : std::uint16_t {
     Offset = 47,
     Limit = 48,
     UnreadCount = 49,
+    DeliveryStatus = 50,
 
     ErrorCode = 90,
     ErrorMessage = 91,

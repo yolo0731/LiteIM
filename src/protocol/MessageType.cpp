@@ -60,6 +60,10 @@ const char* toString(MessageType type) noexcept {
         return "HISTORY_REQUEST";
     case MessageType::HistoryResponse:
         return "HISTORY_RESPONSE";
+    case MessageType::OfflineMessagesAckRequest:
+        return "OFFLINE_MESSAGES_ACK_REQUEST";
+    case MessageType::OfflineMessagesAckResponse:
+        return "OFFLINE_MESSAGES_ACK_RESPONSE";
     case MessageType::ErrorResponse:
         return "ERROR_RESPONSE";
     case MessageType::Unknown:
@@ -84,6 +88,7 @@ bool isRequestType(MessageType type) noexcept {
     case MessageType::GroupMessageRequest:
     case MessageType::OfflineMessagesRequest:
     case MessageType::HistoryRequest:
+    case MessageType::OfflineMessagesAckRequest:
         return true;
     case MessageType::Unknown:
     case MessageType::HeartbeatResponse:
@@ -101,6 +106,7 @@ bool isRequestType(MessageType type) noexcept {
     case MessageType::GroupMessagePush:
     case MessageType::OfflineMessagesResponse:
     case MessageType::HistoryResponse:
+    case MessageType::OfflineMessagesAckResponse:
     case MessageType::ErrorResponse:
         return false;
     }
@@ -123,6 +129,7 @@ bool isResponseType(MessageType type) noexcept {
     case MessageType::GroupMessageResponse:
     case MessageType::OfflineMessagesResponse:
     case MessageType::HistoryResponse:
+    case MessageType::OfflineMessagesAckResponse:
     case MessageType::ErrorResponse:
         return true;
     case MessageType::Unknown:
@@ -141,6 +148,7 @@ bool isResponseType(MessageType type) noexcept {
     case MessageType::GroupMessagePush:
     case MessageType::OfflineMessagesRequest:
     case MessageType::HistoryRequest:
+    case MessageType::OfflineMessagesAckRequest:
         return false;
     }
 
@@ -179,6 +187,8 @@ bool isPushType(MessageType type) noexcept {
     case MessageType::OfflineMessagesResponse:
     case MessageType::HistoryRequest:
     case MessageType::HistoryResponse:
+    case MessageType::OfflineMessagesAckRequest:
+    case MessageType::OfflineMessagesAckResponse:
     case MessageType::ErrorResponse:
         return false;
     }

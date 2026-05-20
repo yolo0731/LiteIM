@@ -73,6 +73,14 @@ liteim::Bytes offlineRequestBody(std::optional<std::uint64_t> limit = std::nullo
     return body;
 }
 
+liteim::Bytes offlineAckBody(const std::vector<std::uint64_t>& message_ids) {
+    liteim::Bytes body;
+    for (const auto message_id : message_ids) {
+        EXPECT_TRUE(liteim::appendUint64(liteim::TlvType::MessageId, message_id, body).isOk());
+    }
+    return body;
+}
+
 std::vector<std::uint64_t> uint64Fields(const liteim::Packet& packet, liteim::TlvType type) {
     liteim::TlvMap fields;
     EXPECT_TRUE(liteim::parseTlvMap(packet.body, fields).isOk());
@@ -217,6 +225,43 @@ public:
         return liteim::Status::ok();
     }
 
+    liteim::Status
+    ackOfflineMessages(std::uint64_t user_id, const std::vector<std::uint64_t>& message_ids,
+                       std::vector<liteim::OfflineMessageRecord>& acked_messages) override {
+        ++ack_offline_calls;
+        last_ack_user_id = user_id;
+        last_ack_message_ids = message_ids;
+        if (events != nullptr) {
+            events->push_back("ack-offline");
+        }
+        if (fail_ack_offline) {
+            return liteim::Status::error(liteim::ErrorCode::IoError, "offline ack failed");
+        }
+
+        acked_messages.clear();
+        auto& list = pending[user_id];
+        for (const auto message_id : message_ids) {
+            const auto it = std::find_if(list.begin(), list.end(),
+                                         [&](const liteim::OfflineMessageRecord& record) {
+                                             return record.message.message_id == message_id;
+                                         });
+            if (it == list.end()) {
+                return liteim::Status::error(liteim::ErrorCode::NotFound,
+                                             "offline message was not pending");
+            }
+            acked_messages.push_back(*it);
+        }
+
+        list.erase(std::remove_if(list.begin(), list.end(),
+                                  [&](const liteim::OfflineMessageRecord& record) {
+                                      return std::find(message_ids.begin(), message_ids.end(),
+                                                       record.message.message_id) !=
+                                             message_ids.end();
+                                  }),
+                   list.end());
+        return liteim::Status::ok();
+    }
+
     liteim::Status getHistory(const liteim::HistoryQuery&,
                               std::vector<liteim::MessageRecord>&) override {
         return liteim::Status::ok();
@@ -236,13 +281,17 @@ public:
     std::unordered_map<std::uint64_t, liteim::UserRecord> users;
     std::unordered_map<std::uint64_t, std::vector<liteim::OfflineMessageRecord>> pending;
     std::vector<std::uint64_t> last_mark_message_ids;
+    std::vector<std::uint64_t> last_ack_message_ids;
     std::uint64_t last_get_user_id{0};
     std::uint64_t last_mark_user_id{0};
+    std::uint64_t last_ack_user_id{0};
     std::uint32_t last_get_limit{0};
     int get_offline_calls{0};
     int mark_delivered_calls{0};
+    int ack_offline_calls{0};
     std::vector<std::string>* events{nullptr};
     bool fail_mark_delivered{false};
+    bool fail_ack_offline{false};
 };
 
 class FakeCache final : public liteim::ICache {
@@ -337,11 +386,16 @@ protected:
 
     liteim::MessageRouter::RouterRequest requestFor(const liteim::Session::Ptr& session,
                                                     liteim::Bytes body) {
+        return requestFor(session, liteim::MessageType::OfflineMessagesRequest, std::move(body));
+    }
+
+    liteim::MessageRouter::RouterRequest requestFor(const liteim::Session::Ptr& session,
+                                                    liteim::MessageType type,
+                                                    liteim::Bytes body) {
         liteim::TlvMap fields;
         EXPECT_TRUE(liteim::parseTlvMap(body, fields).isOk());
-        return liteim::MessageRouter::RouterRequest{
-            session, makePacket(liteim::MessageType::OfflineMessagesRequest, 37, std::move(body)),
-            std::move(fields)};
+        return liteim::MessageRouter::RouterRequest{session, makePacket(type, 37, std::move(body)),
+                                                    std::move(fields)};
     }
 
     liteim::Session::Ptr bindAlice(std::uint64_t session_id = 7001) {
@@ -403,6 +457,43 @@ void cleanupStep37Rows(const liteim::MySqlConfig& config) {
     executeCleanupSql(connection, "DELETE FROM users WHERE username LIKE 'step37\\_%'");
 }
 
+std::optional<std::uint64_t> queryDeliveryStatus(const liteim::MySqlConfig& config,
+                                                std::uint64_t user_id,
+                                                std::uint64_t message_id) {
+    liteim::MySqlConnection connection;
+    const auto connect_status = connection.connect(config);
+    if (!connect_status.isOk()) {
+        return std::nullopt;
+    }
+
+    liteim::PreparedStatement statement(connection);
+    const auto prepare_status =
+        statement.prepare("SELECT status FROM message_deliveries "
+                          "WHERE user_id = ? AND message_id = ? LIMIT 1");
+    if (!prepare_status.isOk()) {
+        return std::nullopt;
+    }
+    if (!statement.bindUInt64(0, user_id).isOk()) {
+        return std::nullopt;
+    }
+    if (!statement.bindUInt64(1, message_id).isOk()) {
+        return std::nullopt;
+    }
+
+    liteim::MySqlQueryResult result;
+    const auto query_status = statement.executeQuery(result);
+    if (!query_status.isOk() || result.rows().empty() || result.rows().front().values.empty() ||
+        !result.rows().front().values.front().has_value()) {
+        return std::nullopt;
+    }
+
+    try {
+        return static_cast<std::uint64_t>(std::stoull(*result.rows().front().values.front()));
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
 class OfflineMessageServiceIntegrationTest : public ::testing::Test {
 protected:
     void SetUp() override {
@@ -453,12 +544,17 @@ protected:
 
     liteim::MessageRouter::RouterRequest requestFor(const liteim::Session::Ptr& session,
                                                     liteim::Bytes body) {
+        return requestFor(session, liteim::MessageType::OfflineMessagesRequest, std::move(body));
+    }
+
+    liteim::MessageRouter::RouterRequest requestFor(const liteim::Session::Ptr& session,
+                                                    liteim::MessageType type,
+                                                    liteim::Bytes body) {
         liteim::TlvMap fields;
         EXPECT_TRUE(liteim::parseTlvMap(body, fields).isOk());
-        return liteim::MessageRouter::RouterRequest{
-            session, makePacket(liteim::MessageType::OfflineMessagesRequest, 3701,
-                                std::move(body)),
-            std::move(fields)};
+        return liteim::MessageRouter::RouterRequest{session, makePacket(type, 3701,
+                                                                        std::move(body)),
+                                                    std::move(fields)};
     }
 
     liteim::UserRecord createUser(const std::string& label) {
@@ -503,6 +599,10 @@ TEST(OfflineMessageServiceTest, HeaderIsSelfContained) {
                                  liteim::Status (Service::*)(
                                      const liteim::MessageRouter::RouterRequest&,
                                      liteim::Packet&)>);
+    static_assert(std::is_same_v<decltype(&Service::handleOfflineMessagesAck),
+                                 liteim::Status (Service::*)(
+                                     const liteim::MessageRouter::RouterRequest&,
+                                     liteim::Packet&)>);
 }
 
 TEST_F(OfflineMessageServiceFixture, OfflineMessagesRequireLoggedInSession) {
@@ -519,7 +619,7 @@ TEST_F(OfflineMessageServiceFixture, OfflineMessagesRequireLoggedInSession) {
     EXPECT_EQ(cache.clear_unread_calls, 0);
 }
 
-TEST_F(OfflineMessageServiceFixture, OfflineMessagesReturnPendingRowsMarkDeliveredAndClearUnread) {
+TEST_F(OfflineMessageServiceFixture, OfflineMessagesReturnPendingRowsWithoutMarkingDelivered) {
     auto session = bindAlice();
     storage.pending[1001] = {
         makeOfflineRecord(1, 1001, liteim::ConversationType::kPrivate, 10011002, 5001, 1002, 1001,
@@ -537,19 +637,10 @@ TEST_F(OfflineMessageServiceFixture, OfflineMessagesReturnPendingRowsMarkDeliver
     EXPECT_EQ(storage.get_offline_calls, 1);
     EXPECT_EQ(storage.last_get_user_id, 1001U);
     EXPECT_EQ(storage.last_get_limit, 100U);
-    EXPECT_EQ(storage.mark_delivered_calls, 1);
-    EXPECT_EQ(storage.last_mark_user_id, 1001U);
-    EXPECT_EQ(storage.last_mark_message_ids, (std::vector<std::uint64_t>{5001, 5002}));
-    EXPECT_EQ(cache.clear_unread_calls, 2);
-    ASSERT_EQ(cache.cleared_unread_keys.size(), 2U);
-    EXPECT_EQ(cache.cleared_unread_keys[0].user_id, 1001U);
-    EXPECT_EQ(cache.cleared_unread_keys[0].conversation.id, 10011002U);
-    EXPECT_EQ(cache.cleared_unread_keys[1].conversation.type, liteim::ConversationType::kGroup);
-    EXPECT_EQ(cache.cleared_unread_keys[1].conversation.id, 88U);
-    ASSERT_EQ(events.size(), 3U);
-    EXPECT_EQ(events[0], "mark-delivered");
-    EXPECT_EQ(events[1], "clear-unread:10011002");
-    EXPECT_EQ(events[2], "clear-unread:88");
+    EXPECT_EQ(storage.mark_delivered_calls, 0);
+    EXPECT_EQ(storage.ack_offline_calls, 0);
+    EXPECT_EQ(cache.clear_unread_calls, 0);
+    EXPECT_TRUE(events.empty());
 
     EXPECT_EQ(uint64Fields(response, liteim::TlvType::MessageId),
               (std::vector<std::uint64_t>{5001, 5002}));
@@ -591,11 +682,47 @@ TEST_F(OfflineMessageServiceFixture, OfflineMessagesLimitIsCappedByServiceOption
     EXPECT_EQ(storage.last_get_limit, 2U);
     EXPECT_EQ(uint64Fields(response, liteim::TlvType::MessageId),
               (std::vector<std::uint64_t>{5001, 5002}));
-    EXPECT_EQ(storage.last_mark_message_ids, (std::vector<std::uint64_t>{5001, 5002}));
-    EXPECT_EQ(cache.clear_unread_calls, 1);
+    EXPECT_EQ(storage.mark_delivered_calls, 0);
+    EXPECT_EQ(storage.ack_offline_calls, 0);
+    EXPECT_EQ(cache.clear_unread_calls, 0);
 }
 
-TEST_F(OfflineMessageServiceFixture, ClearUnreadFailureDoesNotBlockDeliveredMark) {
+TEST_F(OfflineMessageServiceFixture, OfflineAckMarksDeliveredAndClearsUnread) {
+    auto session = bindAlice();
+    storage.pending[1001] = {
+        makeOfflineRecord(1, 1001, liteim::ConversationType::kPrivate, 10011002, 5001, 1002, 1001,
+                          "hello alice", 1700000000000LL),
+        makeOfflineRecord(2, 1001, liteim::ConversationType::kGroup, 88, 5002, 1002, 88,
+                          "group hello", 1700000000001LL),
+    };
+
+    auto request = requestFor(session, liteim::MessageType::OfflineMessagesAckRequest,
+                              offlineAckBody({5001, 5002}));
+    liteim::Packet response;
+    const auto status = service.handleOfflineMessagesAck(request, response);
+
+    ASSERT_TRUE(status.isOk()) << status.message();
+    EXPECT_EQ(response.header.msg_type, liteim::MessageType::OfflineMessagesAckResponse);
+    EXPECT_EQ(storage.ack_offline_calls, 1);
+    EXPECT_EQ(storage.last_ack_user_id, 1001U);
+    EXPECT_EQ(storage.last_ack_message_ids, (std::vector<std::uint64_t>{5001, 5002}));
+    EXPECT_EQ(cache.clear_unread_calls, 2);
+    ASSERT_EQ(cache.cleared_unread_keys.size(), 2U);
+    EXPECT_EQ(cache.cleared_unread_keys[0].user_id, 1001U);
+    EXPECT_EQ(cache.cleared_unread_keys[0].conversation.id, 10011002U);
+    EXPECT_EQ(cache.cleared_unread_keys[1].conversation.type, liteim::ConversationType::kGroup);
+    EXPECT_EQ(cache.cleared_unread_keys[1].conversation.id, 88U);
+    ASSERT_EQ(events.size(), 3U);
+    EXPECT_EQ(events[0], "ack-offline");
+    EXPECT_EQ(events[1], "clear-unread:10011002");
+    EXPECT_EQ(events[2], "clear-unread:88");
+    EXPECT_EQ(uint64Fields(response, liteim::TlvType::MessageId),
+              (std::vector<std::uint64_t>{5001, 5002}));
+    EXPECT_EQ(uint64Fields(response, liteim::TlvType::DeliveryStatus),
+              (std::vector<std::uint64_t>{2, 2}));
+}
+
+TEST_F(OfflineMessageServiceFixture, ClearUnreadFailureDoesNotBlockOfflineAck) {
     cache.fail_clear_unread = true;
     auto session = bindAlice();
     storage.pending[1001] = {
@@ -603,35 +730,37 @@ TEST_F(OfflineMessageServiceFixture, ClearUnreadFailureDoesNotBlockDeliveredMark
                           "hello alice", 1700000000000LL),
     };
 
-    auto request = requestFor(session, offlineRequestBody());
+    auto request = requestFor(session, liteim::MessageType::OfflineMessagesAckRequest,
+                              offlineAckBody({5001}));
     liteim::Packet response;
-    const auto status = service.handleOfflineMessages(request, response);
+    const auto status = service.handleOfflineMessagesAck(request, response);
 
     ASSERT_TRUE(status.isOk()) << status.message();
-    EXPECT_EQ(response.header.msg_type, liteim::MessageType::OfflineMessagesResponse);
+    EXPECT_EQ(response.header.msg_type, liteim::MessageType::OfflineMessagesAckResponse);
     EXPECT_EQ(cache.clear_unread_calls, 1);
-    EXPECT_EQ(storage.mark_delivered_calls, 1);
-    EXPECT_EQ(storage.last_mark_message_ids, (std::vector<std::uint64_t>{5001}));
+    EXPECT_EQ(storage.ack_offline_calls, 1);
+    EXPECT_EQ(storage.last_ack_message_ids, (std::vector<std::uint64_t>{5001}));
 }
 
-TEST_F(OfflineMessageServiceFixture, MarkDeliveredFailureDoesNotClearUnreadCounters) {
-    storage.fail_mark_delivered = true;
+TEST_F(OfflineMessageServiceFixture, OfflineAckFailureDoesNotClearUnreadCounters) {
+    storage.fail_ack_offline = true;
     auto session = bindAlice();
     storage.pending[1001] = {
         makeOfflineRecord(1, 1001, liteim::ConversationType::kPrivate, 10011002, 5001, 1002, 1001,
                           "hello alice", 1700000000000LL),
     };
 
-    auto request = requestFor(session, offlineRequestBody());
+    auto request = requestFor(session, liteim::MessageType::OfflineMessagesAckRequest,
+                              offlineAckBody({5001}));
     liteim::Packet response;
-    const auto status = service.handleOfflineMessages(request, response);
+    const auto status = service.handleOfflineMessagesAck(request, response);
 
     EXPECT_FALSE(status.isOk());
     EXPECT_EQ(status.code(), liteim::ErrorCode::IoError);
-    EXPECT_EQ(storage.mark_delivered_calls, 1);
+    EXPECT_EQ(storage.ack_offline_calls, 1);
     EXPECT_EQ(cache.clear_unread_calls, 0);
     ASSERT_EQ(events.size(), 1U);
-    EXPECT_EQ(events[0], "mark-delivered");
+    EXPECT_EQ(events[0], "ack-offline");
     ASSERT_EQ(storage.pending[1001].size(), 1U);
 }
 
@@ -649,7 +778,7 @@ TEST_F(OfflineMessageServiceFixture, OfflineMessagesRejectZeroLimit) {
     EXPECT_EQ(cache.clear_unread_calls, 0);
 }
 
-TEST_F(OfflineMessageServiceIntegrationTest, PullMarksDeliveredAndClearsRedisUnread) {
+TEST_F(OfflineMessageServiceIntegrationTest, PullKeepsPendingUntilClientAck) {
     ASSERT_NE(service, nullptr);
     const auto sender = createUser("sender");
     const auto receiver = createUser("receiver");
@@ -668,6 +797,8 @@ TEST_F(OfflineMessageServiceIntegrationTest, PullMarksDeliveredAndClearsRedisUnr
     const auto save_status =
         storage->saveMessageWithOfflineRecipients(message, {receiver.user_id}, saved_message);
     ASSERT_TRUE(save_status.isOk()) << save_status.message();
+    ASSERT_EQ(queryDeliveryStatus(mysql_config, receiver.user_id, saved_message.message_id),
+              std::optional<std::uint64_t>{0});
 
     std::uint64_t unread_count = 0;
     ASSERT_TRUE(cache->incrUnread({receiver.user_id, conversation}, 1, unread_count).isOk());
@@ -689,7 +820,32 @@ TEST_F(OfflineMessageServiceIntegrationTest, PullMarksDeliveredAndClearsRedisUnr
 
     std::vector<liteim::OfflineMessageRecord> pending;
     ASSERT_TRUE(storage->getOfflineMessages(receiver.user_id, 100, pending).isOk());
+    ASSERT_EQ(pending.size(), 1U);
+    EXPECT_EQ(pending.front().message.message_id, saved_message.message_id);
+    ASSERT_EQ(queryDeliveryStatus(mysql_config, receiver.user_id, saved_message.message_id),
+              std::optional<std::uint64_t>{0});
+
+    unread_count = 99;
+    ASSERT_TRUE(cache->getUnread({receiver.user_id, conversation}, unread_count).isOk());
+    EXPECT_EQ(unread_count, 1U);
+
+    auto ack_request = requestFor(session, liteim::MessageType::OfflineMessagesAckRequest,
+                                  offlineAckBody({saved_message.message_id}));
+    liteim::Packet ack_response;
+    const auto ack_status = service->handleOfflineMessagesAck(ack_request, ack_response);
+    ASSERT_TRUE(ack_status.isOk()) << ack_status.message();
+
+    EXPECT_EQ(ack_response.header.msg_type, liteim::MessageType::OfflineMessagesAckResponse);
+    EXPECT_EQ(uint64Fields(ack_response, liteim::TlvType::MessageId),
+              (std::vector<std::uint64_t>{saved_message.message_id}));
+    EXPECT_EQ(uint64Fields(ack_response, liteim::TlvType::DeliveryStatus),
+              (std::vector<std::uint64_t>{2}));
+
+    pending.clear();
+    ASSERT_TRUE(storage->getOfflineMessages(receiver.user_id, 100, pending).isOk());
     EXPECT_TRUE(pending.empty());
+    ASSERT_EQ(queryDeliveryStatus(mysql_config, receiver.user_id, saved_message.message_id),
+              std::optional<std::uint64_t>{2});
 
     unread_count = 99;
     ASSERT_TRUE(cache->getUnread({receiver.user_id, conversation}, unread_count).isOk());

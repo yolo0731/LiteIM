@@ -25,6 +25,24 @@ class OfflineMessagesE2ETest(E2ETestCase):
             offline = receiver.offline(limit=10)
             records = offline.message_records()
             self.assertIn("offline hello from python e2e", [record.text for record in records])
+            message_ids = [record.message_id for record in records]
+
+            still_pending = receiver.offline(limit=10)
+            self.assertIn(
+                "offline hello from python e2e",
+                [record.text for record in still_pending.message_records()],
+            )
+
+            ack = receiver.offline_ack(message_ids)
+            self.assertEqual(ack.msg_type, MessageType.OFFLINE_MESSAGES_ACK_RESPONSE)
+            self.assertEqual(ack.uint64s(TlvType.MESSAGE_ID), message_ids)
+            self.assertEqual(ack.uint64s(TlvType.DELIVERY_STATUS), [2] * len(message_ids))
+
+            after_ack = receiver.offline(limit=10)
+            self.assertNotIn(
+                "offline hello from python e2e",
+                [record.text for record in after_ack.message_records()],
+            )
 
 
 if __name__ == "__main__":

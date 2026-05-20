@@ -4,8 +4,10 @@
 #include "liteim/storage/MySqlConnection.hpp"
 #include "liteim/storage/MySqlPool.hpp"
 
+#include <algorithm>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 namespace liteim {
 namespace {
@@ -85,6 +87,22 @@ Status executeSimple(MySqlConnection& connection, const std::string& sql) {
 
 void rollbackSilently(MySqlConnection& connection) noexcept {
     (void)executeSimple(connection, "ROLLBACK");
+}
+
+Status validateMessageIds(const std::vector<std::uint64_t>& message_ids,
+                          std::vector<std::uint64_t>& unique_message_ids) {
+    unique_message_ids.clear();
+    unique_message_ids.reserve(message_ids.size());
+    for (const auto message_id : message_ids) {
+        if (message_id == 0U) {
+            return Status::error(ErrorCode::InvalidArgument, "message_id is invalid");
+        }
+        if (std::find(unique_message_ids.begin(), unique_message_ids.end(), message_id) ==
+            unique_message_ids.end()) {
+            unique_message_ids.push_back(message_id);
+        }
+    }
+    return Status::ok();
 }
 
 // 把 MySQL 查询出来的一行数据转换成 OfflineMessageRecord,要求一行必须有 10 列
@@ -194,6 +212,137 @@ Status rowToOfflineMessageRecord(const MySqlRow& row, OfflineMessageRecord& reco
     return Status::ok();
 }
 
+Status fetchOfflineMessageForAck(PreparedStatement& statement, std::uint64_t user_id,
+                                 std::uint64_t message_id, OfflineMessageRecord& record) {
+    const auto user_status = statement.bindUInt64(0, user_id);
+    if (!user_status.isOk()) {
+        return user_status;
+    }
+    const auto message_status = statement.bindUInt64(1, message_id);
+    if (!message_status.isOk()) {
+        return message_status;
+    }
+
+    MySqlQueryResult result;
+    const auto query_status = statement.executeQuery(result);
+    if (!query_status.isOk()) {
+        return query_status;
+    }
+    if (result.rows().empty()) {
+        return Status::error(ErrorCode::NotFound, "offline message was not found");
+    }
+    if (result.rows().size() != 1U) {
+        return Status::error(ErrorCode::InternalError,
+                             "offline message ack query returned multiple rows");
+    }
+    return rowToOfflineMessageRecord(result.rows().front(), record);
+}
+
+Status markOfflineDeliveredInTransaction(MySqlConnection& connection, std::uint64_t user_id,
+                                         const std::vector<std::uint64_t>& message_ids,
+                                         std::int64_t delivered_at_ms) {
+    PreparedStatement statement(connection);
+    const auto prepare_status =
+        statement.prepare("UPDATE offline_messages "
+                          "SET delivered = 1, delivered_at_ms = COALESCE(delivered_at_ms, ?) "
+                          "WHERE user_id = ? AND message_id = ?");
+    if (!prepare_status.isOk()) {
+        return prepare_status;
+    }
+
+    for (const auto message_id : message_ids) {
+        const auto delivered_status = statement.bindInt64(0, delivered_at_ms);
+        if (!delivered_status.isOk()) {
+            return delivered_status;
+        }
+        const auto user_status = statement.bindUInt64(1, user_id);
+        if (!user_status.isOk()) {
+            return user_status;
+        }
+        const auto message_status = statement.bindUInt64(2, message_id);
+        if (!message_status.isOk()) {
+            return message_status;
+        }
+
+        std::uint64_t affected_rows = 0;
+        const auto update_status = statement.executeUpdate(affected_rows);
+        if (!update_status.isOk()) {
+            return update_status;
+        }
+    }
+    return Status::ok();
+}
+
+Status upsertDeliveryDelivered(MySqlConnection& connection, std::uint64_t user_id,
+                               const std::vector<std::uint64_t>& message_ids,
+                               std::int64_t delivered_at_ms) {
+    PreparedStatement statement(connection);
+    const auto prepare_status = statement.prepare(
+        "INSERT INTO message_deliveries "
+        "(message_id, user_id, status, pushed_at_ms, delivered_at_ms, read_at_ms) "
+        "VALUES (?, ?, 2, NULL, ?, NULL) "
+        "ON DUPLICATE KEY UPDATE "
+        "status = GREATEST(status, VALUES(status)), "
+        "delivered_at_ms = COALESCE(delivered_at_ms, VALUES(delivered_at_ms))");
+    if (!prepare_status.isOk()) {
+        return prepare_status;
+    }
+
+    for (const auto message_id : message_ids) {
+        const auto message_status = statement.bindUInt64(0, message_id);
+        if (!message_status.isOk()) {
+            return message_status;
+        }
+        const auto user_status = statement.bindUInt64(1, user_id);
+        if (!user_status.isOk()) {
+            return user_status;
+        }
+        const auto delivered_status = statement.bindInt64(2, delivered_at_ms);
+        if (!delivered_status.isOk()) {
+            return delivered_status;
+        }
+
+        std::uint64_t affected_rows = 0;
+        const auto update_status = statement.executeUpdate(affected_rows);
+        if (!update_status.isOk()) {
+            return update_status;
+        }
+    }
+    return Status::ok();
+}
+
+Status upsertDeliveryPending(MySqlConnection& connection, std::uint64_t user_id,
+                             std::uint64_t message_id) {
+    PreparedStatement statement(connection);
+    const auto prepare_status = statement.prepare(
+        "INSERT INTO message_deliveries "
+        "(message_id, user_id, status, pushed_at_ms, delivered_at_ms, read_at_ms) "
+        "VALUES (?, ?, 0, NULL, NULL, NULL) "
+        "ON DUPLICATE KEY UPDATE status = status");
+    if (!prepare_status.isOk()) {
+        return prepare_status;
+    }
+    const auto message_status = statement.bindUInt64(0, message_id);
+    if (!message_status.isOk()) {
+        return message_status;
+    }
+    const auto user_status = statement.bindUInt64(1, user_id);
+    if (!user_status.isOk()) {
+        return user_status;
+    }
+
+    std::uint64_t affected_rows = 0;
+    const auto insert_status = statement.executeUpdate(affected_rows);
+    if (!insert_status.isOk()) {
+        return insert_status;
+    }
+    if (affected_rows > 2U) {
+        return Status::error(ErrorCode::InternalError,
+                             "save delivery state affected unexpected row count");
+    }
+    return Status::ok();
+}
+
 }  // namespace
 
 OfflineMessageDao::OfflineMessageDao(MySqlPool& pool, std::chrono::milliseconds acquire_timeout)
@@ -206,40 +355,58 @@ Status OfflineMessageDao::saveOfflineMessage(std::uint64_t user_id, std::uint64_
         return acquire_status;
     }
 
+    const auto begin_status = executeSimple(*guard, "START TRANSACTION");
+    if (!begin_status.isOk()) {
+        return begin_status;
+    }
+
     PreparedStatement statement(*guard);
     const auto prepare_status =
         statement.prepare("INSERT INTO offline_messages "
                           "(user_id, message_id, delivered, created_at_ms, delivered_at_ms) "
                           "VALUES (?, ?, 0, ?, NULL)");
     if (!prepare_status.isOk()) {
+        rollbackSilently(*guard);
         return prepare_status;
     }
     const auto user_status = bindUint64(statement, 0, user_id, "user_id");
     if (!user_status.isOk()) {
+        rollbackSilently(*guard);
         return user_status;
     }
     const auto message_status = bindUint64(statement, 1, message_id, "message_id");
     if (!message_status.isOk()) {
+        rollbackSilently(*guard);
         return message_status;
     }
     const auto created_status = statement.bindInt64(2, Timestamp::now().millisecondsSinceEpoch());
     if (!created_status.isOk()) {
+        rollbackSilently(*guard);
         return created_status;
     }
 
     std::uint64_t affected_rows = 0;
     const auto insert_status = statement.executeUpdate(affected_rows);
     if (!insert_status.isOk()) {
+        rollbackSilently(*guard);
         if (statement.lastErrorNumber() == kMysqlDuplicateEntry) {
             return Status::error(ErrorCode::AlreadyExists, "offline message already exists");
         }
         return insert_status;
     }
     if (affected_rows != 1U) {
+        rollbackSilently(*guard);
         return Status::error(ErrorCode::InternalError,
                              "save offline message affected unexpected row count");
     }
-    return Status::ok();
+    statement.close();
+
+    const auto delivery_status = upsertDeliveryPending(*guard, user_id, message_id);
+    if (!delivery_status.isOk()) {
+        rollbackSilently(*guard);
+        return delivery_status;
+    }
+    return executeSimple(*guard, "COMMIT");
 }
 
 Status OfflineMessageDao::getOfflineMessages(std::uint64_t user_id, std::uint32_t limit,
@@ -375,6 +542,85 @@ Status OfflineMessageDao::markOfflineDelivered(std::uint64_t user_id,
 
     statement.close();
     return executeSimple(*guard, "COMMIT");
+}
+
+Status OfflineMessageDao::ackOfflineMessages(
+    std::uint64_t user_id, const std::vector<std::uint64_t>& message_ids,
+    std::vector<OfflineMessageRecord>& acked_messages) {
+    acked_messages.clear();
+    if (message_ids.empty()) {
+        return Status::ok();
+    }
+    if (user_id == 0U) {
+        return Status::error(ErrorCode::InvalidArgument, "user_id is invalid");
+    }
+
+    std::vector<std::uint64_t> unique_message_ids;
+    const auto ids_status = validateMessageIds(message_ids, unique_message_ids);
+    if (!ids_status.isOk()) {
+        return ids_status;
+    }
+
+    ConnectionGuard guard;
+    const auto acquire_status = pool_->acquire(acquire_timeout_, guard);
+    if (!acquire_status.isOk()) {
+        return acquire_status;
+    }
+
+    const auto begin_status = executeSimple(*guard, "START TRANSACTION");
+    if (!begin_status.isOk()) {
+        return begin_status;
+    }
+
+    PreparedStatement query(*guard);
+    const auto prepare_status =
+        query.prepare("SELECT om.offline_message_id, om.user_id, om.created_at_ms, "
+                      "m.message_id, m.conversation_type, m.conversation_id, m.sender_id, "
+                      "m.receiver_id, m.message_text, m.created_at_ms "
+                      "FROM offline_messages om "
+                      "JOIN messages m ON m.message_id = om.message_id "
+                      "WHERE om.user_id = ? AND om.message_id = ? "
+                      "LIMIT 1");
+    if (!prepare_status.isOk()) {
+        rollbackSilently(*guard);
+        return prepare_status;
+    }
+
+    std::vector<OfflineMessageRecord> records;
+    records.reserve(unique_message_ids.size());
+    for (const auto message_id : unique_message_ids) {
+        OfflineMessageRecord record;
+        const auto fetch_status = fetchOfflineMessageForAck(query, user_id, message_id, record);
+        if (!fetch_status.isOk()) {
+            query.close();
+            rollbackSilently(*guard);
+            return fetch_status;
+        }
+        records.push_back(std::move(record));
+    }
+    query.close();
+
+    const auto delivered_at_ms = Timestamp::now().millisecondsSinceEpoch();
+    const auto offline_status =
+        markOfflineDeliveredInTransaction(*guard, user_id, unique_message_ids, delivered_at_ms);
+    if (!offline_status.isOk()) {
+        rollbackSilently(*guard);
+        return offline_status;
+    }
+
+    const auto delivery_status =
+        upsertDeliveryDelivered(*guard, user_id, unique_message_ids, delivered_at_ms);
+    if (!delivery_status.isOk()) {
+        rollbackSilently(*guard);
+        return delivery_status;
+    }
+
+    const auto commit_status = executeSimple(*guard, "COMMIT");
+    if (!commit_status.isOk()) {
+        return commit_status;
+    }
+    acked_messages = std::move(records);
+    return Status::ok();
 }
 
 }  // namespace liteim

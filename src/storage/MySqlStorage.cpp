@@ -278,6 +278,38 @@ Status insertOfflineMessage(MySqlConnection& connection, std::uint64_t user_id,
     return Status::ok();
 }
 
+Status upsertDeliveryPending(MySqlConnection& connection, std::uint64_t user_id,
+                             std::uint64_t message_id) {
+    PreparedStatement statement(connection);
+    const auto prepare_status = statement.prepare(
+        "INSERT INTO message_deliveries "
+        "(message_id, user_id, status, pushed_at_ms, delivered_at_ms, read_at_ms) "
+        "VALUES (?, ?, 0, NULL, NULL, NULL) "
+        "ON DUPLICATE KEY UPDATE status = status");
+    if (!prepare_status.isOk()) {
+        return prepare_status;
+    }
+    const auto message_status = statement.bindUInt64(0, message_id);
+    if (!message_status.isOk()) {
+        return message_status;
+    }
+    const auto user_status = statement.bindUInt64(1, user_id);
+    if (!user_status.isOk()) {
+        return user_status;
+    }
+
+    std::uint64_t affected_rows = 0;
+    const auto insert_status = statement.executeUpdate(affected_rows);
+    if (!insert_status.isOk()) {
+        return insert_status;
+    }
+    if (affected_rows > 2U) {
+        return Status::error(ErrorCode::InternalError,
+                             "save delivery state affected unexpected row count");
+    }
+    return Status::ok();
+}
+
 }  // namespace
 
 MySqlStorage::MySqlStorage(MySqlPool& pool, std::chrono::milliseconds acquire_timeout)
@@ -431,6 +463,10 @@ MySqlStorage::saveMessageWithOfflineRecipients(const MessageRecord& message,
         if (!offline_status.isOk()) {
             return rollbackClearAndReturn(*guard, saved_message, offline_status);
         }
+        const auto delivery_status = upsertDeliveryPending(*guard, user_id, saved_message.message_id);
+        if (!delivery_status.isOk()) {
+            return rollbackClearAndReturn(*guard, saved_message, delivery_status);
+        }
     }
 
     statement.close();
@@ -454,6 +490,12 @@ Status MySqlStorage::getOfflineMessages(std::uint64_t user_id, std::uint32_t lim
 Status MySqlStorage::markOfflineDelivered(std::uint64_t user_id,
                                           const std::vector<std::uint64_t>& message_ids) {
     return offline_message_dao_.markOfflineDelivered(user_id, message_ids);
+}
+
+Status MySqlStorage::ackOfflineMessages(std::uint64_t user_id,
+                                        const std::vector<std::uint64_t>& message_ids,
+                                        std::vector<OfflineMessageRecord>& acked_messages) {
+    return offline_message_dao_.ackOfflineMessages(user_id, message_ids, acked_messages);
 }
 
 Status MySqlStorage::getHistory(const HistoryQuery& query, std::vector<MessageRecord>& messages) {

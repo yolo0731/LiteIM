@@ -35,6 +35,9 @@ public:
     // 这个函数会将 offline_messages 表中 user_id 对应的这些 message_id 的记录的 delivered 字段更新为 1，并设置 delivered_at_ms 为当前时间戳，表示这些消息已经成功投递给用户了。但是这不会删除offline_messages 表这些记录
     Status markOfflineDelivered(std::uint64_t user_id,
                                 const std::vector<std::uint64_t>& message_ids);
+    Status ackOfflineMessages(std::uint64_t user_id,
+                              const std::vector<std::uint64_t>& message_ids,
+                              std::vector<OfflineMessageRecord>& acked_messages);
 
 private:
     MySqlPool* pool_;

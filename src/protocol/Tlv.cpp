@@ -46,6 +46,8 @@ const char* toString(TlvType type) noexcept {
         return "LIMIT";
     case TlvType::UnreadCount:
         return "UNREAD_COUNT";
+    case TlvType::DeliveryStatus:
+        return "DELIVERY_STATUS";
     case TlvType::ErrorCode:
         return "ERROR_CODE";
     case TlvType::ErrorMessage:

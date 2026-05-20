@@ -55,6 +55,8 @@ class MessageType(enum.IntEnum):
     OFFLINE_MESSAGES_RESPONSE = 501
     HISTORY_REQUEST = 502
     HISTORY_RESPONSE = 503
+    OFFLINE_MESSAGES_ACK_REQUEST = 504
+    OFFLINE_MESSAGES_ACK_RESPONSE = 505
     ERROR_RESPONSE = 900
 
 
@@ -77,6 +79,7 @@ class TlvType(enum.IntEnum):
     RECEIVER_ID = 45
     TIMESTAMP_MS = 46
     LIMIT = 48
+    DELIVERY_STATUS = 50
     ERROR_CODE = 90
     ERROR_MESSAGE = 91
 
@@ -431,6 +434,13 @@ class LiteIMClient:
             MessageType.OFFLINE_MESSAGES_REQUEST,
             [_uint64_field(TlvType.LIMIT, limit)],
             MessageType.OFFLINE_MESSAGES_RESPONSE,
+        )
+
+    def offline_ack(self, message_ids: Iterable[int]) -> Packet:
+        return self.request(
+            MessageType.OFFLINE_MESSAGES_ACK_REQUEST,
+            [_uint64_field(TlvType.MESSAGE_ID, message_id) for message_id in message_ids],
+            MessageType.OFFLINE_MESSAGES_ACK_RESPONSE,
         )
 
     def closed_by_peer(self, timeout: float) -> bool:

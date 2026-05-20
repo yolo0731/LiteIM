@@ -23,6 +23,7 @@ public:
                           OfflineMessageServiceOptions options = OfflineMessageServiceOptions{});
     Status registerHandlers(MessageRouter& router);
     Status handleOfflineMessages(const MessageRouter::RouterRequest& request, Packet& response);
+    Status handleOfflineMessagesAck(const MessageRouter::RouterRequest& request, Packet& response);
     const OfflineMessageServiceOptions& options() const noexcept;
 
 private:
@@ -31,6 +32,8 @@ private:
     Status requestLimit(const MessageRouter::RouterRequest& request, std::uint32_t& limit) const;
     // 把消息列表写成 TLV response body
     Status appendMessages(const std::vector<OfflineMessageRecord>& messages, Packet& response);
+    Status appendAckedMessageIds(const std::vector<OfflineMessageRecord>& messages,
+                                 Packet& response);
     // 清 Redis 未读数
     Status clearUnreadForMessages(std::uint64_t user_id,
                                   const std::vector<OfflineMessageRecord>& messages);

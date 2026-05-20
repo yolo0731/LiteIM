@@ -54,7 +54,7 @@ flowchart TB
     session --> router["MessageRouter"]
     router -->|"blocking work only here"| biz["Business ThreadPool"]
     biz --> services["Auth / Friend / Chat / Group\nOffline / History / Heartbeat services"]
-    services --> mysql[("MySQL\nusers, friendships, groups,\nmessages, offline_messages")]
+    services --> mysql[("MySQL\nusers, friendships, groups,\nmessages, offline_messages,\nmessage_deliveries")]
     services --> redis[("Redis\nonline TTL, unread,\nlogin limiter")]
     services -->|"queueInLoop / runInLoop"| session
     signal["SIGINT / SIGTERM"] --> signalfd["SignalWatcher + signalfd"]
@@ -142,9 +142,9 @@ Threading rules:
 - `liteim_net`: `Buffer`, `SocketUtil`, `UniqueFd`, `Channel`, `Epoller`, `EventLoop`, `Acceptor`, `Session`, `EventLoopThread`, `EventLoopThreadPool`, `SignalWatcher`, and `TcpServer`.
 - `liteim_concurrency`: fixed-size business `ThreadPool`.
 - `liteim/timer`: `TimerHeap` and `TimerManager`, linked into the network layer because `TimerManager` depends on `EventLoop` and `Channel`.
-- `liteim_storage`: storage DTOs, the `IStorage` interface, `MySqlConnection`, `PreparedStatement`, `MySqlQueryResult`, `MySqlPool`, `ConnectionGuard`, `UserDao`, `AuthDao`, `MessageDao`, `OfflineMessageDao`, `FriendDao`, `GroupDao`, and `MySqlStorage` for MySQL-backed users, public friend profiles, groups, messages, offline messages, and history.
+- `liteim_storage`: storage DTOs, the `IStorage` interface, `MySqlConnection`, `PreparedStatement`, `MySqlQueryResult`, `MySqlPool`, `ConnectionGuard`, `UserDao`, `AuthDao`, `MessageDao`, `OfflineMessageDao`, `FriendDao`, `GroupDao`, and `MySqlStorage` for MySQL-backed users, public friend profiles, groups, messages, offline messages, delivery states, and history.
 - `liteim_cache`: cache DTOs, the `ICache` interface, `RedisClient`, `RedisPool`, `RedisConnectionGuard`, `OnlineStatusCache`, `UnreadCounter`, `LoginRateLimiter`, and `RedisCache` for Redis-backed online sessions, unread counters, and login failure limiting.
-- `liteim_service`: `SessionManager`, `OnlineService`, `MessageRouter`, `AuthService`, `FriendService`, `ChatService`, `GroupService`, `OfflineMessageService`, `HistoryService`, `HeartbeatService`, and shared service helpers for validation and message TLV response building. `SessionManager` / `OnlineService` provide in-process user/session binding plus Redis-backed online-state synchronization, and runtime session close cleanup removes current online state through the business pool. `MessageRouter` parses request TLVs, dispatches handlers inline or through the business `ThreadPool`, and sends responses back through `Session::sendPacket()`. `AuthService` handles register/login with MySQL users, Redis login-failure limiting, PBKDF2-HMAC-SHA256 password hashing, login-time session binding, and service-level username/nickname/password length validation before database access. `FriendService` handles add-friend and friend-list requests with MySQL friendships; Redis online-status lookup failure degrades that friend's online field to offline instead of failing the whole list. `ChatService` handles private-message requests by validating the logged-in sender, enforcing the service message-size limit, saving the message through `IStorage`, pushing to an in-process online receiver, or recording offline delivery plus unread count for an offline receiver. `GroupService` handles basic create/join/list group flows and group-message routing, validates group-name/message-text lengths, saves group messages through `IStorage`, pushes to in-process online members, and records offline delivery plus unread counts for offline members. If the message and offline row are already saved, Redis unread increment failure is logged but does not turn the sender response into a failure. `OfflineMessageService` handles client-triggered `OfflineMessagesRequest`, asks storage for only the requested batch size, returns pending offline messages, marks the delivered batch, and treats Redis unread-counter clearing as best-effort after the MySQL response data is assembled. `HistoryService` handles `HistoryRequest`, validates that the logged-in user can read the private or group conversation, applies default/max cursor pagination limits, and returns repeated TLV message fields from `IStorage::getHistory()`. `HeartbeatService` handles `HeartbeatRequest` in the business pool, returns `HeartbeatResponse` for valid heartbeats, and refreshes Redis online TTL only for logged-in sessions. LiteIM has no C++ AI/assistant identity service: an external LLM-controlled account logs in and sends messages exactly like any other account. Redis TTL/unread refresh failures are logged as degraded side effects when the message source of truth is already saved. Repeated login uses a kick-old-keep-new policy.
+- `liteim_service`: `SessionManager`, `OnlineService`, `MessageRouter`, `AuthService`, `FriendService`, `ChatService`, `GroupService`, `OfflineMessageService`, `HistoryService`, `HeartbeatService`, and shared service helpers for validation and message TLV response building. `SessionManager` / `OnlineService` provide in-process user/session binding plus Redis-backed online-state synchronization, and runtime session close cleanup removes current online state through the business pool. `MessageRouter` parses request TLVs, dispatches handlers inline or through the business `ThreadPool`, and sends responses back through `Session::sendPacket()`. `AuthService` handles register/login with MySQL users, Redis login-failure limiting, PBKDF2-HMAC-SHA256 password hashing, login-time session binding, and service-level username/nickname/password length validation before database access. `FriendService` handles add-friend and friend-list requests with MySQL friendships; Redis online-status lookup failure degrades that friend's online field to offline instead of failing the whole list. `ChatService` handles private-message requests by validating the logged-in sender, enforcing the service message-size limit, saving the message through `IStorage`, pushing to an in-process online receiver, or recording offline delivery plus unread count for an offline receiver. `GroupService` handles basic create/join/list group flows and group-message routing, validates group-name/message-text lengths, saves group messages through `IStorage`, pushes to in-process online members, and records offline delivery plus unread counts for offline members. If the message and offline row are already saved, Redis unread increment failure is logged but does not turn the sender response into a failure. `OfflineMessageService` handles client-triggered `OfflineMessagesRequest` and `OfflineMessagesAckRequest`: pull returns pending offline messages without marking them delivered, while ACK marks the selected message ids delivered in MySQL, updates `message_deliveries`, and clears Redis unread counters as a best-effort post-ACK side effect. `HistoryService` handles `HistoryRequest`, validates that the logged-in user can read the private or group conversation, applies default/max cursor pagination limits, and returns repeated TLV message fields from `IStorage::getHistory()`. `HeartbeatService` handles `HeartbeatRequest` in the business pool, returns `HeartbeatResponse` for valid heartbeats, and refreshes Redis online TTL only for logged-in sessions. LiteIM has no C++ AI/assistant identity service: an external LLM-controlled account logs in and sends messages exactly like any other account. Redis TTL/unread refresh failures are logged as degraded side effects when the message source of truth is already saved. Repeated login uses a kick-old-keep-new policy.
 - `liteim_client_cli`: command parsing, TLV `Packet` construction, debug packet formatting, and a blocking TCP protocol client used by the `liteim_cli` executable.
 - `liteim_bench_core` / `liteim_bench`: local benchmark helpers and executable for generating ordinary register/login/private-message load, sender request/response RTT percentiles, QPS, error count, client-process RSS, client-process CPU usage, and JSON or Markdown reports.
 - `liteim_qt_client_core` / `liteim_qt_client`: optional Qt Widgets client components built only with `LITEIM_BUILD_QT_CLIENT=ON`. The core target wraps the shared LiteIM Packet/TLV protocol for Qt, decodes TCP half/sticky packets, provides a `QTcpSocket` based `TcpClient`, keeps client-side seq_id, pending-request, login state, connection endpoint, heartbeat timer, connection status, and one-shot auto reconnect in `ClientSession` / `ClientRuntime`, exposes `AuthController`, `LoginWindow`, and `RegisterDialog` for login/register entry flow, and builds the `MainWindow` three-column shell with `SideBar`, model-driven `ConversationListWidget`, reusable `ContactListWidget`, and a right-side `ChatPage`. The Qt chat page has reusable `MessageBubble` rows, a `ChatInputBar`, left/right bubble layout, timestamp and send-status labels, Enter-to-send / Shift+Enter-newline behavior, history pagination keyed by `message_id`, and failed-send status text. `ChatController` connects the selected friend/group/ordinary PersonaAgent contact to `HistoryRequest`, `PrivateMessageRequest`, `GroupMessageRequest`, add-friend, create-group, and join-group packets over the same normal account protocol.
@@ -183,7 +183,7 @@ Main message families:
 | Friend | `AddFriendRequest`, `ListFriendsRequest`, and responses |
 | Private chat | `PrivateMessageRequest`, `PrivateMessageResponse`, `PrivateMessagePush` |
 | Group chat | create, join, list, message request/response/push |
-| Offline/history | `OfflineMessagesRequest`, `HistoryRequest`, and responses |
+| Offline/history | `OfflineMessagesRequest`, `OfflineMessagesAckRequest`, `HistoryRequest`, and responses |
 | Error | `ErrorResponse` with an error message TLV |
 
 ### MySQL Table Summary
@@ -196,6 +196,7 @@ Main message families:
 | `group_members` | group membership keyed by `(group_id, user_id)` |
 | `messages` | private/group message source of truth, indexed by `(conversation_type, conversation_id, message_id)` |
 | `offline_messages` | per-user pending offline delivery rows linked to `messages` |
+| `message_deliveries` | per-user delivery state linked to `messages`; current states are pending, pushed, delivered, and read-reserved |
 
 ### Redis Key Summary
 
@@ -205,7 +206,7 @@ Main message families:
 | `unread:user:<user_id>:conversation:<type>:<conversation_id>` | per-user unread count for private or group conversation |
 | `login:failure:<username_len>:<username>:<ip_len>:<remote_ip>` | temporary login failure count used by the login rate limiter |
 
-Redis stores volatile state only. MySQL remains the source of truth for users, friendships, groups, messages, and offline-message delivery rows.
+Redis stores volatile state only. MySQL remains the source of truth for users, friendships, groups, messages, offline-message rows, and delivery states.
 
 ## Qt Client Showcase
 
@@ -270,7 +271,7 @@ Run the server executable:
 ./build/server/liteim_server --config config/liteim.conf
 ```
 
-Without `--config`, the server first tries `config/liteim.conf` if it exists and otherwise falls back to built-in local-development defaults. The server starts a real `EventLoop + TcpServer` on the configured host and port, starts MySQL / Redis pools, starts the business `ThreadPool`, and wires incoming packets into `MessageRouter`. Heartbeat requests are handled by `HeartbeatService`; register/login requests by `AuthService`; add-friend and friend-list requests by `FriendService`; private-message requests by `ChatService`; group create/join/list/message requests by `GroupService`; offline-message pull requests by `OfflineMessageService`; history requests by `HistoryService`; and unknown or unsupported request types get `ErrorResponse`. LiteIM treats every logged-in account as an ordinary account, so a future PersonaAgent-controlled account is just another client session. Business handlers run in the business pool. Session close cleanup submits `OnlineService::unbindSession(session_id)` into the business pool so Redis online-state cleanup does not run in an I/O callback. The server handles `Ctrl-C` / `SIGTERM` through `signalfd`, stops `TcpServer` in the base loop thread, stops the business pool, closes MySQL / Redis pools, and exits cleanly.
+Without `--config`, the server first tries `config/liteim.conf` if it exists and otherwise falls back to built-in local-development defaults. The server starts a real `EventLoop + TcpServer` on the configured host and port, starts MySQL / Redis pools, starts the business `ThreadPool`, and wires incoming packets into `MessageRouter`. Heartbeat requests are handled by `HeartbeatService`; register/login requests by `AuthService`; add-friend and friend-list requests by `FriendService`; private-message requests by `ChatService`; group create/join/list/message requests by `GroupService`; offline-message pull and ACK requests by `OfflineMessageService`; history requests by `HistoryService`; and unknown or unsupported request types get `ErrorResponse`. LiteIM treats every logged-in account as an ordinary account, so a future PersonaAgent-controlled account is just another client session. Business handlers run in the business pool. Session close cleanup submits `OnlineService::unbindSession(session_id)` into the business pool so Redis online-state cleanup does not run in an I/O callback. The server handles `Ctrl-C` / `SIGTERM` through `signalfd`, stops `TcpServer` in the base loop thread, stops the business pool, closes MySQL / Redis pools, and exits cleanly.
 
 Because the current server runtime starts real MySQL / Redis pools, start local dependencies before a bounded server smoke check:
 
@@ -299,6 +300,7 @@ groups
 group 2001 hello team
 history group 2001 20
 offline 20
+offline-ack 5001 5002
 heartbeat
 quit
 ```
@@ -380,7 +382,7 @@ LiteIM's local development stack uses Docker Compose for MySQL and Redis. The se
 
 Runtime responsibilities:
 
-- MySQL stores users, friendships, groups, messages, and offline-message rows.
+- MySQL stores users, friendships, groups, messages, offline-message rows, and per-user delivery states.
 - Redis stores online-session TTL state, unread counters, and login failure windows.
 - Register/login, friend, private chat, group chat, offline pull, history, and heartbeat handlers run through the business pool.
 - `HeartbeatService` returns `HeartbeatResponse` for legal heartbeat packets and refreshes Redis online TTL on a best-effort basis for logged-in sessions.
@@ -415,6 +417,7 @@ The MySQL container runs `scripts/init_mysql.sql` and `scripts/seed_test_data.sq
 - `group_members`
 - `messages`
 - `offline_messages`
+- `message_deliveries`
 
 The seed script inserts local test users, a `dev_group`, sample messages, and pending offline-message rows. Redis starts empty but requires the local development password. Runtime Redis keys include `online:user:<user_id>`, per-user/per-conversation unread counters, and username/remote-ip login failure windows.
 

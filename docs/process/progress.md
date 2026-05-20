@@ -1,12 +1,51 @@
 # LiteIM Progress
 
-## 2026-05-19 Step 53 Final README Showcase Materials
+## 2026-05-20 Step 53 Offline Delivery ACK
+
+本次进入 `Step 53：离线消息 ACK 与投递状态`。
+
+恢复路线：
+
+- 用户要求删除原 Step53 final README/showcase slot，并把这类最终展示材料移动到 Step58 作为最后收口。
+- 当前 Step53 是可靠投递路线的第一步：先修离线消息“拉取即 delivered”的丢消息窗口。
+- 本 Step 只做离线 ACK，不做 `client_msg_id` 幂等、私聊在线 delivery ACK、群聊全员 ACK、已读回执、多设备或好友权限。
+
+TDD RED：
+
+- 更新协议测试，要求 `OfflineMessagesAckRequest` / `OfflineMessagesAckResponse` 可被识别为 request/response。
+- 更新 TLV 测试，要求 `DeliveryStatus` 有稳定字段名。
+- 更新 `OfflineMessageService` 测试，要求 pull 不再 mark delivered，ACK 才 mark delivered 并清 unread。
+- 更新 CLI 测试，要求 `offline-ack <message_id>...` 构造批量 ACK 请求，并能打印 `delivery_status`。
+
+GREEN 实现：
+
+- 协议新增 `OfflineMessagesAckRequest = 504`、`OfflineMessagesAckResponse = 505` 和 `TlvType::DeliveryStatus = 50`。
+- 存储层新增 `storage::DeliveryStatus` 和 `IStorage::ackOfflineMessages()`。
+- MySQL 初始化脚本和 migration 新增 `message_deliveries` 表。
+- `OfflineMessageDao` 在事务中 ACK 属于当前用户的离线消息，设置 `offline_messages.delivered = 1`，并 upsert `message_deliveries.status = delivered`。
+- `MySqlStorage::saveMessageWithOfflineRecipients()` 保存离线 row 时同步创建 pending delivery row。
+- `OfflineMessageService` 注册 pull 和 ACK 两个 handler：pull 只返回 pending，ACK 后再清 unread。
+- CLI 新增 `offline-ack` 命令；Python E2E 新增“ACK 前重复拉取仍 pending，ACK 后不再返回”的黑盒验证。
+- 新增 `docs/tutorials/step53_offline_delivery_ack.md`，删除旧的 `step53_final_docs_showcase.md`。
+
+当前验证：
+
+- `cmake --build build --target liteim_tests liteim_server -j2`：通过。
+- `ctest --test-dir build -R "MessageType|TlvType|ClientCliCommandTest|OfflineMessageService|MessageDaoIntegrationTest|MySqlStorageIntegrationTest|LiteIME2E.test_offline" --output-on-failure`：通过，34/34。
+- `ctest --test-dir build --output-on-failure`：通过，387/387。
+- `git diff --check`：通过。
+- `docs/tutorials/step53_offline_delivery_ack.md` 标题脚本检查：0-10 结构通过，最后一节是 `## 10. 面试常见追问`。
+- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" README.md docs/tutorials/step53_offline_delivery_ack.md`：无输出。
+- 本地数据库已执行 `scripts/migrations/054_delivery_ack.sql`，用于给已有 Docker MySQL 数据卷补 `message_deliveries` 表。
+
+## 2026-05-19 Former Step 53 Final README Showcase Materials (moved to Step 58)
 
 本次进入 `Step 53：补齐 README、架构图、Qt 截图、面试说明和压测报告`。
 
 恢复路线：
 
-- `PROJECT_MEMORY.md` 定义 Step 53 范围为最终展示材料：README、架构图、线程模型图、TLV/MySQL/Redis 摘要、Qt 截图、编译运行测试方式、压测结果、PersonaAgent 接入方式和面试说明。
+- 这批内容原本作为 Step 53 完成；用户后来要求把最终 README、架构图、Qt 截图、面试说明和压测报告移动到 Step 58 作为最后结尾 Step。
+- 当时 `PROJECT_MEMORY.md` 定义 Step 53 范围为最终展示材料：README、架构图、线程模型图、TLV/MySQL/Redis 摘要、Qt 截图、编译运行测试方式、压测结果、PersonaAgent 接入方式和面试说明。
 - 本 Step 是文档/showcase 收口，不改 C++ 服务端行为、Packet/TLV 协议、MySQL schema、Redis key、Qt 功能逻辑或 PersonaAgent 实现。
 - PersonaAgent 继续作为未来外部普通账号客户端接入；README 不写成 C++ server 内置 AI。
 
@@ -17,14 +56,14 @@
 - 新增 `docs/reports/qt_client_showcase.png`。截图由当前 Qt `MainWindow` / `ChatPage` / `MessageBubble` 渲染生成，展示三栏 layout、会话列表、消息气泡、Offline/Reconnect 状态。
 - 生成截图时首次误链旧 Qt 静态库位置，导致画面还有旧 `Agent` sidebar；已改为链接当前 `build-qt/client_qt/src/libliteim_qt_client_core.a` 并重新生成。
 - 更新 `docs/reports/liteim_benchmark_report_2026-05-18.md`，说明该报告作为 Step53 README 压测数据来源保留，Step53 未重新运行 benchmark。
-- 新增 `docs/tutorials/step53_final_docs_showcase.md`，按固定 0-10 教程模板记录本 Step。
+- 当时新增 `docs/tutorials/step53_final_docs_showcase.md`，按固定 0-10 教程模板记录本 Step；用户后来要求删除原 Step53 并把最终展示材料改到 Step58，因此该教程文件已移除。
 - 同步 `docs/process/task_plan.md` 和 `docs/process/findings.md`。
 
 当前验证：
 
 - `git diff --check`：通过。
-- `rg -n "提交信息|commit message|## 11|Current Status|当前状态" README.md docs/tutorials/step53_final_docs_showcase.md`：无输出。
-- Step53 教程标题脚本检查：0-10 结构通过，最后一节是 `## 10. 面试常见追问`。
+- 当时的 README / Step53 教程噪声扫描：无输出。
+- 当时的 Step53 教程标题脚本检查：0-10 结构通过，最后一节是 `## 10. 面试常见追问`。
 - `file docs/reports/qt_client_showcase.png && test -s docs/reports/qt_client_showcase.png`：PNG 存在，1080x720。
 - `cmake -S . -B build`：通过。
 - `cmake --build build --target liteim_tests -j2`：通过。
@@ -432,14 +471,14 @@ GREEN 实现：
 
 用户要求直接重排 Step 40 之后的路线，并同步所有 Markdown。
 
-采用的新编号：
+当时采用的新编号：
 
 - CLI -> Step 41。
 - Python E2E -> Step 42。
 - benchmark -> Step 43。
 - gMock / ASan / UBSan -> Step 44。
 - Qt -> Step 45-52。
-- final docs -> Step 53。
+- final docs -> Step 53。用户后来再次调整，最终展示材料现在移动到 Step58。
 
 实现内容：
 
@@ -532,7 +571,7 @@ GREEN 实现：
 用户确认采用方案 A 后，本次清理目标是让 LiteIM 目录更干净：
 
 - 删除原 GitHub Actions CI Step，不把“每次提交都跑测试”作为项目本身的一部分。
-- Qt 客户端阶段现在是 Step 45-52，最终展示文档现在是 Step 53。
+- 当时 Qt 客户端阶段调整为 Step 45-52，最终展示文档调整为 Step 53；用户后来把最终展示文档再次移动到 Step58。
 - `task_plan.md`、`findings.md`、`progress.md` 移入 `docs/process/`。
 - `tutorials/` 移入 `docs/tutorials/`，删除原 CI 教程。
 - 保留 `docs/debug_cases/`。
@@ -550,7 +589,7 @@ GREEN 实现：
 - `docs/process/` 下保留 `task_plan.md`、`findings.md`、`progress.md`。
 - `docs/tutorials/` 下保留 Step 00-44 共 46 个教程文件；所有教程最后一个主章节仍是 `## 10. 面试常见追问`。
 - 路径级旧路线扫描无输出：没有真实 `server/net`、`server/protocol`、`*SQLite*`、`*InMemory*` 或 `*step15_sqlite*` 文件路径残留。
-- Markdown 路线扫描只剩本清理记录中“删除原 GitHub Actions CI Step”的说明；`PROJECT_MEMORY.md` 当前路线已改为 Step 41-44 工具验证、Step 45-52 Qt、Step 53 最终文档。
+- 当时 Markdown 路线扫描只剩本清理记录中“删除原 GitHub Actions CI Step”的说明；`PROJECT_MEMORY.md` 在该时点改为 Step 41-44 工具验证、Step 45-52 Qt、Step 53 最终文档。
 
 ## 2026-05-16 Repository CI Infrastructure
 
@@ -569,7 +608,7 @@ GREEN 实现：
 边界：
 
 - 不恢复 CI 教程。
-- 不修改 Step 路线；当前仍是 Step 41-44 工具验证、Step 45-52 Qt、Step 53 最终文档。
+- 不修改 Step 路线；该时点仍是 Step 41-44 工具验证、Step 45-52 Qt、Step 53 最终文档。
 - 不修改 C++ 源码、协议、MySQL schema、Redis key、Qt 或 PersonaAgent。
 - 继续保护进入本任务前已有的用户侧源码改动。
 

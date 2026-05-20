@@ -322,6 +322,30 @@ Status buildOffline(std::istringstream& stream, std::uint64_t seq_id, Packet& pa
     return appendUint64Field(TlvType::Limit, limit, packet);
 }
 
+Status buildOfflineAck(std::istringstream& stream, std::uint64_t seq_id, Packet& packet) {
+    resetPacket(MessageType::OfflineMessagesAckRequest, seq_id, packet);
+
+    std::string token;
+    bool has_message_id = false;
+    while (readToken(stream, token)) {
+        std::uint64_t message_id = 0;
+        const auto status = parseUint64(token, "message_id", message_id);
+        if (!status.isOk()) {
+            return status;
+        }
+        const auto append_status = appendUint64Field(TlvType::MessageId, message_id, packet);
+        if (!append_status.isOk()) {
+            return append_status;
+        }
+        has_message_id = true;
+    }
+
+    if (!has_message_id) {
+        return invalidCommand("message_id is required");
+    }
+    return Status::ok();
+}
+
 // 这个函数负责从socket里解析出一个PacketHeader，保存在header参数里
 Status parseHeaderFromSocket(int fd, PacketHeader& header) {
     Bytes header_bytes(kPacketHeaderSize);
@@ -460,6 +484,9 @@ Status buildPacketFromLine(const std::string& line, std::uint64_t seq_id, Packet
     if (command == "offline") {
         return buildOffline(stream, seq_id, packet);
     }
+    if (command == "offline-ack") {
+        return buildOfflineAck(stream, seq_id, packet);
+    }
 
     return invalidCommand("unknown command: " + command);
 }
@@ -498,6 +525,7 @@ std::string describePacket(const Packet& packet) {
     appendUint64FieldDescription(fields, TlvType::TimestampMs, "timestamp_ms", stream);
     appendUint64FieldDescription(fields, TlvType::Limit, "limit", stream);
     appendUint64FieldDescription(fields, TlvType::UnreadCount, "unread", stream);
+    appendUint64FieldDescription(fields, TlvType::DeliveryStatus, "delivery_status", stream);
     appendUint64FieldDescription(fields, TlvType::ErrorCode, "error_code", stream);
     appendStringFieldDescription(fields, TlvType::ErrorMessage, "error", stream);
     appendStringFieldDescription(fields, TlvType::MessageText, "text", stream);
@@ -519,6 +547,7 @@ std::string helpText() {
   group <group_id> <text...>
   history private|group <conversation_id> [limit] [before_message_id]
   offline [limit]
+  offline-ack <message_id> [message_id...]
   heartbeat
   help
   quit)";
